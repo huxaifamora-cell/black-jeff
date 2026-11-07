@@ -1,4 +1,5 @@
-// SQLite storage (Node's built-in node:sqlite): alert feed and Telegram users.
+// In-memory SQLite (Node's built-in node:sqlite): alert feed and Telegram users. Nothing is written to disk;
+// users survive restarts through backup.js and ALERT_CHAT_IDS, alerts are rebuilt from the market feed.
 import { DatabaseSync } from 'node:sqlite';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
@@ -20,6 +21,7 @@ export class Store {
     if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true });
     this.db = new DatabaseSync(path);
     this.db.exec(SCHEMA);
+    this.onUsersChanged = null;                       // set by the app to back users up
   }
 
   // ---- alerts
@@ -49,8 +51,9 @@ export class Store {
 
   // ---- users
   upsertUser(tgId, name = '') {
-    this.db.prepare('INSERT OR IGNORE INTO users(tg_id,chat_id,name,created) VALUES(?,?,?,?)')
+    const r = this.db.prepare('INSERT OR IGNORE INTO users(tg_id,chat_id,name,created) VALUES(?,?,?,?)')
       .run(tgId, tgId, name, Math.floor(Date.now() / 1000));
+    if (r.changes) this.onUsersChanged?.();
     return this.getUser(tgId);
   }
 
@@ -64,7 +67,22 @@ export class Store {
     if (subscribed !== undefined && subscribed !== null) this.db.prepare('UPDATE users SET subscribed=? WHERE tg_id=?').run(subscribed ? 1 : 0, tgId);
     if (Array.isArray(muted)) this.db.prepare('UPDATE users SET muted=? WHERE tg_id=?').run(JSON.stringify(muted), tgId);
     if (Array.isArray(concepts)) this.db.prepare('UPDATE users SET concepts=? WHERE tg_id=?').run(JSON.stringify(concepts.filter((c) => ALL_CONCEPTS.includes(c))), tgId);
+    this.onUsersChanged?.();
     return this.getUser(tgId);
+  }
+
+  // ---- user backup (see backup.js)
+  exportUsers() { return this.db.prepare('SELECT tg_id, chat_id, name, subscribed, muted, concepts, created FROM users').all(); }
+
+  importUsers(rows) {
+    const ins = this.db.prepare('INSERT OR IGNORE INTO users(tg_id,chat_id,name,subscribed,muted,concepts,created) VALUES(?,?,?,?,?,?,?)');
+    let n = 0;
+    for (const u of rows) {
+      if (!Number.isInteger(u.tg_id)) continue;
+      n += ins.run(u.tg_id, Number.isInteger(u.chat_id) ? u.chat_id : u.tg_id, String(u.name || ''), u.subscribed ? 1 : 0,
+        typeof u.muted === 'string' ? u.muted : '[]', typeof u.concepts === 'string' ? u.concepts : '[]', u.created || 0).changes;
+    }
+    return n;
   }
 
   recipients(symbolId, concept) {

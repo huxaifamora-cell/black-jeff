@@ -9,6 +9,7 @@ import { verifyInitData } from './auth.js';
 import { loadConfig } from './config.js';
 import { Deriv } from './deriv.js';
 import { Bot } from './telegram.js';
+import { TelegramBackup } from './backup.js';
 import { Service, formatAlert } from './service.js';
 import { ALL_CONCEPTS, Store } from './store.js';
 
@@ -27,6 +28,8 @@ export function createApp({ cfg = loadConfig(), store, svc, deriv, bot, log = co
   bot ||= cfg.botToken ? new Bot(cfg.botToken) : null;
   const abort = new AbortController();
   let tasks = [];
+  let warm = false;                                   // first feed pass only fills the alert list, it does not message anyone
+  const backup = bot && cfg.stateChatId ? new TelegramBackup(bot, cfg.stateChatId, log) : null;
 
   // ------------------------------------------------------------ http
   const json = (res, code, data) => {
@@ -102,7 +105,7 @@ export function createApp({ cfg = loadConfig(), store, svc, deriv, bot, log = co
 
   // ------------------------------------------------------------ background work
   async function notify(alert) {
-    if (!bot) return;
+    if (!bot || !warm) return;
     const button = cfg.webappUrl ? { text: `Open ${alert.symbol_name.replace('Volatility ', 'V').replace(' Index', '')}`, url: `${cfg.webappUrl}/?sym=${alert.symbol}` } : null;
     for (const chatId of store.recipients(alert.symbol, alert.concept)) {
       try { await bot.send(chatId, formatAlert(alert), button); } catch (e) { log.warn('could not message', chatId, e.message); }
@@ -122,8 +125,34 @@ export function createApp({ cfg = loadConfig(), store, svc, deriv, bot, log = co
           await sleep(200, abort.signal);
         }
       } catch (e) { log.warn('feed loop error:', e.message); await sleep(15000, abort.signal); }
+      if (!warm) { warm = true; log.info('first feed pass done: alerts are live'); }
       await sleep(cfg.pollSeconds * 1000, abort.signal);
     }
+  }
+
+  // Restore recipients after a restart (no database or disk): fixed ids from ALERT_CHAT_IDS, then the Telegram backup.
+  async function restoreUsers() {
+    if (backup) {
+      try { log.info(`restored ${store.importUsers(await backup.load())} users from the Telegram backup`); }
+      catch (e) { log.warn('could not read the Telegram backup (is STATE_CHAT_ID right, and did you send /start to the bot?):', e.message); }
+    }
+    for (const id of cfg.alertChatIds || []) store.upsertUser(id, '');
+    if (!backup) return;
+    store.onUsersChanged = () => backup.schedule(() => store.exportUsers());
+    backup.schedule(() => store.exportUsers());       // write once so the backup exists from the start
+  }
+
+  // Keep-alive: a request to our own public address counts as traffic, so a free Web Service stays awake.
+  function keepAlive() {
+    const minutes = cfg.keepAliveMinutes || 0;
+    if (!minutes) return;
+    if (!cfg.webappUrl) return log.warn('KEEP_ALIVE is on but there is no public URL (set WEBAPP_URL); keep-alive is off');
+    const ping = () => fetch(cfg.webappUrl + '/healthz', { signal: AbortSignal.timeout(15000) })
+      .catch((e) => log.warn('keep-alive ping failed:', e.message));
+    const t = setInterval(ping, minutes * 60 * 1000);
+    t.unref?.();
+    abort.signal.addEventListener('abort', () => clearInterval(t), { once: true });
+    log.info(`keep-alive on: pinging ${cfg.webappUrl}/healthz every ${minutes} min`);
   }
 
   async function onUpdate(u) {
@@ -140,6 +169,8 @@ export function createApp({ cfg = loadConfig(), store, svc, deriv, bot, log = co
   async function start(port = cfg.port) {
     await new Promise((r) => server.listen(port, '0.0.0.0', r));
     if (!background) return server.address().port;
+    await restoreUsers();
+    keepAlive();
     tasks.push(feedLoop());
     if (bot) {
       if (cfg.webappUrl) bot.setMenuButton(cfg.webappUrl).catch((e) => log.warn('could not set the menu button:', e.message));
@@ -151,6 +182,7 @@ export function createApp({ cfg = loadConfig(), store, svc, deriv, bot, log = co
   async function stop() {
     abort.abort();
     bot?.stop();
+    await backup?.flush();
     deriv.close?.();
     await new Promise((r) => { server.close(r); server.closeAllConnections?.(); });
     await Promise.race([Promise.allSettled(tasks), sleep(2000)]);
