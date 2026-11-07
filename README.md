@@ -20,11 +20,24 @@ No Blueprint, no database and no disk. Everything is a normal Render **Web Servi
 3. In Render: **New > Web Service**, pick the repository, and set:
    - Runtime: **Node**, build command `npm install`, start command `node server/app.js`
    - Health check path: `/healthz`
-   - Environment: `NODE_VERSION=22.22.2`, `BOT_TOKEN=<token>`, `STATE_CHAT_ID=<your telegram id>`, `KEEP_ALIVE=1`
+   - Environment: `NODE_VERSION=22.22.2`, `BOT_TOKEN=<token>`, `ALERT_CHATS=@your_channel`, `KEEP_ALIVE=1`
 4. When the deploy is live, open `https://<your-service>.onrender.com/healthz` (it should say `{"ok":true}`),
    then send `/start` to your bot. The bot sets its own menu button, so the mini app opens from there.
 
-### Keeping alert recipients after a restart
+### Alerts in your groups and channels (just add the bot)
+
+Add the bot to your group (as a member) and to your channel (as an **administrator** that can post), then set
+`ALERT_CHATS=@your_channel,-1001234567890` (usernames for public chats, numeric ids for private ones; any number of them).
+Every alert is posted to each one. The chats are the recipient list, so nothing needs restoring after a restart.
+To get a group's numeric id, add @RawDataBot or @getidsbot to it briefly (private chats and groups have ids like `-100...`).
+
+Telegram only allows real mini app buttons in private chats, so the alert button is a link. Two choices:
+- Default: the button opens the app's web address in the browser (needs `WEBAPP_URL` or Render's automatic URL).
+- Better: in @BotFather send `/newapp`, pick your bot, and point it at your Render address. BotFather gives a direct link
+  like `https://t.me/your_bot/app`. Set `MINIAPP_LINK` to it and the button opens the mini app inside Telegram,
+  straight on the symbol that fired.
+
+### Keeping direct-message recipients after a restart (only if people also message the bot privately)
 
 Without a database or disk, the user list would be lost on every restart or deploy. Two options, usable together:
 
