@@ -1,7 +1,7 @@
 # SORK Telegram mini app bot
 
 A Telegram bot with a mini web app for the SORK trading concept (Market Structure, Order Flow, Reclamation, Key Level).
-Plain Node.js, **no npm dependencies** (it uses Node's built-in `fetch`, `WebSocket` and `node:sqlite`).
+Plain Node.js, **no npm dependencies** (it uses Node's built-in `fetch`, `WebSocket` and `node:sqlite`, in memory by default).
 
 - **Study guide**: the full guide as a readable page with 13 illustrations, plus the PDF.
 - **Symbols**: the 23 Deriv Volatility indices. Tap one to see its own SORK view: H4 trend, order flow POIs,
@@ -10,25 +10,46 @@ Plain Node.js, **no npm dependencies** (it uses Node's built-in `fetch`, `WebSoc
   (S trend valid, O new inducement/disruption POI or invalidation, R valid reclamation, K valid RBS/SBR and entry
   confirmations, QML, bjeff zone). Per user: on/off, which concepts, and muted symbols.
 
-## Deploy on Render (from GitHub)
+## Deploy on Render (plain Web Service)
 
-1. In Telegram, talk to **@BotFather**, send `/newbot`, and copy the bot token.
+No Blueprint, no database and no disk. Everything is a normal Render **Web Service** with environment variables.
+
+1. In Telegram, talk to **@BotFather**, send `/newbot`, and copy the bot token. Also find your own numeric Telegram id
+   (for example with @userinfobot) and send `/start` to your new bot once.
 2. Push this folder to a GitHub repository.
-3. In Render: **New > Blueprint**, pick the repository. Render reads `render.yaml`
-   (one Node web service, Starter plan, 1 GB disk mounted at `/data`).
-4. When Render asks for `BOT_TOKEN`, paste the token. Apply.
-5. When the deploy is live, open `https://<your-service>.onrender.com/healthz` (it should say `{"ok":true}`),
-   then open your bot in Telegram and send `/start`. The bot sets its own menu button, so the mini app opens from there.
+3. In Render: **New > Web Service**, pick the repository, and set:
+   - Runtime: **Node**, build command `npm install`, start command `node server/app.js`
+   - Health check path: `/healthz`
+   - Environment: `NODE_VERSION=22.22.2`, `BOT_TOKEN=<token>`, `STATE_CHAT_ID=<your telegram id>`, `KEEP_ALIVE=1`
+4. When the deploy is live, open `https://<your-service>.onrender.com/healthz` (it should say `{"ok":true}`),
+   then send `/start` to your bot. The bot sets its own menu button, so the mini app opens from there.
+
+### Keeping alert recipients after a restart
+
+Without a database or disk, the user list would be lost on every restart or deploy. Two options, usable together:
+
+- `STATE_CHAT_ID` (automatic): the bot saves every user and their settings (alerts on/off, concepts, muted symbols) as a
+  small `sork-users.json` file, sent to that chat and **pinned**. On start it reads the pinned file back.
+  Use your own Telegram id (the chat must already have been started with `/start`). Do not unpin or delete that file.
+  A private channel or group where the bot is an admin also works.
+- `ALERT_CHAT_IDS` (fixed list): comma separated Telegram ids that always get alerts, e.g. `ALERT_CHAT_IDS=123456789,987654321`.
+  Good for a small private group; it needs no backup at all.
+
+Alerts are held in memory and rebuilt from the market feed. After a restart the first pass over the markets only fills
+the list and sends no messages, so you are not re-alerted about things you already got.
+
+### Keep-alive
+
+A free Web Service spins down after 15 minutes without incoming requests, which stops monitoring and alerts.
+`KEEP_ALIVE=1` makes the app ping its own public address every `KEEP_ALIVE_MINUTES` (default 10), which counts as traffic.
+It needs `WEBAPP_URL` or Render's `RENDER_EXTERNAL_URL` (automatic). Caveats: Render's free plan has a monthly instance-hour
+limit and can still restart the service, so for the most reliable alerts use a paid instance (the keep-alive is then not needed).
+An outside pinger (for example UptimeRobot on `/healthz`) works as well and also wakes a service that did go down.
 
 Notes:
-- **Use a paid (Starter) instance.** A free Render web service spins down after 15 minutes without traffic, which
-  stops the market monitoring and the alerts, and a free service has no persistent disk, so users and alerts are wiped on every deploy.
 - Run exactly **one instance**. The bot uses long polling, and two instances would fight over Telegram's updates.
 - `WEBAPP_URL` is optional on Render: the service uses the `RENDER_EXTERNAL_URL` that Render provides.
   Set `WEBAPP_URL` yourself if you use a custom domain.
-- Without a Blueprint: create a **Web Service**, runtime Node, build command `npm install`, start command
-  `node server/app.js`, health check path `/healthz`, add a disk at `/data`, and set `NODE_VERSION=22.22.2`
-  (or any 22.13+), `DB_PATH=/data/sork.db` and `BOT_TOKEN`.
 
 ## Run it on your own machine
 
