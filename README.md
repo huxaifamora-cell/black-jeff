@@ -1,1 +1,69 @@
-# black-jeff
+# SORK Telegram mini app bot
+
+A Telegram bot with a mini web app for the SORK trading concept (Market Structure, Order Flow, Reclamation, Key Level).
+Plain Node.js, **no npm dependencies** (it uses Node's built-in `fetch`, `WebSocket` and `node:sqlite`).
+
+- **Study guide**: the full guide as a readable page with 13 illustrations, plus the PDF.
+- **Symbols**: the 23 Deriv Volatility indices. Tap one to see its own SORK view: H4 trend, order flow POIs,
+  reclamation progress, key level (with entry, SL, TP), QML, advanced key level / bjeff zone, and a chart with the zones drawn on it.
+- **Alerts**: a feed, and Telegram messages, when a SORK concept becomes valid on any symbol
+  (S trend valid, O new inducement/disruption POI or invalidation, R valid reclamation, K valid RBS/SBR and entry
+  confirmations, QML, bjeff zone). Per user: on/off, which concepts, and muted symbols.
+
+## Deploy on Render (from GitHub)
+
+1. In Telegram, talk to **@BotFather**, send `/newbot`, and copy the bot token.
+2. Push this folder to a GitHub repository.
+3. In Render: **New > Blueprint**, pick the repository. Render reads `render.yaml`
+   (one Node web service, Starter plan, 1 GB disk mounted at `/data`).
+4. When Render asks for `BOT_TOKEN`, paste the token. Apply.
+5. When the deploy is live, open `https://<your-service>.onrender.com/healthz` (it should say `{"ok":true}`),
+   then open your bot in Telegram and send `/start`. The bot sets its own menu button, so the mini app opens from there.
+
+Notes:
+- **Use a paid (Starter) instance.** A free Render web service spins down after 15 minutes without traffic, which
+  stops the market monitoring and the alerts, and a free service has no persistent disk, so users and alerts are wiped on every deploy.
+- Run exactly **one instance**. The bot uses long polling, and two instances would fight over Telegram's updates.
+- `WEBAPP_URL` is optional on Render: the service uses the `RENDER_EXTERNAL_URL` that Render provides.
+  Set `WEBAPP_URL` yourself if you use a custom domain.
+- Without a Blueprint: create a **Web Service**, runtime Node, build command `npm install`, start command
+  `node server/app.js`, health check path `/healthz`, add a disk at `/data`, and set `NODE_VERSION=22.22.2`
+  (or any 22.13+), `DB_PATH=/data/sork.db` and `BOT_TOKEN`.
+
+## Run it on your own machine
+
+Needs Node 22.13 or newer.
+
+```
+cp .env.example .env      # fill in BOT_TOKEN, and set DEV_ALLOW_NO_AUTH=1 to try it in a browser without Telegram
+npm run dev               # http://localhost:8080
+npm test
+```
+
+Telegram only opens mini apps over HTTPS, so to test inside Telegram locally use a tunnel
+(for example `cloudflared tunnel --url http://localhost:8080`) and set `WEBAPP_URL` to the tunnel address.
+
+## How it works
+
+- `server/deriv.js` pulls closed H4, H1 and M5 candles from Deriv's public WebSocket (new gateway first, legacy second).
+  Symbol codes are looked up from Deriv by display name; a name Deriv does not list shows as "not on Deriv".
+- `server/engine.js` holds the SORK rules as pure functions. The rules that are "judged by eye" are numbers in
+  `defaultParams` at the top of the file (swing size, "almost identical" tolerance, "longer than average" body, "slightly outside" buffer, and so on).
+- `server/service.js` evaluates each symbol, stores alerts (duplicates are ignored) and only notifies fresh events.
+- `server/app.js` serves the mini app and the API, validates Telegram's login data, and runs the feed loop and the bot.
+- `web/` is the mini app (plain HTML and JavaScript) and the study guide.
+
+Commands in the bot: `/start`, `/help`, `/alerts_on`, `/alerts_off`.
+
+## Study guide assets (optional)
+
+`web/` already contains the generated guide. To rebuild the illustrations, the PDF and the in-app guide you need
+Python with matplotlib, reportlab and Pillow: `python tools/make_figs2.py && python tools/build_pdf.py && python tools/make_guide_html.py`.
+
+## Things to know
+
+- The engine is covered by offline tests on hand-made candles, and its output was checked against an earlier
+  reference implementation on 40 random markets. It has not yet been run against live Deriv data, so check the first
+  alerts against your own chart reading and tune `defaultParams`.
+- Only closed candles are used, so signals do not repaint.
+- Educational tool, not financial advice.

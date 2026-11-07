@@ -1,0 +1,23 @@
+# Render Blueprint: deploys the bot as one always-on Node web service with a persistent disk for the database.
+# Starter is the smallest plan that never spins down and supports a disk. Free spins down after 15 minutes
+# idle (alerts would stop) and has no disk (the database is wiped on every deploy).
+services:
+  - type: web
+    name: sork-bot
+    runtime: node
+    plan: starter
+    buildCommand: npm install     # there are no dependencies, so this is instant
+    startCommand: node server/app.js
+    healthCheckPath: /healthz
+    disk:
+      name: sork-data
+      mountPath: /data
+      sizeGB: 1
+    envVars:
+      - key: NODE_VERSION
+        value: 22.22.2
+      - key: DB_PATH
+        value: /data/sork.db
+      - key: BOT_TOKEN
+        sync: false                # you paste the token in the Render dashboard
+      # WEBAPP_URL is optional: Render provides RENDER_EXTERNAL_URL (your https://<name>.onrender.com address)
