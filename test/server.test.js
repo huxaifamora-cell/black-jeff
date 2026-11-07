@@ -70,3 +70,65 @@ test('server: login is required when not in dev mode', async () => {
     assert.equal(r.status, 200); assert.equal((await r.json()).me.tg_id, 7);
   } finally { await app.stop(); }
 });
+
+test('users can be exported and restored without a database file', async () => {
+  const { Store } = await import('../server/store.js');
+  const a = new Store(':memory:');
+  let changes = 0; a.onUsersChanged = () => changes++;
+  a.upsertUser(5, 'Ann'); a.updateSettings(5, { subscribed: false, muted: ['V10'], concepts: ['S'] });
+  assert.ok(changes >= 2);
+  const b = new Store(':memory:');
+  assert.equal(b.importUsers(a.exportUsers()), 1);
+  const u = b.getUser(5);
+  assert.deepEqual([u.subscribed, u.muted, u.concepts], [false, ['V10'], ['S']]);
+  assert.deepEqual(b.recipients('V50', 'S'), []);
+});
+
+test('ALERT_CHAT_IDS recipients are seeded and the keep-alive pings /healthz', async () => {
+  const cfg = { botToken: 'x', webappUrl: 'http://127.0.0.1:1', port: 0, dbPath: ':memory:', requireAuth: true, pollSeconds: 60,
+    derivUrls: [], derivAppId: '1', alertChatIds: [11, 22], stateChatId: '', keepAliveMinutes: 0.0005 };
+  const hits = []; const realFetch = globalThis.fetch;
+  globalThis.fetch = async (u) => { hits.push(String(u)); return { ok: true }; };
+  const app = createApp({ cfg, store: new Store(':memory:'), deriv: { symbolCodes: async () => ({}), close() {} },
+    bot: { send() {}, stop() {}, poll() { return new Promise(() => {}); }, setMenuButton() { return Promise.resolve(); } }, log: quiet });
+  try {
+    await app.start(0);
+    assert.deepEqual(app.store.recipients('V10', 'S').sort(), [11, 22]);
+    await new Promise((r) => setTimeout(r, 120));
+    assert.ok(hits.some((h) => h.endsWith('/healthz')));
+  } finally { globalThis.fetch = realFetch; await app.stop(); }
+});
+
+test('TelegramBackup saves a pinned file and reads it back', async () => {
+  const { TelegramBackup } = await import('../server/backup.js');
+  const calls = []; let stored = null; const realFetch = globalThis.fetch;
+  const bot = { token: 'T', base: 'https://tg/botT/', async call(m, p) {
+    calls.push(m);
+    if (m === 'getChat') return { pinned_message: { message_id: 9, document: { file_name: 'sork-users.json', file_id: 'f' } } };
+    if (m === 'getFile') return { file_path: 'docs/x.json' };
+    return {};
+  } };
+  globalThis.fetch = async (u, o) => {
+    if (String(u).endsWith('sendDocument')) { stored = await o.body.get('document').text(); return { json: async () => ({ ok: true, result: { message_id: 10 } }) }; }
+    return { ok: true, json: async () => JSON.parse(stored) };
+  };
+  try {
+    const b = new TelegramBackup(bot, '1', quiet, 10);
+    b.schedule(() => [{ tg_id: 7 }]); await b.flush();
+    assert.ok(calls.includes('pinChatMessage'));
+    assert.deepEqual(await b.load(), [{ tg_id: 7 }]);
+  } finally { globalThis.fetch = realFetch; }
+});
+
+test('alerts are posted to ALERT_CHANNEL with a plain link button', async () => {
+  const sent = [];
+  const cfg = { botToken: 'x', webappUrl: 'https://app.example', port: 0, dbPath: ':memory:', requireAuth: true, pollSeconds: 60,
+    derivUrls: [], derivAppId: '1', alertChats: ['@chan', '-1001'], miniAppLink: 'https://t.me/b/app' };
+  const app = createApp({ cfg, store: new Store(':memory:'), deriv: { symbolCodes: async () => ({}), close() {} }, background: false,
+    bot: { send(c, t, b) { sent.push([c, b]); }, stop() {}, poll() {}, setMenuButton() { return Promise.resolve(); } }, log: quiet });
+  assert.ok(app.notify, 'notify exposed');
+  await app.notify({ symbol: 'V10', symbol_name: 'Volatility 10 Index', concept: 'S', title: 't', body: 'b' }, true);
+  assert.deepEqual(sent.map((x) => x[0]), ['@chan', '-1001']); assert.equal(sent[0][1].plain, true);
+  assert.equal(sent[0][1].url, 'https://t.me/b/app?startapp=V10');
+  await app.stop();
+});
