@@ -12,9 +12,10 @@ export class Bot {
     return data.result;
   }
 
+  // button.plain = ordinary link button (channels do not allow mini app buttons)
   send(chatId, text, button) {
     const params = { chat_id: chatId, text, parse_mode: 'HTML', disable_web_page_preview: true };
-    if (button) params.reply_markup = { inline_keyboard: [[{ text: button.text, web_app: { url: button.url } }]] };
+    if (button) params.reply_markup = { inline_keyboard: [[button.plain ? { text: button.text, url: button.url } : { text: button.text, web_app: { url: button.url } }]] };
     return this.call('sendMessage', params);
   }
 

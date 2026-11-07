@@ -10,6 +10,12 @@ export function loadConfig() {
     dbPath: e.DB_PATH || ':memory:',                         // default: in memory, no database or disk needed
     // Alert recipients that always receive alerts (comma separated Telegram user ids), even after a restart.
     alertChatIds: (e.ALERT_CHAT_IDS || '').split(',').map((x) => Number(x.trim())).filter((n) => Number.isInteger(n) && n !== 0),
+    // Channels and groups that receive every alert: @channelname or numeric ids (-100...). The bot must be added there (admin in a channel).
+    // Several are allowed, comma separated. ALERT_CHANNEL is the older name and still works.
+    alertChats: (e.ALERT_CHATS || e.ALERT_CHANNEL || '').split(',').map((x) => x.trim()).filter(Boolean),
+    // Direct link of the mini app (from BotFather /newapp), e.g. https://t.me/your_bot/app. Makes the alert button open the
+    // mini app inside a group or channel, straight on the symbol. Without it the button opens the plain web address.
+    miniAppLink: (e.MINIAPP_LINK || '').trim().replace(/\/+$/, ''),
     // Telegram chat (usually your own user id) where the bot keeps its pinned user backup. Empty = no backup.
     stateChatId: (e.STATE_CHAT_ID || '').trim(),
     // Keep-alive: ping our own public URL every N minutes so a free Web Service does not spin down. 0 = off.

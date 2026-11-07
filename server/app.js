@@ -104,11 +104,18 @@ export function createApp({ cfg = loadConfig(), store, svc, deriv, bot, log = co
   });
 
   // ------------------------------------------------------------ background work
-  async function notify(alert) {
-    if (!bot || !warm) return;
-    const button = cfg.webappUrl ? { text: `Open ${alert.symbol_name.replace('Volatility ', 'V').replace(' Index', '')}`, url: `${cfg.webappUrl}/?sym=${alert.symbol}` } : null;
+  async function notify(alert, force) {
+    if (!bot || (!warm && !force)) return;
+    const label = `Open ${alert.symbol_name.replace('Volatility ', 'V').replace(' Index', '')}`;
+    const direct = cfg.miniAppLink ? `${cfg.miniAppLink}?startapp=${alert.symbol}` : null;     // t.me link: works in groups and channels
+    const button = direct || cfg.webappUrl ? { text: label, url: direct || `${cfg.webappUrl}/?sym=${alert.symbol}` } : null;
+    for (const chat of cfg.alertChats || []) {        // groups and channels get every alert; nothing to restore after a restart
+      try { await bot.send(chat, formatAlert(alert), button && { ...button, plain: true }); }
+      catch (e) { log.warn('could not post to', chat + ':', e.message); }
+      await sleep(50);
+    }
     for (const chatId of store.recipients(alert.symbol, alert.concept)) {
-      try { await bot.send(chatId, formatAlert(alert), button); } catch (e) { log.warn('could not message', chatId, e.message); }
+      try { await bot.send(chatId, formatAlert(alert), button && { ...button, plain: !!direct }); } catch (e) { log.warn('could not message', chatId, e.message); }
       await sleep(50);
     }
   }
@@ -189,7 +196,7 @@ export function createApp({ cfg = loadConfig(), store, svc, deriv, bot, log = co
     store.close?.();
   }
 
-  return { server, start, stop, svc, store };
+  return { server, start, stop, svc, store, notify };
 }
 
 // ------------------------------------------------------------ main
