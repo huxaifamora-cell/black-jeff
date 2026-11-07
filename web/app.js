@@ -166,5 +166,5 @@ function renderGuide() {
   };
 }
 
-const q = new URLSearchParams(location.search).get('sym');
+const q = new URLSearchParams(location.search).get('sym') || (tg && tg.initDataUnsafe && tg.initDataUnsafe.start_param) || '';
 if (q) openSymbol(q); else renderSymbols();
