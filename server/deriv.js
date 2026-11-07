@@ -73,7 +73,7 @@ export class Deriv {
 
   // display name (normalised) -> symbol code. Works with the new and the legacy field names.
   async symbolCodes() {
-    const data = await this.request({ active_symbols: 'brief', product_type: 'basic' });
+    const data = await this.request({ active_symbols: 'brief' });
     const out = {};
     for (const s of data.active_symbols || []) {
       const name = s.underlying_symbol_name || s.display_name, code = s.underlying_symbol || s.symbol;
