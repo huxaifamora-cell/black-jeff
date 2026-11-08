@@ -16,6 +16,8 @@ export function loadConfig() {
     // Channels and groups that receive every alert: @channelname or numeric ids (-100...). The bot must be added there (admin in a channel).
     // Several are allowed, comma separated. ALERT_CHANNEL is the older name and still works.
     alertChats: (e.ALERT_CHATS || e.ALERT_CHANNEL || '').split(',').map((x) => x.trim()).filter(Boolean),
+    // ALERT_DMS=0: never send alerts as private messages from the bot. Only ALERT_CHATS get them.
+    dmAlerts: e.ALERT_DMS !== '0',
     // Direct link of the mini app (from BotFather /newapp), e.g. https://t.me/your_bot/app. Makes the alert button open the
     // mini app inside a group or channel, straight on the symbol. Without it the button opens the plain web address.
     miniAppLink: (e.MINIAPP_LINK || '').trim().replace(/\/+$/, ''),

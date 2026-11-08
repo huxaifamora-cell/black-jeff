@@ -114,6 +114,7 @@ export function createApp({ cfg = loadConfig(), store, svc, deriv, bot, log = co
       catch (e) { log.warn('could not post to', chat + ':', e.message); }
       await sleep(50);
     }
+    if (cfg.dmAlerts === false) return;               // channel-only mode: no private alert messages
     for (const chatId of store.recipients(alert.symbol, alert.concept)) {
       try { await bot.send(chatId, formatAlert(alert), button && { ...button, plain: !!direct }); } catch (e) { log.warn('could not message', chatId, e.message); }
       await sleep(50);
