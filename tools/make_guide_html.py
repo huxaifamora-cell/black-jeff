@@ -75,7 +75,8 @@ table{border-collapse:collapse;width:100%;font-size:13px}th{color:#fff;text-alig
 tr:nth-child(even) td{background:#f5f7fa}
 @media (prefers-color-scheme:dark){body{background:#101722;color:#dbe3ec}h2{color:#cfe0f3}.rule{color:#1f2937}td{border-color:#2a3647}tr:nth-child(even) td{background:#162030}figure img{border-color:#2a3647}}
 """
-page = f'<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>SORK study guide</title><style>{CSS}</style></head><body>' + \
+LINK = '<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=JetBrains+Mono:wght@400;500&family=Rajdhani:wght@500;700&display=swap" rel="stylesheet"><link rel="stylesheet" href="/static/guide-theme.css">'
+page = f'<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>SORK study guide</title><style>{CSS}</style>' + LINK + '</head><body>' + \
        '<h1 style="background:#12263F;margin-top:4px"><span>SORK Trading Concept: Study Guide</span></h1><p class="small">A forex trading concept by black jeff. All charts are drawn examples, not real market data.</p>' + \
        "".join(story) + "</body></html>"
 out = os.path.join(HERE, "..", "web", "guide.html")
