@@ -35,8 +35,10 @@ export class Bot {
         }
       } catch (e) {
         if (this.abort.signal.aborted) return;
-        log.warn('getUpdates failed:', e.message);
-        await new Promise((r) => setTimeout(r, 5000));
+        const conflict = /Conflict/.test(e.message);       // another copy of the bot is polling with the same token
+        if (!conflict || !this.warnedConflict) log.warn('getUpdates failed:', e.message);
+        if (conflict) this.warnedConflict = true;
+        await new Promise((r) => setTimeout(r, conflict ? 30000 : 5000));
       }
     }
   }

@@ -6,6 +6,9 @@ export function loadConfig() {
     botToken: e.BOT_TOKEN || '',
     // Render sets RENDER_EXTERNAL_URL for you, so WEBAPP_URL is optional there.
     webappUrl: (e.WEBAPP_URL || e.RENDER_EXTERNAL_URL || '').replace(/\/+$/, ''),
+    // POLL_COMMANDS=0: do not listen for /start and /alerts_on commands. Alerts to groups and channels still work, and no
+    // other copy of the bot can clash with this one.
+    pollCommands: e.POLL_COMMANDS !== '0',
     port: Number(e.PORT || 8080),
     dbPath: e.DB_PATH || ':memory:',                         // default: in memory, no database or disk needed
     // Alert recipients that always receive alerts (comma separated Telegram user ids), even after a restart.

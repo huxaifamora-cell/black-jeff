@@ -181,7 +181,8 @@ export function createApp({ cfg = loadConfig(), store, svc, deriv, bot, log = co
     tasks.push(feedLoop());
     if (bot) {
       if (cfg.webappUrl) bot.setMenuButton(cfg.webappUrl).catch((e) => log.warn('could not set the menu button:', e.message));
-      tasks.push(bot.poll(onUpdate, log));
+      if (cfg.pollCommands !== false) tasks.push(bot.poll(onUpdate, log));
+      else log.info('POLL_COMMANDS=0: bot commands are off, alerts still post to your chats');
     } else log.warn('BOT_TOKEN is not set: the bot is off, only the web API runs');
     return server.address().port;
   }
