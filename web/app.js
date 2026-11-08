@@ -103,7 +103,7 @@ function cards(s, d) {
     (s.adv.zones.length ? s.adv.zones.map(z => `<p class="small">bjeff zone ${box(z, d)} ${z.active_t ? 'active ' + T(z.active_t) : 'waiting for a body close inside'}</p>`).join('') : '<p class="small">No bjeff zone yet.</p>') + '</div>';
   return h;
 }
-const TONE = { s: '#12263F', o: '#1b7f8c', k: '#7a3e9d', qml: '#c8962e', pending: '#6b7785', dead: '#d8454b', adv: '#c8962e', adv2: '#1e9e6a' };
+const TONE = { s: '#3b5b86', o: '#1b7f8c', k: '#7a3e9d', qml: '#a87a14', pending: '#5d6875', dead: '#d8454b', adv: '#a87a14', adv2: '#1e9e6a' };
 function chart(cv, s, tf) {
   const dpr = window.devicePixelRatio || 1, W = cv.clientWidth, Hh = 260;
   cv.width = W * dpr; cv.height = Hh * dpr;
@@ -117,21 +117,31 @@ function chart(cv, s, tf) {
   const Y = v => Hh - 14 - (v - lo) / (hi - lo) * (Hh - 28), step = (W - 6) / cs.length;
   const X = t => { const i = cs.findIndex(c => c[0] >= t); return i < 0 ? W : i === 0 ? 0 : i * step; };
   g.font = '11px sans-serif';
+  const labels = [];                                  // drawn last, on solid tags, so candles and zones never hide them
   ov.forEach(o => {
     const col = TONE[o.tone] || '#888';
     if (o.type === 'box') {
       const x = X(o.t0); g.fillStyle = col + '40'; g.fillRect(x, Y(o.hi), W - x, Y(o.lo) - Y(o.hi));
       g.strokeStyle = col; g.strokeRect(x, Y(o.hi), W - x, Y(o.lo) - Y(o.hi));
-      g.fillStyle = col; g.fillText(o.label, Math.min(x + 4, W - 90), Y(o.hi) + 11);
+      labels.push({ text: o.label, col, x: Math.max(2, x + 2), y: Y(o.hi) + 1 });
     } else {
       const x = X(o.t0); g.strokeStyle = col; g.setLineDash([4, 3]); g.beginPath(); g.moveTo(x, Y(o.y)); g.lineTo(W, Y(o.y)); g.stroke(); g.setLineDash([]);
-      g.fillStyle = col; g.fillText(o.label, W - 80, Y(o.y) - 3);
+      labels.push({ text: o.label, col, x: null, y: Y(o.y) - 15 });
     }
   });
   cs.forEach((c, i) => {
     const x = i * step + step / 2, up = c[4] >= c[1], col = up ? '#1e9e6a' : '#d8454b';
     g.strokeStyle = col; g.fillStyle = col; g.beginPath(); g.moveTo(x, Y(c[2])); g.lineTo(x, Y(c[3])); g.stroke();
     const y1 = Y(Math.max(c[1], c[4])), y2 = Y(Math.min(c[1], c[4])); g.fillRect(x - step * .3, y1, step * .6, Math.max(1, y2 - y1));
+  });
+  const taken = [];
+  labels.forEach(l => {
+    const w = Math.ceil(g.measureText(l.text).width) + 10, h = 15;
+    let x = l.x == null ? W - w - 2 : Math.min(l.x, W - w - 2), y = Math.max(1, Math.min(l.y, Hh - h - 1));
+    for (let n = 0; n < 20 && taken.some(r => x < r.x + r.w && x + w > r.x && y < r.y + h && y + h > r.y); n++) y = y + h + 1 > Hh - h ? 1 : y + h + 1;
+    taken.push({ x, y, w });
+    g.fillStyle = l.col; g.globalAlpha = .95; g.beginPath(); g.roundRect ? g.roundRect(x, y, w, h, 4) : g.rect(x, y, w, h); g.fill(); g.globalAlpha = 1;
+    g.fillStyle = '#fff'; g.textBaseline = 'middle'; g.fillText(l.text, x + 5, y + h / 2 + .5); g.textBaseline = 'alphabetic';
   });
 }
 
