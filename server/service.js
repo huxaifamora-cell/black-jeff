@@ -22,6 +22,27 @@ export const formatAlert = (a) => {
   return `<b>${esc(a.title)}</b>\n${esc(a.symbol_name)}\n${esc(a.body)}`;
 };
 
+// The SORK checklist for one symbol: S structure, O order flow, R reclamation, K key level.
+export function stepsOf(st) {
+  const step = (k, state, text) => ({ k, state, text });
+  if (!st) return { steps: ['S', 'O', 'R', 'K'].map((k) => step(k, 'todo', 'No data yet')), status: 'quiet', plan: null, next: 'Waiting for data' };
+  const S = st.s, pois = ((st.o && st.o.pois) || []).filter((p) => p.role !== 'plq'), rs = (st.r || []).filter((r) => r.role !== 'plq');
+  const a = st.k && st.k.active, valid = !!(a && !a.invalidated);
+  const steps = [
+    S && S.valid ? step('S', 'done', `${S.trend === 1 ? 'Uptrend' : 'Downtrend'} valid on H4`) : step('S', 'todo', 'No valid structure yet'),
+    pois.length ? step('O', 'done', 'Inducement and disruption mapped') : step('O', 'todo', 'Nothing mapped yet'),
+    rs.some((r) => r.state > 0) ? step('R', 'now', `In progress: step ${Math.max(...rs.map((r) => r.state))} of 5 on M5`)
+      : rs.some((r) => r.last_complete) ? step('R', 'done', 'Reclamation complete') : step('R', 'todo', 'Waiting for a reclamation'),
+    valid ? (a.high_prob ? step('K', 'done', `${a.type} key level is valid`) : step('K', 'now', `${a.type} is valid but low probability, not traded`))
+      : step('K', 'todo', a ? 'Last key level was invalidated' : 'No valid key level yet'),
+  ];
+  const ready = valid && a.high_prob;
+  const wait = steps.find((x) => x.state !== 'done');
+  return { steps, status: ready ? 'ready' : (S && S.valid ? 'building' : 'quiet'),
+    plan: valid ? { dir: a.dir, type: a.type, entry: a.plan ? a.plan.entry : null } : null,
+    next: ready ? '' : (wait ? `${wait.k}: ${wait.text}` : '') };
+}
+
 export class Service {
   constructor(store, params = defaultParams, log = console) {
     this.store = store;
@@ -85,18 +106,19 @@ export class Service {
         price: null, updated: null, last_alert: last[s.id] ?? null, digits: 3 };
       if (st) {
         const k = st.k && st.k.active;
-        Object.assign(row, {
+        Object.assign(row, stepsOf(st), {
           trend: st.s ? st.s.trend : null, price: st.price, updated: st.updated, digits: st.digits ?? 3,
           k: k && !k.invalidated ? k.type + (k.high_prob ? '' : '*') : null,
           qml: !!(st.qml && !st.qml.invalidated_t),
         });
       }
+      if (!st) Object.assign(row, stepsOf(null));
       return row;
     });
   }
 
   symbolView(sid) {
     const s = this.byId.get(sid);
-    return s ? { id: sid, name: s.name, short: s.short, available: !!s.available, state: this.states.get(sid) || null } : null;
+    return s ? { id: sid, name: s.name, short: s.short, available: !!s.available, state: this.states.get(sid) || null, ...stepsOf(this.states.get(sid)) } : null;
   }
 }

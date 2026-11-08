@@ -403,7 +403,7 @@ export function evaluate(h4, h1, m5, p = defaultParams, digits = 3) {
       events.push(ev('O', poi.role, poi.dir, poi.bos_t + H1, H1, `O: new ${poi.role} POI (${poi.dir === 1 ? 'bullish' : 'bearish'})`,
         `POI ${f(poi.lo)} to ${f(poi.hi)} (order block body). Line at ${f(poi.line)}.`, `${poi.role}-${poi.bos_t}`, { lo: poi.lo, hi: poi.hi }));
     }
-    overlays.push({ type: 'box', lo: poi.lo, hi: poi.hi, t0: poi.ob_t, label: poi.role === 'plq' ? 'Point of liquidity' : cap(poi.role), tone: 'o' });
+    if (poi.role !== 'plq') overlays.push({ type: 'box', grp: 'o', lo: poi.lo, hi: poi.hi, t0: poi.ob_t, label: cap(poi.role), tone: 'o' });   // point of liquidity is not drawn
   }
   if (of.invalidated) {
     const iv = of.invalidated;
@@ -434,7 +434,7 @@ export function evaluate(h4, h1, m5, p = defaultParams, digits = 3) {
     const plan = tradePlan(act.lo, act.hi, act.dir, atr5, p);
     kState.active = { type: act.type, dir: act.dir, lo: act.lo, hi: act.hi, t0: act.t0, t_valid: act.t_valid, wicks: act.wicks,
       high_prob: act.high_prob, invalidated: inv, plan };
-    overlays.push({ type: 'box', lo: act.lo, hi: act.hi, t0: act.t0, label: act.type + (act.high_prob ? '' : ' (low probability)'), tone: inv ? 'dead' : 'k' });
+    overlays.push({ type: 'box', grp: 'k', lo: act.lo, hi: act.hi, t0: act.t0, label: act.type + (act.high_prob ? '' : ' (low probability)'), tone: inv ? 'dead' : 'k' });
     const uid = `${act.type}-${act.t_valid}`;
     if (inv) {
       events.push(ev('K', 'kl_invalid', act.dir, inv.t, M5, `K: ${act.type} invalidated`,
