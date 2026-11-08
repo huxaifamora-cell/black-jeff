@@ -27,14 +27,20 @@ function setTab(t) {
 }
 
 // ------------------------------------------------------------ symbols
-let radarFilter = 'all';
+// ---- tactical radar: only symbols that are ready to trade are drawn, as markers on the map
+const SLOTS = [[80, 110], [230, 90], [290, 210], [120, 250], [200, 340], [60, 330], [310, 330], [170, 190], [310, 120], [40, 200]];
+function slotFor(id, used) {                           // a stable spot per symbol, so markers do not jump around
+  let h = 0; for (const c of id) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+  for (let i = 0; i < SLOTS.length; i++) { const k = (h + i) % SLOTS.length; if (!used.has(k)) { used.add(k); return SLOTS[k]; } }
+  return SLOTS[h % SLOTS.length];
+}
+const pin = (x, y, s) => { const c = s.plan && s.plan.dir === 1 ? '#8FD14F' : '#E8745A', w = Math.max(48, s.short.length * 8 + 22);
+  return `<g class="pin" data-id="${s.id}" transform="translate(${x} ${y})" tabindex="0" role="button" aria-label="${esc(s.name)}"><path d="M0 0L-9 -16H9Z" fill="${c}"/><rect x="${-w / 2}" y="-38" width="${w}" height="22" rx="3" fill="${c}"/><text y="-23" text-anchor="middle" font-family="JetBrains Mono" font-weight="700" font-size="11" fill="#10150C">${esc(s.short)} ${s.plan && s.plan.dir === 1 ? '&#9650;' : '&#9660;'}</text></g>`; };
 async function renderSymbols() {
   view.innerHTML = '<p class="mut">Loading...</p>';
   try {
     const [{ symbols }, al] = await Promise.all([api('/api/symbols'), api('/api/alerts?limit=1').catch(() => ({ alerts: [] }))]);
-    const G = { ready: [], building: [], quiet: [] };
-    symbols.forEach(s => G[s.status || 'quiet'].push(s));
-    const chip = (k, t) => `<button class="chip ${radarFilter === k ? 'on' : ''}" data-f="${k}">${t}</button>`;
+    const ready = symbols.filter(s => s.status === 'ready'), others = symbols.filter(s => s.status !== 'ready');
     const row = s => {
       const buy = s.plan && s.plan.dir === 1, cls = s.status === 'ready' ? (buy ? 'buy' : 'sell') : s.status === 'building' ? 'build' : '';
       const label = s.status === 'ready' ? `${buy ? 'BUY' : 'SELL'} SETUP READY` : s.status === 'building' ? 'BUILDING' : 'QUIET';
@@ -43,14 +49,18 @@ async function renderSymbols() {
       return `<button class="rrow ${cls}" data-id="${s.id}"><span class="mid"><b>${esc(s.short)}</b><span class="st ${cls || 'quiet'}">${label}</span>${s.qml ? '<span class="tag alt">QML</span>' : ''}<br><span class="small">${sub}</span></span>
         <span><span class="px">${s.price != null ? N(s.price, s.digits) : ''}</span>${arrow(s.trend)}</span></button>`;
     };
-    const grp = (k, title) => (radarFilter === 'all' || radarFilter === k) && G[k].length ? `<div class="grp">${title}</div>` + G[k].map(row).join('') : '';
+    const used = new Set();
+    const map = `<svg class="map" viewBox="0 0 366 400" role="img" aria-label="Tactical radar: symbols ready to trade">${MAP_BG}${ready.map(s => { const [x, y] = slotFor(s.id, used); return pin(x, y, s); }).join('')}` +
+      (ready.length ? '' : '<text x="183" y="205" text-anchor="middle" font-family="Rajdhani" font-weight="700" font-size="20" letter-spacing="3" fill="#A0A78A">NO TARGETS READY</text><text x="183" y="226" text-anchor="middle" font-family="JetBrains Mono" font-size="11" fill="#A0A78A">STANDING BY</text>') + '</svg>';
     const last = al.alerts && al.alerts[0];
-    view.innerHTML = `<div class="row">${chip('all', 'All ' + symbols.length)}${chip('ready', 'Ready ' + G.ready.length)}${chip('building', 'Building ' + G.building.length)}${chip('quiet', 'Quiet ' + G.quiet.length)}</div>` +
-      grp('ready', 'Ready to trade') + grp('building', 'Building') + grp('quiet', 'Quiet') +
+    view.innerHTML = `<h3 style="margin-top:0">Tactical radar</h3>${map}
+      <div class="legend"><span><i style="background:#8FD14F"></i>BUY READY</span><span><i style="background:#E8745A"></i>SELL READY</span></div>` +
+      (ready.length ? `<div class="grp">Ready to trade &middot; ${ready.length}</div>` + ready.map(row).join('') : '') +
       (last ? `<div class="latest"><span>LATEST</span><span style="flex:1">${esc(last.title)}</span><span class="mut">${T(last.ts)}</span></div>` : '') +
-      '<p class="small">Arrow = H4 trend from the last valid break of structure. Ready = a valid, high probability key level (RBS/SBR) exists.</p>';
-    view.querySelectorAll('.chip[data-f]').forEach(b => b.onclick = () => { radarFilter = b.dataset.f; renderSymbols(); });
+      (others.length ? `<details class="more"><summary>Other symbols &middot; ${others.length}</summary>${others.map(row).join('')}</details>` : '') +
+      '<p class="small">Only symbols with a valid, high probability key level (RBS/SBR) are on the map. Arrow = H4 trend.</p>';
     view.querySelectorAll('.rrow').forEach(b => b.onclick = () => openSymbol(b.dataset.id));
+    view.querySelectorAll('.pin').forEach(g => { g.onclick = () => openSymbol(g.dataset.id); g.onkeydown = e => { if (e.key === 'Enter') openSymbol(g.dataset.id); }; });
   } catch (e) { view.innerHTML = `<p class="down">${esc(e.message)}</p>`; }
 }
 
@@ -74,9 +84,18 @@ function drawSymbol(v, alerts) {
   const goBack = () => setTab(tab === 'alerts' ? 'alerts' : 'symbols');
   if (!s) { view.innerHTML = h + '<p class="mut">Waiting for the first data...</p>'; document.getElementById('back').onclick = goBack; return; }
   const wasOpen = !!view.querySelector('details.more[open]');       // keep "Full details" open across refreshes
-  const stp = v.steps.map(x => `<div class="stp ${x.state}"><i>${x.k}</i><div style="flex:1"><b>${{ S: 'Structure', O: 'Order flow', R: 'Reclamation', K: 'Key level' }[x.k]}</b><span class="s">${x.state === 'done' ? '&#10003; DONE' : x.state === 'now' ? '&#9679; NOW' : 'TO DO'}</span><div class="small">${esc(x.text)}</div></div></div>`).join('');
-  const done = v.steps.filter(x => x.state === 'done').length;
-  h += `<div class="card"><h4>Setup progress &middot; ${done} of 4</h4><div class="stepper">${stp}</div>` +
+  const NAME = { S: 'STRUCTURE', O: 'ORDER FLOW', R: 'RECLAMATION', K: 'KEY LEVEL' }, COL = { done: '#8FD14F', now: '#E3C16A', todo: '#3A4A2A' };
+  const WP = [[60, 50], [190, 130], [100, 235], [290, 335]];
+  const seg = ['M60 50C60 100 150 90 190 130', 'M190 130S120 175 100 235', 'M100 235C95 285 250 295 290 335'];
+  const route = seg.map((d, i) => v.steps[i + 1].state === 'done' ? `<path d="${d}" stroke="#8FD14F" stroke-width="3" fill="none"/>` : `<path d="${d}" stroke="#C2A06A" stroke-width="3" stroke-dasharray="8 6" fill="none"/>`).join('') +
+    v.steps.map((x, i) => { const [px, py] = WP[i], c = COL[x.state], lab = NAME[x.k] + (x.k === 'R' && x.state === 'now' ? ' ' + (x.text.match(/step (\d)/) || [, ''])[1] + '/5' : '');
+      return i < 3 ? `<g transform="translate(${px} ${py})"><rect x="-14" y="-14" width="28" height="28" rx="3" fill="#0C1109" stroke="${c}" stroke-width="2"/><text y="4" text-anchor="middle" font-family="JetBrains Mono" font-size="12" fill="${c}">${x.k}</text></g><text x="${px + 22}" y="${py + 5}" font-family="Rajdhani" font-weight="700" font-size="15" fill="#EDEBD8">${lab}</text>`
+        : `<g transform="translate(${px} ${py})"><path d="M0 0V-34" stroke="${x.state === 'todo' ? '#C2A06A' : c}" stroke-width="2"/><path d="M0 -34H26L19 -26L26 -18H0Z" fill="${x.state === 'todo' ? '#C2A06A' : c}"/></g><rect x="${px - 14}" y="${py + 2}" width="28" height="22" rx="3" fill="#0C1109" stroke="${c}" stroke-width="2"/><text x="${px}" y="${py + 18}" text-anchor="middle" font-family="JetBrains Mono" font-size="12" fill="${c}">K</text><text x="${px - 120}" y="${py + 44}" font-family="Rajdhani" font-weight="700" font-size="15" fill="#A0A78A">KEY LEVEL (TARGET)</text>`; }).join('');
+  const done = v.steps.filter(x => x.state === 'done').length, nextWp = v.steps.find(x => x.state !== 'done');
+  const stp = v.steps.map(x => `<div class="rt ${x.state}"><i>${x.state === 'done' ? '&#10003;' : x.state === 'now' ? '&#9679;' : '&#9675;'}</i><b>${x.k}</b> ${esc(x.text)}</div>`).join('');
+  h += `<div class="card"><h4>Route to target &middot; ${done} of 4 cleared</h4>
+    <svg class="map" viewBox="0 0 366 400" role="img" aria-label="Route to target: structure, order flow, reclamation, key level">${ROUTE_BG}${route}</svg>
+    <p class="small">${nextWp ? `Next waypoint: <span class="px">${nextWp.k}</span> &middot; ${esc(nextWp.text)}` : 'All waypoints cleared. Target reached.'}</p><div class="rts">${stp}</div>` +
     (v.plan && v.status === 'ready' ? `<div class="plan"><div><small>${v.plan.dir === 1 ? 'BUY LIMIT' : 'SELL LIMIT'}</small><span class="px">${N(s.k.active.plan.entry, d)}</span></div><div><small>STOP LOSS</small><span class="down">${N(s.k.active.plan.sl, d)}</span></div><div><small>TAKE PROFIT 1:${s.k.active.plan.rr}</small><span class="up">${N(s.k.active.plan.tp, d)}</span></div></div>` : '') + '</div>';
   h += `<div class="pills">${['m5', 'h1', 'h4'].map(x => `<button data-tf="${x}" class="${x === tf ? 'on' : ''}">${x.toUpperCase()}</button>`).join('')}</div>
     <canvas id="chart"></canvas><div class="small">Updated ${T(s.updated)}. Closed candles with the SORK zones.</div>
