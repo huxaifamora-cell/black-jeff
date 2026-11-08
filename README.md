@@ -60,6 +60,7 @@ limit and can still restart the service, so for the most reliable alerts use a p
 An outside pinger (for example UptimeRobot on `/healthz`) works as well and also wakes a service that did go down.
 
 Notes:
+- If the log says `Conflict: terminated by other getUpdates request`, a second copy of the bot is using the same token (see Troubleshooting below).
 - Run exactly **one instance**. The bot uses long polling, and two instances would fight over Telegram's updates.
 - `WEBAPP_URL` is optional on Render: the service uses the `RENDER_EXTERNAL_URL` that Render provides.
   Set `WEBAPP_URL` yourself if you use a custom domain.
@@ -101,3 +102,11 @@ Python with matplotlib, reportlab and Pillow: `python tools/make_figs2.py && pyt
   alerts against your own chart reading and tune `defaultParams`.
 - Only closed candles are used, so signals do not repaint.
 - Educational tool, not financial advice.
+
+## Troubleshooting
+
+- `getUpdates ... Conflict: terminated by other getUpdates request`: two programs are polling the same bot token. During a Render
+  deploy the old and new copies overlap for a minute, which is harmless and stops by itself. If it keeps repeating, something else
+  is running with that token: an old Render service (for example from the earlier Blueprint), a copy on your computer, or another
+  host. Stop or delete that one, or revoke the token in @BotFather (`/revoke`) and put the new one on Render only.
+  If you only want alerts in groups and channels, set `POLL_COMMANDS=0`; the bot then never polls and cannot clash.
