@@ -37,6 +37,11 @@ Telegram only allows real mini app buttons in private chats, so the alert button
   like `https://t.me/your_bot/app`. Set `MINIAPP_LINK` to it and the button opens the mini app inside Telegram,
   straight on the symbol that fired.
 
+### Channel only (no alerts in the bot chat)
+
+Set `ALERT_DMS=0`. The bot then posts alerts only to `ALERT_CHATS` and never as a private message, even to people who pressed
+/start or opened the mini app. You can also drop `STATE_CHAT_ID` and `ALERT_CHAT_IDS`, since there are no private recipients to keep.
+
 ### Keeping direct-message recipients after a restart (only if people also message the bot privately)
 
 Without a database or disk, the user list would be lost on every restart or deploy. Two options, usable together:
