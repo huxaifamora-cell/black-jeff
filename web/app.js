@@ -102,7 +102,7 @@ function drawSymbol(v, alerts) {
   h += `<div class="pills">${['m5', 'h1', 'h4'].map(x => `<button data-tf="${x}" class="${x === tf ? 'on' : ''}">${x.toUpperCase()}</button>`).join('')}</div>
     <canvas id="chart"></canvas><div class="small">Updated ${T(s.updated)}. Closed candles with the SORK zones.</div>
     <details class="more"${wasOpen ? ' open' : ''}><summary>Full details</summary>` + cards(s, d) + `</details>` +
-    `<h3>Alerts for this symbol</h3>` + (alerts.length ? alerts.map(alertHtml).join('') : '<p class="mut">No alerts yet.</p>') +
+    `<h3>Alerts for this symbol</h3>` + (alerts.length ? alerts.map(a => alertHtml(a)).join('') : '<p class="mut">No alerts yet.</p>') +
     `<div class="row"><button class="btn" id="mute">Mute alerts for this symbol</button></div>`;
   view.innerHTML = h;
   document.getElementById('back').onclick = goBack;
@@ -189,18 +189,27 @@ function chart(cv, s, tf) {
 }
 
 // ------------------------------------------------------------ alerts
-const alertHtml = a => `<div class="alert"><b>${esc(a.title)}</b>${esc(a.body)}<div class="m">${esc(a.symbol_name)} &middot; ${T(a.ts)}</div></div>`;
+// One compact row per alert: concept badge, short title, symbol and time. Tap a row to read the details.
+const dayLabel = ts => { const d = new Date(ts * 1000), n = new Date(), ymd = x => x.toDateString();
+  return ymd(d) === ymd(n) ? 'Today' : ymd(d) === ymd(new Date(n - 864e5)) ? 'Yesterday' : d.toLocaleDateString([], { month: 'short', day: 'numeric' }); };
+const clock = ts => new Date(ts * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+const alertHtml = (a, withOpen) => `<details class="arow"><summary><span class="bdg">${esc(a.concept || '')}</span><span class="at"><b>${esc(a.title.replace(/^[A-Z]+: /, ''))}</b><span class="m">${esc(a.symbol_name.replace('Volatility ', 'V').replace(' Index', ''))}</span></span><span class="tm">${clock(a.ts)}</span></summary>
+  <div class="ab">${esc(a.body)}${withOpen ? `<div><button class="btn" data-open="${esc(a.symbol)}">Open chart</button></div>` : ''}</div></details>`;
 async function renderAlerts() {
   view.innerHTML = '<p class="mut">Loading...</p>';
   try {
     const [{ alerts }, { me, concepts }] = await Promise.all([api('/api/alerts?limit=40' + (concept ? '&concept=' + concept : '')), api('/api/me')]);
     const chips = ['', ...concepts].map(c => `<button class="chip ${c === concept ? 'on' : ''}" data-c="${c}">${c || 'All'}</button>`).join('');
-    view.innerHTML = `<div class="card"><h4>Alert messages in Telegram</h4>
+    let list = '', day = '';
+    alerts.forEach(a => { const d = dayLabel(a.ts); if (d !== day) { day = d; list += `<div class="grp">${d}</div>`; } list += alertHtml(a, true); });
+    view.innerHTML = `<h3 style="margin-top:0">Alerts${alerts.length ? ` &middot; ${alerts.length}` : ''}</h3><div class="chips">${chips}</div>` +
+      (alerts.length ? `<div class="alist">${list}</div>` : '<p class="mut">No alerts yet. They appear when a SORK concept becomes valid.</p>') +
+      `<details class="more"><summary>Alert settings</summary><div class="card"><h4>Alert messages in Telegram</h4>
       <div class="row"><button class="btn" id="sub">${me.subscribed ? 'On: tap to pause' : 'Paused: tap to turn on'}</button></div>
       <p class="small">Send me alerts for:</p><div class="row">${concepts.map(c => `<label><input type="checkbox" class="cc" value="${c}" ${me.concepts.includes(c) ? 'checked' : ''}> ${c}</label>`).join(' ')}</div>
-      ${me.muted.length ? `<p class="small">Muted: ${me.muted.join(', ')} <button class="chip" id="unmute">Unmute all</button></p>` : ''}</div>
-      <h3>Feed</h3><div class="row">${chips}</div>` + (alerts.length ? alerts.map(alertHtml).join('') : '<p class="mut">No alerts yet. They appear when a SORK concept becomes valid.</p>');
+      ${me.muted.length ? `<p class="small">Muted: ${me.muted.join(', ')} <button class="chip" id="unmute">Unmute all</button></p>` : ''}</div></details>`;
     view.querySelectorAll('.chip[data-c]').forEach(b => b.onclick = () => { concept = b.dataset.c; renderAlerts(); });
+    view.querySelectorAll('[data-open]').forEach(b => b.onclick = () => openSymbol(b.dataset.open));
     document.getElementById('sub').onclick = async () => { await api('/api/me/settings', { method: 'POST', body: JSON.stringify({ subscribed: !me.subscribed }) }); renderAlerts(); };
     view.querySelectorAll('.cc').forEach(cb => cb.onchange = async () => {
       const sel = [...view.querySelectorAll('.cc:checked')].map(x => x.value);

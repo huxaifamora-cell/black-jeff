@@ -127,3 +127,17 @@ main{max-width:760px;margin:0 auto}
 .row{min-width:0}.rrow .mid{overflow-wrap:anywhere}
 @media (min-width:640px){.map{max-height:560px}.rrow{padding:12px 14px}body{font-size:15px}}
 @media (max-width:360px){.rtabs button{font-size:12px;letter-spacing:.3px}.arr{width:26px;height:26px}.plan div{min-width:80px}}
+
+/* alerts page: one slim list, details on tap */
+.chips{display:flex;gap:6px;overflow-x:auto;padding-bottom:4px;margin-bottom:6px;scrollbar-width:none}.chips::-webkit-scrollbar{display:none}
+.chips .chip{flex:none;min-height:36px;padding:4px 14px}
+.alist{background:var(--card);border:1px solid var(--edge)}
+.alist .grp{margin:0;padding:6px 12px;background:var(--inner);border-bottom:1px solid var(--edge);font-size:12px}
+.arow{border-bottom:1px solid var(--edge)}.arow:last-child{border-bottom:0}
+.arow summary{display:flex;align-items:center;gap:10px;padding:10px 12px;min-height:52px;cursor:pointer;list-style:none}
+.arow summary::-webkit-details-marker{display:none}
+.arow[open]{background:rgba(60,107,45,.12)}
+.bdg{flex:none;min-width:30px;height:30px;padding:0 4px;display:flex;align-items:center;justify-content:center;background:var(--chipbg);border:1px solid var(--tan);color:var(--chipfg);font:700 12px var(--mono)}
+.at{flex:1;min-width:0}.at b{display:block;font:600 14px var(--body);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.at .m{font:11px var(--mono);color:var(--hint)}.tm{flex:none;font:11px var(--mono);color:var(--hint)}
+.ab{padding:0 12px 12px 52px;font-size:13px;color:var(--fg)}.ab .btn{margin-top:10px;min-height:38px;padding:6px 16px}
