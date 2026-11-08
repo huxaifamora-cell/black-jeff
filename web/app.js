@@ -96,7 +96,7 @@ function cards(s, d) {
     <p class="small">${a.wicks} wick(s) inside the POI between the key level and its BOS.</p>` +
     (!a.invalidated && a.high_prob ? `<p class="small">${a.dir === 1 ? 'Buy' : 'Sell'} limit ${N(a.plan.entry, d)} &middot; SL ${N(a.plan.sl, d)} &middot; TP (1:${a.plan.rr}) ${N(a.plan.tp, d)}</p>` : '')
     : '<p class="mut">No valid key level (RBS or SBR) yet.</p>') +
-    (K && K.pending.length ? `<p class="small">Forming: ${K.pending.map(p => p.kind + ' ' + box(p, d)).join('; ')}</p>` : '') + '</div>';
+    '</div>';
   if (s.qml) h += `<div class="card"><h4>QML (H1)</h4><p><b>${s.qml.dir === 1 ? 'Buy' : 'Sell'}</b> POI ${box(s.qml, d)} ${s.qml.invalidated_t ? '<span class="down">invalidated</span>' : ''}</p>
     <p class="small">${s.qml.at_extreme ? 'At the extreme (H1 swing high or low).' : 'Not at the extreme, so it is not alerted.'}</p></div>`;
   if (s.adv) h += `<div class="card"><h4>Advanced key level and bjeff zone</h4><p>50% POI ${box({ lo: s.adv.half[0], hi: s.adv.half[1] }, d)} ${s.adv.entered_t ? `<span class="small">price entered ${T(s.adv.entered_t)}</span>` : ''}</p>` +
