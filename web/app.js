@@ -13,7 +13,7 @@ const T = t => new Date(t * 1000).toLocaleString([], { month: 'short', day: 'num
 const N = (x, d = 3) => x == null ? '-' : Number(x).toFixed(d);
 const P = (x, d) => `<span class="px">${N(x, d)}</span>`;     // price or level, styled
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-const arrow = t => t === 1 ? '<span class="tr up">&#9650;</span>' : t === -1 ? '<span class="tr down">&#9660;</span>' : '<span class="tr mut">-</span>';
+const arrow = t => t === 1 ? '<span class="arr up" title="Uptrend">&#9650;</span>' : t === -1 ? '<span class="arr down" title="Downtrend">&#9660;</span>' : '<span class="arr mut">-</span>';
 
 document.getElementById('tabs').addEventListener('click', e => {
   const b = e.target.closest('button'); if (!b) return;
@@ -27,18 +27,30 @@ function setTab(t) {
 }
 
 // ------------------------------------------------------------ symbols
+let radarFilter = 'all';
 async function renderSymbols() {
   view.innerHTML = '<p class="mut">Loading...</p>';
   try {
-    const { symbols } = await api('/api/symbols');
-    const sec = (title, list) => `<h3>${title}</h3><div class="grid">` + list.map(s => `
-      <button class="sym" data-id="${s.id}"><b>${esc(s.short)}</b>${arrow(s.trend)}<br>
-      <span class="small">${s.available ? (s.price != null ? `<span class="px">${N(s.price, s.digits)}</span>` : 'waiting for data') : 'not on Deriv'}</span><br>
-      ${s.k ? `<span class="tag">${s.k}</span>` : ''}${s.qml ? '<span class="tag alt">QML</span>' : ''}</button>`).join('') + '</div>';
-    view.innerHTML = sec('Volatility indices', symbols.filter(s => !s.name.includes('(1s)'))) +
-      sec('Volatility (1s) indices', symbols.filter(s => s.name.includes('(1s)'))) +
-      '<p class="small">Arrow = H4 trend from the last valid break of structure. Tags: active key level (RBS/SBR, * = low probability) and QML.</p>';
-    view.querySelectorAll('.sym').forEach(b => b.onclick = () => openSymbol(b.dataset.id));
+    const [{ symbols }, al] = await Promise.all([api('/api/symbols'), api('/api/alerts?limit=1').catch(() => ({ alerts: [] }))]);
+    const G = { ready: [], building: [], quiet: [] };
+    symbols.forEach(s => G[s.status || 'quiet'].push(s));
+    const chip = (k, t) => `<button class="chip ${radarFilter === k ? 'on' : ''}" data-f="${k}">${t}</button>`;
+    const row = s => {
+      const buy = s.plan && s.plan.dir === 1, cls = s.status === 'ready' ? (buy ? 'buy' : 'sell') : s.status === 'building' ? 'build' : '';
+      const label = s.status === 'ready' ? `${buy ? 'BUY' : 'SELL'} SETUP READY` : s.status === 'building' ? 'BUILDING' : 'QUIET';
+      const sub = !s.available ? 'not on Deriv' : s.price == null ? 'waiting for data'
+        : s.status === 'ready' ? `${s.plan.type} &middot; entry ${N(s.plan.entry, s.digits)}` : (s.next ? esc(s.next) : 'No setup');
+      return `<button class="rrow ${cls}" data-id="${s.id}"><span class="mid"><b>${esc(s.short)}</b><span class="st ${cls || 'quiet'}">${label}</span>${s.qml ? '<span class="tag alt">QML</span>' : ''}<br><span class="small">${sub}</span></span>
+        <span><span class="px">${s.price != null ? N(s.price, s.digits) : ''}</span>${arrow(s.trend)}</span></button>`;
+    };
+    const grp = (k, title) => (radarFilter === 'all' || radarFilter === k) && G[k].length ? `<div class="grp">${title}</div>` + G[k].map(row).join('') : '';
+    const last = al.alerts && al.alerts[0];
+    view.innerHTML = `<div class="row">${chip('all', 'All ' + symbols.length)}${chip('ready', 'Ready ' + G.ready.length)}${chip('building', 'Building ' + G.building.length)}${chip('quiet', 'Quiet ' + G.quiet.length)}</div>` +
+      grp('ready', 'Ready to trade') + grp('building', 'Building') + grp('quiet', 'Quiet') +
+      (last ? `<div class="latest"><span>LATEST</span><span style="flex:1">${esc(last.title)}</span><span class="mut">${T(last.ts)}</span></div>` : '') +
+      '<p class="small">Arrow = H4 trend from the last valid break of structure. Ready = a valid, high probability key level (RBS/SBR) exists.</p>';
+    view.querySelectorAll('.chip[data-f]').forEach(b => b.onclick = () => { radarFilter = b.dataset.f; renderSymbols(); });
+    view.querySelectorAll('.rrow').forEach(b => b.onclick = () => openSymbol(b.dataset.id));
   } catch (e) { view.innerHTML = `<p class="down">${esc(e.message)}</p>`; }
 }
 
@@ -57,15 +69,22 @@ async function loadSymbol() {
 }
 function drawSymbol(v, alerts) {
   const s = v.state, d = s ? s.digits : 3;
-  let h = `<div class="row"><b style="font-size:17px">${esc(v.name)}</b><span class="px">${s && s.price != null ? N(s.price, d) : ''}</span></div>`;
+  let h = `<div class="row"><button class="back" id="back">&#8249; ${esc(v.short)}</button><span class="px">${s && s.price != null ? N(s.price, d) : ''}</span>${arrow(s && s.s ? s.s.trend : null)}</div><div class="small">${esc(v.name)}</div>`;
   if (!v.available) h += '<p class="down">This symbol was not found on Deriv, so it is not monitored.</p>';
-  if (!s) { view.innerHTML = h + '<p class="mut">Waiting for the first data...</p>'; return; }
-  h += `<div class="small">Updated ${T(s.updated)}. Charts show closed candles with the SORK zones.</div>
-    <div class="pills">${['m5', 'h1', 'h4'].map(x => `<button data-tf="${x}" class="${x === tf ? 'on' : ''}">${x.toUpperCase()}</button>`).join('')}</div>
-    <canvas id="chart"></canvas>` + cards(s, d) +
+  const goBack = () => setTab(tab === 'alerts' ? 'alerts' : 'symbols');
+  if (!s) { view.innerHTML = h + '<p class="mut">Waiting for the first data...</p>'; document.getElementById('back').onclick = goBack; return; }
+  const wasOpen = !!view.querySelector('details.more[open]');       // keep "Full details" open across refreshes
+  const stp = v.steps.map(x => `<div class="stp ${x.state}"><i>${x.k}</i><div style="flex:1"><b>${{ S: 'Structure', O: 'Order flow', R: 'Reclamation', K: 'Key level' }[x.k]}</b><span class="s">${x.state === 'done' ? '&#10003; DONE' : x.state === 'now' ? '&#9679; NOW' : 'TO DO'}</span><div class="small">${esc(x.text)}</div></div></div>`).join('');
+  const done = v.steps.filter(x => x.state === 'done').length;
+  h += `<div class="card"><h4>Setup progress &middot; ${done} of 4</h4><div class="stepper">${stp}</div>` +
+    (v.plan && v.status === 'ready' ? `<div class="plan"><div><small>${v.plan.dir === 1 ? 'BUY LIMIT' : 'SELL LIMIT'}</small><span class="px">${N(s.k.active.plan.entry, d)}</span></div><div><small>STOP LOSS</small><span class="down">${N(s.k.active.plan.sl, d)}</span></div><div><small>TAKE PROFIT 1:${s.k.active.plan.rr}</small><span class="up">${N(s.k.active.plan.tp, d)}</span></div></div>` : '') + '</div>';
+  h += `<div class="pills">${['m5', 'h1', 'h4'].map(x => `<button data-tf="${x}" class="${x === tf ? 'on' : ''}">${x.toUpperCase()}</button>`).join('')}</div>
+    <canvas id="chart"></canvas><div class="small">Updated ${T(s.updated)}. Closed candles with the SORK zones.</div>
+    <details class="more"${wasOpen ? ' open' : ''}><summary>Full details</summary>` + cards(s, d) + `</details>` +
     `<h3>Alerts for this symbol</h3>` + (alerts.length ? alerts.map(alertHtml).join('') : '<p class="mut">No alerts yet.</p>') +
     `<div class="row"><button class="btn" id="mute">Mute alerts for this symbol</button></div>`;
   view.innerHTML = h;
+  document.getElementById('back').onclick = goBack;
   const redraw = () => chart(document.getElementById('chart'), s, tf);
   view.querySelectorAll('.pills button').forEach(b => b.onclick = () => { tf = b.dataset.tf; drawSymbol(v, alerts); });
   document.getElementById('mute').onclick = async () => {
@@ -84,11 +103,11 @@ function cards(s, d) {
        <p class="small">Valid BOS ${T(S.anchor_t)} at ${P(S.level, d)}. ${S.slq ? 'Liquidity (SLQ) present.' : '2 or more BOS without SLQ.'}${S.shift_pending ? ' A newer BOS the other way is not valid yet.' : ''}</p>`
     : '<p class="mut">No valid structure yet.</p>') : '<p class="mut">No data.</p>') + '</div>';
   const O = s.o;
-  h += `<div class="card"><h4>O &middot; Order flow (H1)</h4>` + (O && O.pois.length ? O.pois.map(p =>
+  h += `<div class="card"><h4>O &middot; Order flow (H1)</h4>` + (O && O.pois.some(p => p.role !== 'plq') ? O.pois.filter(p => p.role !== 'plq').map(p =>
     `<p><b>${p.role === 'plq' ? 'Point of liquidity' : p.role}</b> (${p.dir === 1 ? 'bullish' : 'bearish'}) POI ${box(p, d)}</p>`).join('')
     : '<p class="mut">Nothing mapped yet.</p>') +
     (O && O.invalidated ? `<p class="down small">Inducement and disruption were invalidated ${T(O.invalidated.t)}; the trend changed direction and the order flow was re-mapped.</p>` : '') + '</div>';
-  h += `<div class="card"><h4>R &middot; Reclamation (M5)</h4>` + (s.r.length ? s.r.map(r =>
+  h += `<div class="card"><h4>R &middot; Reclamation (M5)</h4>` + (s.r.some(r => r.role !== 'plq') ? s.r.filter(r => r.role !== 'plq').map(r =>
     `<p>${r.role === 'plq' ? 'Point of liquidity' : r.role}: ${r.state ? 'in progress, step ' + r.state + ' of 5' : 'waiting'}${r.last_complete ? ` <span class="small">last complete ${T(r.last_complete)}</span>` : ''}</p>`).join('')
     : '<p class="mut">No POI to watch.</p>') + '<p class="small">A reclamation is a confirmation, not an entry.</p></div>';
   const K = s.k, a = K && K.active;

@@ -11,18 +11,21 @@ html,body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.45 var(--bod
 .mono{font-family:var(--mono)}
 
 /* header band: camo, 150px, with a dark plate behind the text and a solid strip behind the tabs */
-header{position:sticky;top:-104px;z-index:5;height:150px;padding:0;display:flex;flex-direction:column;justify-content:space-between;
+header{height:96px;padding:0;display:flex;flex-direction:column;justify-content:flex-start;
   background:var(--camo) 0 0/200px 160px repeat;border-bottom:1px solid var(--tan);border-radius:0}
 #title{align-self:flex-start;margin:12px 0 0 12px;padding:8px 14px;background:rgba(12,17,9,.82);border:1px solid var(--edge);
   font:700 24px/1 var(--head);letter-spacing:4px;text-transform:uppercase;color:var(--fg);display:flex;flex-direction:column;gap:5px}
 #title small{font:500 10px/1 var(--mono);letter-spacing:1.5px;color:var(--hint);display:flex;align-items:center;gap:7px}
 #title small i{margin-left:6px;font-style:normal;color:var(--up);display:inline-flex;align-items:center;gap:5px}
 #title small i:before{content:"";width:7px;height:7px;border-radius:50%;background:var(--up);box-shadow:0 0 6px var(--up)}
-#tabs{display:flex;gap:4px;background:var(--bg);padding:6px 8px 0;border-top:1px solid var(--tan);border-radius:0}
-#tabs button{flex:1;border:1px solid transparent;border-bottom:0;background:none;color:var(--hint);padding:9px 4px;
-  font:700 15px var(--head);letter-spacing:1.5px;white-space:nowrap;text-transform:uppercase;border-radius:3px 3px 0 0}
-#tabs button.on{background:var(--btn);border-color:var(--tan);color:var(--btnfg)}
-main{padding:12px 12px 40px}
+/* bottom navigation */
+#tabs{position:fixed;left:0;right:0;bottom:0;z-index:6;display:flex;background:var(--inner);border-top:1px solid var(--tan);border-radius:0;
+  padding-bottom:env(safe-area-inset-bottom)}
+#tabs button{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;border:0;background:none;color:var(--hint);padding:9px 4px 8px;
+  font:700 12px var(--head);letter-spacing:1.5px;white-space:nowrap;text-transform:uppercase;border-radius:0}
+#tabs svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8}
+#tabs button.on{background:var(--chipbg);color:var(--chipfg)}
+main{padding:12px 12px 92px}
 h3{margin:16px 0 6px;font:700 14px var(--head);text-transform:uppercase;letter-spacing:2px;color:var(--hint)}
 .grid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
 .sym{background:var(--card);border:1px solid var(--edge);padding:10px;color:inherit;text-align:left;font:inherit}
@@ -49,7 +52,33 @@ canvas{width:100%;height:268px;display:block;border:1px solid var(--edge);border
 .alert:before,.card:has(#sub):before{content:"";position:absolute;left:-1px;right:-1px;top:-1px;height:8px;border-radius:3px 3px 0 0;
   background:var(--camo) 0 0/200px 160px repeat}
 .card:has(#sub){padding-top:18px}
-iframe{width:100%;height:calc(100vh - 150px);border:1px solid var(--edge);background:var(--bg)}
+iframe{width:100%;height:calc(100vh - 250px);border:1px solid var(--edge);background:var(--bg)}
 input[type=checkbox]{accent-color:var(--btn)}
 label{font-family:var(--mono);font-size:12px;color:var(--fg)}
 .px{font-family:var(--mono);color:var(--gold)}
+
+/* direction arrows: filled colour badges so buy and sell read at a glance */
+.arr{display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;font-size:15px;font-weight:700;line-height:1;color:#10150C;border-radius:3px;flex:none}
+.arr.up{background:var(--up);box-shadow:0 0 10px rgba(143,209,79,.55)}.arr.down{background:var(--down);box-shadow:0 0 10px rgba(232,116,90,.55)}.arr.mut{background:var(--inner);border:1px solid var(--edge);color:var(--hint)}
+/* radar */
+.grp{margin:14px 0 6px;font:700 14px var(--head);letter-spacing:2px;text-transform:uppercase;color:var(--hint)}
+.rrow{display:flex;align-items:center;gap:10px;width:100%;background:var(--card);border:1px solid var(--edge);border-left:4px solid var(--edge);padding:9px 10px;margin-bottom:6px;color:inherit;text-align:left;font:inherit}
+.rrow.buy{border-left-color:var(--up)}.rrow.sell{border-left-color:var(--down)}.rrow.build{border-left-color:var(--gold)}
+.rrow .mid{flex:1;min-width:0}.rrow b{font:700 18px var(--head);letter-spacing:1px;text-transform:uppercase;margin-right:8px}
+.st{font:500 10px var(--mono);letter-spacing:.5px}.st.buy{color:var(--up)}.st.sell{color:var(--down)}.st.build{color:var(--gold)}.st.quiet{color:var(--hint)}
+.rrow .px{font-size:13px;display:block;text-align:right}
+.latest{display:flex;gap:8px;align-items:center;margin-top:12px;background:var(--inner);border:1px solid var(--edge);padding:8px 10px;font-size:12px}
+.latest span:first-child{font:500 10px var(--mono);color:var(--gold)}
+/* symbol page */
+.back{border:0;background:none;color:var(--fg);font:700 22px var(--head);letter-spacing:1px;text-transform:uppercase;padding:0}
+.stepper{margin:8px 0}.stp{position:relative;display:flex;gap:12px;padding-bottom:12px}.stp:last-child{padding-bottom:0}
+.stp:before{content:"";position:absolute;left:13px;top:28px;bottom:0;width:2px;background:var(--edge)}.stp:last-child:before{display:none}
+.stp.done:before{background:var(--up)}
+.stp i{font:500 12px var(--mono);font-style:normal;width:28px;height:28px;flex:none;display:flex;align-items:center;justify-content:center;background:var(--inner);border:2px solid var(--edge);color:var(--hint)}
+.stp.done i{border-color:var(--up);color:var(--up)}.stp.now i{border-color:var(--gold);color:var(--gold)}
+.stp b{font:700 15px var(--head);letter-spacing:1px;text-transform:uppercase}.stp .s{float:right;font:500 10px var(--mono);color:var(--hint)}
+.stp.done .s{color:var(--up)}.stp.now .s{color:var(--gold)}
+.plan{display:flex;gap:6px;margin-top:8px}.plan div{flex:1;background:var(--inner);border:1px solid var(--edge);padding:5px 8px}
+.plan small{display:block;font-size:10px;color:var(--hint)}.plan span{font:13px var(--mono)}
+details.more>summary{cursor:pointer;list-style:none;margin:14px 0 6px;font:700 14px var(--head);letter-spacing:2px;text-transform:uppercase;color:var(--hint)}
+details.more>summary:after{content:" \25BE"}details.more[open]>summary:after{content:" \25B4"}
