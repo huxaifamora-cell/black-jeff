@@ -11,6 +11,7 @@ async function api(path, opts = {}) {
 }
 const T = t => new Date(t * 1000).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 const N = (x, d = 3) => x == null ? '-' : Number(x).toFixed(d);
+const P = (x, d) => `<span class="px">${N(x, d)}</span>`;     // price or level, styled
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const arrow = t => t === 1 ? '<span class="tr up">&#9650;</span>' : t === -1 ? '<span class="tr down">&#9660;</span>' : '<span class="tr mut">-</span>';
 
@@ -32,7 +33,7 @@ async function renderSymbols() {
     const { symbols } = await api('/api/symbols');
     const sec = (title, list) => `<h3>${title}</h3><div class="grid">` + list.map(s => `
       <button class="sym" data-id="${s.id}"><b>${esc(s.short)}</b>${arrow(s.trend)}<br>
-      <span class="small">${s.available ? (s.price != null ? N(s.price, s.digits) : 'waiting for data') : 'not on Deriv'}</span><br>
+      <span class="small">${s.available ? (s.price != null ? `<span class="px">${N(s.price, s.digits)}</span>` : 'waiting for data') : 'not on Deriv'}</span><br>
       ${s.k ? `<span class="tag">${s.k}</span>` : ''}${s.qml ? '<span class="tag alt">QML</span>' : ''}</button>`).join('') + '</div>';
     view.innerHTML = sec('Volatility indices', symbols.filter(s => !s.name.includes('(1s)'))) +
       sec('Volatility (1s) indices', symbols.filter(s => s.name.includes('(1s)'))) +
@@ -56,7 +57,7 @@ async function loadSymbol() {
 }
 function drawSymbol(v, alerts) {
   const s = v.state, d = s ? s.digits : 3;
-  let h = `<div class="row"><b style="font-size:17px">${esc(v.name)}</b><span class="mut">${s && s.price != null ? N(s.price, d) : ''}</span></div>`;
+  let h = `<div class="row"><b style="font-size:17px">${esc(v.name)}</b><span class="px">${s && s.price != null ? N(s.price, d) : ''}</span></div>`;
   if (!v.available) h += '<p class="down">This symbol was not found on Deriv, so it is not monitored.</p>';
   if (!s) { view.innerHTML = h + '<p class="mut">Waiting for the first data...</p>'; return; }
   h += `<div class="small">Updated ${T(s.updated)}. Charts show closed candles with the SORK zones.</div>
@@ -74,13 +75,13 @@ function drawSymbol(v, alerts) {
   };
   redraw();
 }
-function box(b, d) { return `${N(b.lo, d)} to ${N(b.hi, d)}`; }
+function box(b, d) { return `${P(b.lo, d)} to ${P(b.hi, d)}`; }
 function cards(s, d) {
   let h = '';
   const S = s.s;
   h += `<div class="card"><h4>S &middot; Market structure (H4)</h4>` + (S ? (S.valid
     ? `<p><b class="${S.trend === 1 ? 'up' : 'down'}">${S.trend === 1 ? 'Uptrend' : 'Downtrend'} is valid</b></p>
-       <p class="small">Valid BOS ${T(S.anchor_t)} at ${N(S.level, d)}. ${S.slq ? 'Liquidity (SLQ) present.' : '2 or more BOS without SLQ.'}${S.shift_pending ? ' A newer BOS the other way is not valid yet.' : ''}</p>`
+       <p class="small">Valid BOS ${T(S.anchor_t)} at ${P(S.level, d)}. ${S.slq ? 'Liquidity (SLQ) present.' : '2 or more BOS without SLQ.'}${S.shift_pending ? ' A newer BOS the other way is not valid yet.' : ''}</p>`
     : '<p class="mut">No valid structure yet.</p>') : '<p class="mut">No data.</p>') + '</div>';
   const O = s.o;
   h += `<div class="card"><h4>O &middot; Order flow (H1)</h4>` + (O && O.pois.length ? O.pois.map(p =>
@@ -94,7 +95,7 @@ function cards(s, d) {
   h += `<div class="card"><h4>K &middot; Key level (H1)</h4>` + (a ? `<p><b>${a.type}</b> (${a.dir === 1 ? 'buy' : 'sell'}) POI ${box(a, d)}
     ${a.invalidated ? `<span class="down"> invalidated ${T(a.invalidated.t)}</span>` : (a.high_prob ? '<span class="up"> valid, high probability</span>' : '<span class="down"> valid but low probability, not traded</span>')}</p>
     <p class="small">${a.wicks} wick(s) inside the POI between the key level and its BOS.</p>` +
-    (!a.invalidated && a.high_prob ? `<p class="small">${a.dir === 1 ? 'Buy' : 'Sell'} limit ${N(a.plan.entry, d)} &middot; SL ${N(a.plan.sl, d)} &middot; TP (1:${a.plan.rr}) ${N(a.plan.tp, d)}</p>` : '')
+    (!a.invalidated && a.high_prob ? `<p class="small">${a.dir === 1 ? 'Buy' : 'Sell'} limit ${P(a.plan.entry, d)} &middot; <span class="down">SL ${P(a.plan.sl, d)}</span> &middot; <span class="up">TP (1:${a.plan.rr}) ${P(a.plan.tp, d)}</span></p>` : '')
     : '<p class="mut">No valid key level (RBS or SBR) yet.</p>') +
     '</div>';
   if (s.qml) h += `<div class="card"><h4>QML (H1)</h4><p><b>${s.qml.dir === 1 ? 'Buy' : 'Sell'}</b> POI ${box(s.qml, d)} ${s.qml.invalidated_t ? '<span class="down">invalidated</span>' : ''}</p>
@@ -103,7 +104,7 @@ function cards(s, d) {
     (s.adv.zones.length ? s.adv.zones.map(z => `<p class="small">bjeff zone ${box(z, d)} ${z.active_t ? 'active ' + T(z.active_t) : 'waiting for a body close inside'}</p>`).join('') : '<p class="small">No bjeff zone yet.</p>') + '</div>';
   return h;
 }
-const TONE = { s: '#3b5b86', o: '#1b7f8c', k: '#7a3e9d', qml: '#a87a14', pending: '#5d6875', dead: '#d8454b', adv: '#a87a14', adv2: '#1e9e6a' };
+const TONE = { s: '#5d7a45', o: '#3C6B2D', k: '#C2A06A', qml: '#8a6a2a', pending: '#5d6875', dead: '#D2603F', adv: '#E3C16A', adv2: '#3C6B2D' };
 function chart(cv, s, tf) {
   const dpr = window.devicePixelRatio || 1, W = cv.clientWidth, Hh = 260;
   cv.width = W * dpr; cv.height = Hh * dpr;
@@ -116,13 +117,14 @@ function chart(cv, s, tf) {
   const pad = (hi - lo) * .06; lo -= pad; hi += pad;
   const Y = v => Hh - 14 - (v - lo) / (hi - lo) * (Hh - 28), step = (W - 6) / cs.length;
   const X = t => { const i = cs.findIndex(c => c[0] >= t); return i < 0 ? W : i === 0 ? 0 : i * step; };
-  g.font = '11px sans-serif';
+  g.font = '11px "JetBrains Mono", ui-monospace, monospace';
   const labels = [];                                  // drawn last, on solid tags, so candles and zones never hide them
   ov.forEach(o => {
     const col = TONE[o.tone] || '#888';
     if (o.type === 'box') {
-      const x = X(o.t0); g.fillStyle = col + '40'; g.fillRect(x, Y(o.hi), W - x, Y(o.lo) - Y(o.hi));
-      g.strokeStyle = col; g.strokeRect(x, Y(o.hi), W - x, Y(o.lo) - Y(o.hi));
+      const x = X(o.t0);
+      if (o.tone === 'adv') { g.strokeStyle = col; g.lineWidth = 1.5; g.setLineDash([6, 4]); g.strokeRect(x, Y(o.hi), W - x, Y(o.lo) - Y(o.hi)); g.setLineDash([]); g.lineWidth = 1; }   // 50% POI: dashed
+      else { g.fillStyle = col + '40'; g.fillRect(x, Y(o.hi), W - x, Y(o.lo) - Y(o.hi)); g.strokeStyle = col; g.strokeRect(x, Y(o.hi), W - x, Y(o.lo) - Y(o.hi)); }
       labels.push({ text: o.label, col, x: Math.max(2, x + 2), y: Y(o.hi) + 1 });
     } else {
       const x = X(o.t0); g.strokeStyle = col; g.setLineDash([4, 3]); g.beginPath(); g.moveTo(x, Y(o.y)); g.lineTo(W, Y(o.y)); g.stroke(); g.setLineDash([]);
@@ -130,7 +132,7 @@ function chart(cv, s, tf) {
     }
   });
   cs.forEach((c, i) => {
-    const x = i * step + step / 2, up = c[4] >= c[1], col = up ? '#1e9e6a' : '#d8454b';
+    const x = i * step + step / 2, up = c[4] >= c[1], col = up ? '#8FD14F' : '#D2603F';
     g.strokeStyle = col; g.fillStyle = col; g.beginPath(); g.moveTo(x, Y(c[2])); g.lineTo(x, Y(c[3])); g.stroke();
     const y1 = Y(Math.max(c[1], c[4])), y2 = Y(Math.min(c[1], c[4])); g.fillRect(x - step * .3, y1, step * .6, Math.max(1, y2 - y1));
   });
@@ -140,8 +142,8 @@ function chart(cv, s, tf) {
     let x = l.x == null ? W - w - 2 : Math.min(l.x, W - w - 2), y = Math.max(1, Math.min(l.y, Hh - h - 1));
     for (let n = 0; n < 20 && taken.some(r => x < r.x + r.w && x + w > r.x && y < r.y + h && y + h > r.y); n++) y = y + h + 1 > Hh - h ? 1 : y + h + 1;
     taken.push({ x, y, w });
-    g.fillStyle = l.col; g.globalAlpha = .95; g.beginPath(); g.roundRect ? g.roundRect(x, y, w, h, 4) : g.rect(x, y, w, h); g.fill(); g.globalAlpha = 1;
-    g.fillStyle = '#fff'; g.textBaseline = 'middle'; g.fillText(l.text, x + 5, y + h / 2 + .5); g.textBaseline = 'alphabetic';
+    g.fillStyle = l.col; g.globalAlpha = .95; g.beginPath(); g.roundRect ? g.roundRect(x, y, w, h, 3) : g.rect(x, y, w, h); g.fill(); g.globalAlpha = 1;
+    g.fillStyle = ['#C2A06A', '#E3C16A'].includes(l.col) ? '#10150C' : '#F4F2E2'; g.textBaseline = 'middle'; g.fillText(l.text, x + 5, y + h / 2 + .5); g.textBaseline = 'alphabetic';
   });
 }
 
