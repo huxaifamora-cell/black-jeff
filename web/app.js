@@ -111,7 +111,8 @@ function chart(cv, s, tf) {
   const g = cv.getContext('2d'); g.scale(dpr, dpr);
   const cs = (s.candles[tf] || []).slice(-80); if (!cs.length) return;
   let lo = Math.min(...cs.map(c => c[3])), hi = Math.max(...cs.map(c => c[2]));
-  const span = hi - lo || 1, ov = (s.overlays || []).filter(o => o.type === 'box' ? (o.hi >= lo - span * .3 && o.lo <= hi + span * .3)
+  const shown = s.overlays || [];
+  const span = hi - lo || 1, ov = shown.filter(o => o.type === 'box' ? (o.hi >= lo - span * .3 && o.lo <= hi + span * .3)
     : (o.tf === tf && o.y >= lo - span * .3 && o.y <= hi + span * .3));
   ov.forEach(o => { lo = Math.min(lo, o.lo ?? o.y); hi = Math.max(hi, o.hi ?? o.y); });
   const pad = (hi - lo) * .06; lo -= pad; hi += pad;
