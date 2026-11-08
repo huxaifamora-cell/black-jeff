@@ -36,11 +36,12 @@ function slotFor(id, used) {                           // a stable spot per symb
 }
 const pin = (x, y, s) => { const c = s.plan && s.plan.dir === 1 ? '#8FD14F' : '#E8745A', w = Math.max(48, s.short.length * 8 + 22);
   return `<g class="pin" data-id="${s.id}" transform="translate(${x} ${y})" tabindex="0" role="button" aria-label="${esc(s.name)}"><path d="M0 0L-9 -16H9Z" fill="${c}"/><rect x="${-w / 2}" y="-38" width="${w}" height="22" rx="3" fill="${c}"/><text y="-23" text-anchor="middle" font-family="JetBrains Mono" font-weight="700" font-size="11" fill="#10150C">${esc(s.short)} ${s.plan && s.plan.dir === 1 ? '&#9650;' : '&#9660;'}</text></g>`; };
+let radarTab = 'ready';
 async function renderSymbols() {
   view.innerHTML = '<p class="mut">Loading...</p>';
   try {
     const [{ symbols }, al] = await Promise.all([api('/api/symbols'), api('/api/alerts?limit=1').catch(() => ({ alerts: [] }))]);
-    const ready = symbols.filter(s => s.status === 'ready'), others = symbols.filter(s => s.status !== 'ready');
+    const G = { ready: symbols.filter(s => s.status === 'ready'), building: symbols.filter(s => s.status === 'building'), quiet: symbols.filter(s => s.status === 'quiet') }, ready = G.ready;
     const row = s => {
       const buy = s.plan && s.plan.dir === 1, cls = s.status === 'ready' ? (buy ? 'buy' : 'sell') : s.status === 'building' ? 'build' : '';
       const label = s.status === 'ready' ? `${buy ? 'BUY' : 'SELL'} SETUP READY` : s.status === 'building' ? 'BUILDING' : 'QUIET';
@@ -55,10 +56,11 @@ async function renderSymbols() {
     const last = al.alerts && al.alerts[0];
     view.innerHTML = `<h3 style="margin-top:0">Tactical radar</h3>${map}
       <div class="legend"><span><i style="background:#8FD14F"></i>BUY READY</span><span><i style="background:#E8745A"></i>SELL READY</span></div>` +
-      (ready.length ? `<div class="grp">Ready to trade &middot; ${ready.length}</div>` + ready.map(row).join('') : '') +
+      `<div class="rtabs" role="tablist">${[['ready', 'Ready to trade'], ['building', 'Building'], ['quiet', 'Quiet']].map(([k, t]) => `<button role="tab" class="${radarTab === k ? 'on' : ''}" data-rt="${k}">${t} <span>${G[k].length}</span></button>`).join('')}</div>` +
+      (G[radarTab].length ? G[radarTab].map(row).join('') : `<p class="mut">${{ ready: 'No symbols are ready to trade.', building: 'Nothing is building right now.', quiet: 'No quiet symbols.' }[radarTab]}</p>`) +
       (last ? `<div class="latest"><span>LATEST</span><span style="flex:1">${esc(last.title)}</span><span class="mut">${T(last.ts)}</span></div>` : '') +
-      (others.length ? `<details class="more"><summary>Other symbols &middot; ${others.length}</summary>${others.map(row).join('')}</details>` : '') +
       '<p class="small">Only symbols with a valid, high probability key level (RBS/SBR) are on the map. Arrow = H4 trend.</p>';
+    view.querySelectorAll('.rtabs button').forEach(b => b.onclick = () => { radarTab = b.dataset.rt; renderSymbols(); });
     view.querySelectorAll('.rrow').forEach(b => b.onclick = () => openSymbol(b.dataset.id));
     view.querySelectorAll('.pin').forEach(g => { g.onclick = () => openSymbol(g.dataset.id); g.onkeydown = e => { if (e.key === 'Enter') openSymbol(g.dataset.id); }; });
   } catch (e) { view.innerHTML = `<p class="down">${esc(e.message)}</p>`; }
