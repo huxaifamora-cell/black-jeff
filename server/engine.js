@@ -426,9 +426,7 @@ export function evaluate(h4, h1, m5, p = defaultParams, digits = 3) {
   // ---- K: key levels on H1
   const vk = validateKls(h1, findKls(h1, p, atr1, p.klLookback), p);
   const valid = vk.filter((k) => k.status === 'valid');
-  const pending = vk.filter((k) => k.status === 'pending' && k.i >= h1.length - 40).slice(-4);
-  const kState = { active: null, pending: pending.map((k) => ({ kind: k.kind === 'R' ? 'RKL' : 'SKL', lo: k.lo, hi: k.hi, t: k.t1 })) };
-  for (const k of pending) overlays.push({ type: 'box', lo: k.lo, hi: k.hi, t0: k.t0, label: k.kind === 'R' ? 'RKL' : 'SKL', tone: 'pending' });
+  const kState = { active: null, pending: [] };      // RKL/SKL (levels not yet valid) are not shown or alerted
   state.k = kState;
   if (valid.length) {
     const act = valid.reduce((a, k) => (k.j > a.j || (k.j === a.j && k.i > a.i) ? k : a));
