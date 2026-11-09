@@ -53,13 +53,15 @@ const RECL = [[108, 109, 106.5, 107], [107, 107.3, 102.5, 103], [103, 103.2, 98.
   [104.5, 105, 102.5, 103], [103, 108, 102.8, 107.5], [107.5, 111, 107, 110.5]];
 const m5From = (rows, t0 = 1000, k = null) => rows.map(([o, h, l, c], i) =>
   k === null ? C(t0 + i * M5, o, h, l, c) : C(t0 + i * M5, k - o, k - l, k - h, k - c));
+const h1From = (rows, t0 = 1000, k = null) => rows.map(([o, h, l, c], i) =>
+  k === null ? C(t0 + i * H1, o, h, l, c) : C(t0 + i * H1, k - o, k - l, k - h, k - c));
 
-test('reclamation, bullish and bearish', () => {
-  let r = reclamation(m5From(RECL), { dir: 1, lo: 100, hi: 104, bos_t: 0 }, P);
-  assert.equal(r.last_complete, 1000 + 5 * M5);
-  r = reclamation(m5From(RECL, 1000, 204), { dir: -1, lo: 100, hi: 104, bos_t: 0 }, P);
-  assert.equal(r.last_complete, 1000 + 5 * M5);
-  r = reclamation(m5From([...RECL.slice(0, 4), [104.5, 108, 104.2, 107.5], [107.5, 111, 107, 110.5]]), { dir: 1, lo: 100, hi: 104, bos_t: 0 }, P);
+test('reclamation (H1), bullish and bearish', () => {
+  let r = reclamation(h1From(RECL), { dir: 1, lo: 100, hi: 104, bos_t: 0 }, P);
+  assert.equal(r.last_complete, 1000 + 5 * H1);
+  r = reclamation(h1From(RECL, 1000, 204), { dir: -1, lo: 100, hi: 104, bos_t: 0 }, P);
+  assert.equal(r.last_complete, 1000 + 5 * H1);
+  r = reclamation(h1From([...RECL.slice(0, 4), [104.5, 108, 104.2, 107.5], [107.5, 111, 107, 110.5]]), { dir: 1, lo: 100, hi: 104, bos_t: 0 }, P);
   assert.equal(r.last_complete, null); assert.equal(r.state, 3);
 });
 
