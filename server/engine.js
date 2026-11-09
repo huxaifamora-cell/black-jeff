@@ -125,6 +125,10 @@ export function orderBlock(cs, b, p) {
   return start;
 }
 
+// POI box. The two candles are the order block and the candle right after it.
+// Bearish: top = highest body edge of the two, bottom = low of the one with the longer lower wick.
+// Bullish (mirror): bottom = lowest body edge of the two, top = high of the one with the longer upper wick.
+// Exception kept from before: a LONG order block body uses only 50% of its body (no wick extension).
 export function poiFromOb(cs, j, d, p) {
   const c = cs[j];
   let lo = bot(c), hi = top(c);
@@ -134,6 +138,15 @@ export function poiFromOb(cs, j, d, p) {
   if (avg > 0 && b > p.longBodyMult * avg) {
     if (d === 1) hi = lo + b / 2;   // bullish scenario: bottom 50% of the body
     else lo = hi - b / 2;           // bearish scenario: top 50% of the body
+    return [lo, hi];
+  }
+  const n = cs[j + 1] || c;         // no next candle yet: the order block alone
+  if (d === -1) {
+    hi = Math.max(top(c), top(n));
+    lo = loWick(c) >= loWick(n) ? c.l : n.l;
+  } else {
+    lo = Math.min(bot(c), bot(n));
+    hi = upWick(c) >= upWick(n) ? c.h : n.h;
   }
   return [lo, hi];
 }
