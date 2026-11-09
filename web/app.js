@@ -23,7 +23,8 @@ function setTab(t) {
   tab = t; current = null; clearInterval(timer);
   document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === t));
   if (tg) tg.BackButton.hide();
-  ({ symbols: renderSymbols, alerts: renderAlerts, guide: renderGuide })[t]();
+  rkLeave();
+  ({ symbols: renderSymbols, alerts: renderAlerts, guide: renderGuide, rank: renderRank })[t]();
 }
 
 // ------------------------------------------------------------ symbols
@@ -68,7 +69,7 @@ async function renderSymbols() {
 
 // ------------------------------------------------------------ symbol page
 function openSymbol(id) {
-  current = id; tf = 'm5'; clearInterval(timer);
+  rkLeave(); current = id; tf = 'm5'; clearInterval(timer);
   if (tg) { tg.BackButton.show(); tg.BackButton.onClick(() => setTab(tab === 'alerts' ? 'alerts' : 'symbols')); }
   loadSymbol(); timer = setInterval(loadSymbol, 30000);
 }
@@ -76,7 +77,7 @@ async function loadSymbol() {
   if (!current) return;
   try {
     const [v, al] = await Promise.all([api('/api/symbol/' + current), api('/api/alerts?symbol=' + current + '&limit=15')]);
-    drawSymbol(v, al.alerts);
+    drawSymbol(v, al.alerts); rkSymbolSeen(v);
   } catch (e) { view.innerHTML = `<p class="down">${esc(e.message)}</p>`; }
 }
 function drawSymbol(v, alerts) {
@@ -97,7 +98,7 @@ function drawSymbol(v, alerts) {
   const stp = v.steps.map(x => `<div class="rt ${x.state}"><i>${x.state === 'done' ? '&#10003;' : x.state === 'now' ? '&#9679;' : '&#9675;'}</i><b>${x.k}</b> ${esc(x.text)}</div>`).join('');
   h += `<div class="card"><h4>Route to target &middot; ${done} of 4 cleared</h4>
     <svg class="map" viewBox="0 0 366 400" role="img" aria-label="Route to target: structure, order flow, reclamation, key level">${ROUTE_BG}${route}</svg>
-    <p class="small">${nextWp ? `Next waypoint: <span class="px">${nextWp.k}</span> &middot; ${esc(nextWp.text)}` : 'All waypoints cleared. Target reached.'}</p><div class="rts">${stp}</div>` +
+    <p class="small">Tap each step below to confirm you have read it.<br>${nextWp ? `Next waypoint: <span class="px">${nextWp.k}</span> &middot; ${esc(nextWp.text)}` : 'All waypoints cleared. Target reached.'}</p><div class="rts">${stp}</div>` +
     (v.plan && v.status === 'ready' ? `<div class="plan"><div><small>${v.plan.dir === 1 ? 'BUY LIMIT' : 'SELL LIMIT'}</small><span class="px">${N(s.k.active.plan.entry, d)}</span></div><div><small>STOP LOSS</small><span class="down">${N(s.k.active.plan.sl, d)}</span></div><div><small>TAKE PROFIT 1:${s.k.active.plan.rr}</small><span class="up">${N(s.k.active.plan.tp, d)}</span></div></div>` : '') + '</div>';
   h += `<div class="pills">${['m5', 'h1', 'h4'].map(x => `<button data-tf="${x}" class="${x === tf ? 'on' : ''}">${x.toUpperCase()}</button>`).join('')}</div>
     <canvas id="chart"></canvas><div class="small">Updated ${T(s.updated)}. Closed candles with the SORK zones.</div>
@@ -105,7 +106,7 @@ function drawSymbol(v, alerts) {
     `<h3>Alerts for this symbol</h3>` + (alerts.length ? alerts.map(a => alertHtml(a)).join('') : '<p class="mut">No alerts yet.</p>') +
     `<div class="row"><button class="btn" id="mute">Mute alerts for this symbol</button></div>`;
   view.innerHTML = h;
-  document.getElementById('back').onclick = goBack;
+  document.getElementById('back').onclick = goBack; rkRouteReview(v);
   const redraw = () => chart(document.getElementById('chart'), s, tf);
   view.querySelectorAll('.pills button').forEach(b => b.onclick = () => { tf = b.dataset.tf; drawSymbol(v, alerts); });
   document.getElementById('mute').onclick = async () => {
@@ -186,6 +187,7 @@ function chart(cv, s, tf) {
     g.fillStyle = l.col; g.globalAlpha = .95; g.beginPath(); g.roundRect ? g.roundRect(x, y, w, h, 3) : g.rect(x, y, w, h); g.fill(); g.globalAlpha = 1;
     g.fillStyle = ['#C2A06A', '#E3C16A'].includes(l.col) ? '#10150C' : '#F4F2E2'; g.textBaseline = 'middle'; g.fillText(l.text, x + 5, y + h / 2 + .5); g.textBaseline = 'alphabetic';
   });
+  return { toPrice: y => lo + (Hh - 14 - y) / (Hh - 28) * (hi - lo), xOf: X, step, lo, hi };
 }
 
 // ------------------------------------------------------------ alerts
@@ -221,12 +223,16 @@ async function renderAlerts() {
 
 // ------------------------------------------------------------ study guide
 function renderGuide() {
-  view.innerHTML = `<div class="row"><button class="btn" id="pdf">Download the PDF</button></div><iframe src="/static/guide.html" title="SORK study guide"></iframe>`;
+  view.innerHTML = `<div class="row"><button class="btn" id="pdf">Download the PDF</button><button class="btn" id="qz">SORK quiz</button></div><div id="gprog" class="gprog"></div><iframe src="/static/guide.html" title="SORK study guide"></iframe>`;
   document.getElementById('pdf').onclick = () => {
     const u = location.origin + '/static/SORK_Trading_Concept_Study_Guide.pdf';
     tg ? tg.openLink(u) : window.open(u, '_blank');
   };
+  document.getElementById('qz').onclick = renderQuizMenu;
+  rkGuideBar();
+  const fr = view.querySelector('iframe'); fr.addEventListener('load', () => rkGuideHook(fr));
 }
 
 const q = new URLSearchParams(location.search).get('sym') || (tg && tg.initDataUnsafe && tg.initDataUnsafe.start_param) || '';
 if (q) openSymbol(q); else renderSymbols();
+rkCheckIn();
