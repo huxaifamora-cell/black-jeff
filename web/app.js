@@ -132,7 +132,7 @@ function cards(s, d) {
     `<p><b>${p.role === 'plq' ? 'Point of liquidity' : p.role}</b> (${p.dir === 1 ? 'bullish' : 'bearish'}) POI ${box(p, d)}</p>`).join('')
     : '<p class="mut">Nothing mapped yet.</p>') +
     (O && O.invalidated ? `<p class="down small">Inducement and disruption were invalidated ${T(O.invalidated.t)}; the trend changed direction and the order flow was re-mapped.</p>` : '') + '</div>';
-  h += `<div class="card"><h4>R &middot; Reclamation (M5)</h4>` + (s.r.some(r => r.role !== 'plq') ? s.r.filter(r => r.role !== 'plq').map(r =>
+  h += `<div class="card"><h4>R &middot; Reclamation (H1)</h4>` + (s.r.some(r => r.role !== 'plq') ? s.r.filter(r => r.role !== 'plq').map(r =>
     `<p>${r.role === 'plq' ? 'Point of liquidity' : r.role}: ${r.state ? 'in progress, step ' + r.state + ' of 5' : 'waiting'}${r.last_complete ? ` <span class="small">last complete ${T(r.last_complete)}</span>` : ''}</p>`).join('')
     : '<p class="mut">No POI to watch.</p>') + '<p class="small">A reclamation is a confirmation, not an entry.</p></div>';
   const K = s.k, a = K && K.active;
