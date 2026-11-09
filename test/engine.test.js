@@ -38,7 +38,11 @@ test('order block and POI body rules', () => {
   const j = orderBlock(cs, b, P);
   assert.equal(j, 7); assert.ok(cs[j].c < cs[j].o);
   let [lo, hi] = poiFromOb(cs, j, 1, P);
-  near(lo, Math.min(cs[j].o, cs[j].c)); near(hi, Math.max(cs[j].o, cs[j].c));       // normal body: body to body
+  const nx = cs[j + 1];                                                              // bullish: bottom of the 2 bodies up to the longer upper wick
+  near(lo, Math.min(cs[j].o, cs[j].c, nx.o, nx.c));
+  near(hi, (cs[j].h - Math.max(cs[j].o, cs[j].c)) >= (nx.h - Math.max(nx.o, nx.c)) ? cs[j].h : nx.h);
+  const bear = [C(0, 100, 101, 99.9, 100.9), C(1, 100.9, 101, 98.0, 98.2)];        // OB wick 0.1, next candle lower wick 0.2
+  const bb = poiFromOb(bear, 0, -1, P); near(bb[0], 98.0); near(bb[1], 100.9);       // bearish: top of 2 bodies down to the longest wick
   const base = Array.from({ length: 10 }, (_, i) => C(i, 100, 100.6, 99.9, 100.5));
   const all = [...base, C(10, 104, 104.2, 99.0, 100.0)];                              // long body 100..104
   [lo, hi] = poiFromOb(all, 10, 1, P); near(lo, 100); near(hi, 102);                  // bullish: bottom 50%
