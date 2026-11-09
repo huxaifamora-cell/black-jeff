@@ -1,6 +1,6 @@
 {
   "name": "sork-bot",
-  "version": "0.52.0",
+  "version": "0.53.0",
   "description": "SORK trading concept: Telegram mini app bot with study guide, per-symbol SORK view and alerts for Deriv Volatility indices",
   "private": true,
   "type": "module",

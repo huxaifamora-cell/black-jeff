@@ -89,6 +89,12 @@ Telegram only opens mini apps over HTTPS, so to test inside Telegram locally use
   Symbol codes are looked up from Deriv by display name; a name Deriv does not list shows as "not on Deriv".
 - `server/engine.js` holds the SORK rules as pure functions. The rules that are "judged by eye" are numbers in
   `defaultParams` at the top of the file (swing size, "almost identical" tolerance, "longer than average" body, "slightly outside" buffer, and so on).
+- H1 always means the last 2 months of H1 candles (`h1Days: 60`, about 1,440 candles; the feed requests that many). Key levels, order flow,
+  reclamation and the QML liquidity check all use that window.
+- Key level edges: a resistant key level needs equal (or almost equal) body TOPS, a support key level needs equal body BOTTOMS; the other edge can be any length.
+  RBS follows the resistant rule and SBR the support rule. Key level POI boxes start at the left edge of the first candle of the key level.
+- A QML is only alerted when its reversal point is at, or within `plqNearAtr` x H1 ATR of, a point of liquidity (any H1 BOS in the window except the
+  current inducement and disruption, and formed before the reversal).
 - `server/service.js` evaluates each symbol, stores alerts (duplicates are ignored) and only notifies fresh events.
 - `server/app.js` serves the mini app and the API, validates Telegram's login data, and runs the feed loop and the bot.
 - `web/` is the mini app (plain HTML and JavaScript) and the study guide.
