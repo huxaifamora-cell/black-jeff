@@ -6,7 +6,7 @@
 export const H4 = 14400, H1 = 3600, M5 = 300;
 
 export const defaultParams = {
-  swingK: 2,            // candles on each side that confirm a swing high/low
+  swingK: 1,            // candles on each side that confirm a swing high/low
   atrLen: 14,
   longBodyMult: 1.5,    // "longer than average" body = more than this x the average body
   avgBodyLen: 20,
@@ -63,13 +63,13 @@ export function findBos(cs, k) {
     const c = cs[i];
     while (hp < highs.length && highs[hp].idx + k <= i) lastH = highs[hp++];
     while (lp < lows.length && lows[lp].idx + k <= i) lastL = lows[lp++];
-    if (lastH && !usedH.has(lastH.idx) && i > lastH.idx && c.h > lastH.price) {
+    if (lastH && !usedH.has(lastH.idx) && i > lastH.idx && c.c > lastH.price) {      // BOS = a candle BODY closes beyond the swing, a wick alone does not count
       usedH.add(lastH.idx);
       let tip = lastH.idx + 1;
       for (let j = lastH.idx + 1; j <= i; j++) if (cs[j].l < cs[tip].l) tip = j;
       out.push({ dir: 1, idx: i, t: c.t, level: lastH.price, broken_idx: lastH.idx, tip_idx: tip, tip_price: cs[tip].l, slq: false, valid: false });
     }
-    if (lastL && !usedL.has(lastL.idx) && i > lastL.idx && c.l < lastL.price) {
+    if (lastL && !usedL.has(lastL.idx) && i > lastL.idx && c.c < lastL.price) {
       usedL.add(lastL.idx);
       let tip = lastL.idx + 1;
       for (let j = lastL.idx + 1; j <= i; j++) if (cs[j].h > cs[tip].h) tip = j;
@@ -111,6 +111,7 @@ export function marketStructure(h4, p) {
     trend: anchor ? anchor.dir : 0, anchor, last,
     shift_pending: !!(anchor && last && last.dir !== anchor.dir && !last.valid),
     bos: bos.slice(-6),
+    valid_bos: valid.slice(-2),     // the 2 latest valid BOS, drawn on the H4 chart
     swings: swings(h4, p.swingK).slice(-8).map((s) => ({ t: h4[s.idx].t, price: s.price, kind: s.kind })),
   };
 }
@@ -380,23 +381,27 @@ export function evaluate(h4, h1, m5, p = defaultParams, digits = 3) {
   const atr1 = atr(h1, p.atrLen), atr5 = atr(m5, p.atrLen);
 
   // ---- S: market structure on H4
-  const ms = marketStructure(h4, p), trend = ms.trend, anc = ms.anchor;
+  const ms = marketStructure(h4, p), anc = ms.anchor;
+  // The old trend is also invalidated when its disruption POI is invalidated (an H1 body closes beyond it).
+  const of = orderFlow(h1, ms.trend, p);
+  const flipped = !!of.invalidated;
+  const trend = flipped ? of.dir : ms.trend;
   state.s = {
-    trend, shift_pending: ms.shift_pending, valid: anc !== null, anchor_t: anc ? anc.t : null, level: anc ? anc.level : null,
+    trend, shift_pending: flipped ? false : ms.shift_pending, valid: anc !== null,
+    trend_invalidated: flipped ? { by: 'disruption', old_dir: ms.trend, t: of.invalidated.t + H1 } : null, anchor_t: anc ? anc.t : null, level: anc ? anc.level : null,
     slq: anc ? anc.slq : null, swings: ms.swings,
     bos: ms.bos.map((b) => ({ dir: b.dir, t: b.t, level: b.level, valid: b.valid, slq: b.slq })),
   };
-  if (anc) {
+  if (anc && !flipped) {
     const how = anc.slq ? 'liquidity (SLQ) + BOS' : '2+ BOS without SLQ';
     events.push(ev('S', 'trend_valid', anc.dir, anc.t + H4, H4, `S: H4 ${anc.dir === 1 ? 'uptrend' : 'downtrend'} is valid`,
       `Valid through ${how}. BOS broke ${f(anc.level)}. Look for ${side(anc.dir)} setups on H1.`, anc.t));
   }
-  for (const b of ms.bos.slice(-4)) {
-    overlays.push({ type: 'line', tf: 'h4', y: b.level, t0: h4[b.broken_idx].t, label: b.valid ? 'BOS' : 'BOS (not valid)', tone: 's' });
+  for (const b of ms.valid_bos) {
+    overlays.push({ type: 'line', tf: 'h4', y: b.level, t0: h4[b.broken_idx].t, label: 'BOS', tone: 's' });
   }
 
   // ---- O: order flow on H1
-  const of = orderFlow(h1, trend, p);
   state.o = of;
   for (const poi of of.pois) {
     if (poi.role === 'inducement' || poi.role === 'disruption') {
@@ -408,7 +413,7 @@ export function evaluate(h4, h1, m5, p = defaultParams, digits = 3) {
   if (of.invalidated) {
     const iv = of.invalidated;
     events.push(ev('O', 'invalidated', iv.dir, iv.t + H1, H1, 'O: inducement and disruption invalidated',
-      `An H1 body closed beyond the disruption POI. The trend has changed to ${iv.dir === 1 ? 'down' : 'up'}. New inducement and disruption are mapped.`, `inv-${iv.t}`));
+      `An H1 body closed beyond the disruption POI, so the old trend is invalidated. The trend has changed to ${iv.dir === 1 ? 'down' : 'up'}. New inducement and disruption are mapped.`, `inv-${iv.t}`));
   }
 
   // ---- R: reclamation on M5 (confirmation only)
