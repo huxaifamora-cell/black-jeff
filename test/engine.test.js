@@ -28,7 +28,7 @@ test('BOS, SLQ and validity', () => {
 
 test('bearish mirror structure', () => {
   const cs = mk([[1.0, 5], [-0.8, 3], [1.0, 2], [-0.3, 1], [1.2, 3]]).map(mirror);
-  const ms = marketStructure(cs, P);
+  const ms = marketStructure(cs, { ...P, swingK: 2 });   // fixture is drawn for 2 candles on each side
   assert.equal(ms.trend, -1); assert.ok(ms.anchor.slq);
 });
 
@@ -104,4 +104,40 @@ test('evaluate runs end to end and returns JSON-able state', () => {
   JSON.stringify(out);
   assert.equal(out.state.s.trend, 1);
   assert.ok(out.state.candles.m5.length);
+});
+
+test('swingK defaults to 1', () => assert.equal(P.swingK, 1));
+
+test('BOS needs a body close beyond the swing, a wick is not enough', () => {
+  const base = mk([[1.0, 5], [-0.8, 3]]);                       // swing high at idx 4 (price ~105.1), then a pullback
+  const t = base.length * 3600, hi = Math.max(...base.map((c) => c.h));
+  const wickOnly = [...base, C(t, 103, hi + 0.5, 102.8, 103.5), C(t + 3600, 103.5, 103.8, 103.2, 103.6)];
+  assert.equal(findBos(wickOnly, 1).filter((b) => b.dir === 1).length, 0, 'wick above the high, body closes below it: no BOS');
+  const bodyClose = [...base, C(t, 103, hi + 1, 102.8, hi + 0.8)];
+  assert.equal(findBos(bodyClose, 1).filter((b) => b.dir === 1).length, 1, 'body closes above the high: BOS');
+});
+
+function evalFixture(crash) {
+  const h4 = mk([[2, 6], [-1.5, 3], [2, 6], [-1.5, 3], [2.2, 8], [-1.5, 3], [2.5, 8]], { start: 1000, step: 14400 });
+  const h1 = mk([[0.5, 6], [-0.4, 3], [0.5, 6], [-0.4, 3], [0.5, 8], [-0.4, 3], [0.5, 8], ...(crash ? [[-1.0, crash]] : [])], { start: 1000 });
+  const m5 = mk(Array.from({ length: 3 }, () => [[0.1, 6], [-0.08, 3], [0.1, 6], [-0.08, 3], [0.1, 8]]).flat(), { start: 1000, step: 300 });
+  return evaluate(h4, h1, m5, P, 3);
+}
+
+test('H4 chart draws only the 2 latest valid BOS, all labelled BOS', () => {
+  const { state } = evalFixture(0);
+  const lines = state.overlays.filter((o) => o.type === 'line' && o.tf === 'h4');
+  assert.equal(lines.length, 2);
+  assert.ok(lines.every((l) => l.label === 'BOS'));
+  assert.ok(!state.overlays.some((o) => /not valid/.test(o.label)));
+});
+
+test('old trend is invalidated when the disruption POI is invalidated', () => {
+  const ok = evalFixture(0);
+  assert.equal(ok.state.s.trend, 1); assert.equal(ok.state.s.trend_invalidated, null);
+  assert.ok(ok.events.some((e) => e.kind === 'trend_valid'));
+  const dead = evalFixture(20);
+  assert.equal(dead.state.s.trend, -1);
+  assert.equal(dead.state.s.trend_invalidated.by, 'disruption'); assert.equal(dead.state.s.trend_invalidated.old_dir, 1);
+  assert.ok(!dead.events.some((e) => e.kind === 'trend_valid') && dead.events.some((e) => e.kind === 'invalidated'));
 });
