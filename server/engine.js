@@ -1,5 +1,5 @@
 // SORK concept engine. Pure functions over lists of CLOSED candles {t,o,h,l,c}. No network, no I/O.
-// Timeframes: H4 (market structure), H1 (order flow, key levels, QML), M5 (reclamation, entries).
+// Timeframes: H4 (market structure), H1 (order flow, reclamation, key levels, QML), M5 (entries).
 // Several SORK rules are judged "by eye" by the trader. Where a rule needs a number it is a field of
 // `defaultParams` so it can be tuned without touching the logic.
 
@@ -17,7 +17,7 @@ export const defaultParams = {
   slBufferAtr: 0.25,    // "slightly outside the POI" = this x M5 ATR
   rr: 2.0,              // risk reward ratio used for the example TP
   extremeLookback: 100, // H1 candles used to judge "at the extreme" for a QML
-  maxScanM5: 600,       // M5 candles scanned for reclamations
+  maxScanH1: 150,       // H1 candles scanned for reclamations (after the inducement / disruption BOS)
 };
 
 export const C = (t, o, h, l, c) => ({ t, o, h, l, c });
@@ -188,12 +188,13 @@ export function orderFlow(h1, trend, p) {
   return res;
 }
 
-// ---------------------------------------------------------------- reclamation (M5)
+// ---------------------------------------------------------------- reclamation (H1)
 // Five steps, bullish version. The bearish version runs on mirrored candles.
-export function reclamation(m5, poi, p) {
+// Runs on H1 candles, against the H1 inducement / disruption POI it belongs to.
+export function reclamation(h1, poi, p) {
   const d = poi.dir;
   let lo = poi.lo, hi = poi.hi;
-  let cs = m5.filter((c) => c.t > poi.bos_t).slice(-p.maxScanM5);
+  let cs = h1.filter((c) => c.t > poi.bos_t).slice(-p.maxScanH1);
   if (d === -1) { cs = cs.map(mirror); [lo, hi] = [-hi, -lo]; }
   let st = 0, prevClose = null;
   const completes = [];
@@ -429,14 +430,14 @@ export function evaluate(h4, h1, m5, p = defaultParams, digits = 3) {
       `An H1 body closed beyond the disruption POI, so the old trend is invalidated. The trend has changed to ${iv.dir === 1 ? 'down' : 'up'}. New inducement and disruption are mapped.`, `inv-${iv.t}`));
   }
 
-  // ---- R: reclamation on M5 (confirmation only)
+  // ---- R: reclamation on H1, at the inducement and disruption POIs (confirmation only)
   state.r = [];
-  for (const poi of of.pois) {
-    const r = reclamation(m5, poi, p);
+  for (const poi of of.pois.filter((x) => x.role === 'inducement' || x.role === 'disruption')) {
+    const r = reclamation(h1, poi, p);
     state.r.push({ role: poi.role, dir: poi.dir, state: r.state, last_complete: r.last_complete, lo: poi.lo, hi: poi.hi });
     if (r.last_complete) {
-      events.push(ev('R', 'reclamation', poi.dir, r.last_complete + M5, M5, `R: valid ${poi.dir === 1 ? 'bullish' : 'bearish'} reclamation`,
-        `M5 reclamation completed at the ${poi.role} POI (${f(poi.lo)} to ${f(poi.hi)}). Use it as a confirmation, not as an entry.`,
+      events.push(ev('R', 'reclamation', poi.dir, r.last_complete + H1, H1, `R: valid ${poi.dir === 1 ? 'bullish' : 'bearish'} reclamation`,
+        `H1 reclamation completed at the ${poi.role} POI (${f(poi.lo)} to ${f(poi.hi)}). Use it as a confirmation, not as an entry.`,
         `${poi.role}-${poi.bos_t}-${r.last_complete}`));
     }
   }
