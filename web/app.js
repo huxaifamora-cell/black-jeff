@@ -120,7 +120,10 @@ function box(b, d) { return `${P(b.lo, d)} to ${P(b.hi, d)}`; }
 function cards(s, d) {
   let h = '';
   const S = s.s;
-  h += `<div class="card"><h4>S &middot; Market structure (H4)</h4>` + (S ? (S.valid
+  h += `<div class="card"><h4>S &middot; Market structure (H4)</h4>` + (S ? (S.trend_invalidated
+    ? `<p><b class="${S.trend === 1 ? 'up' : 'down'}">${S.trend === 1 ? 'Uptrend' : 'Downtrend'}</b> <span class="small">(old ${S.trend_invalidated.old_dir === 1 ? 'uptrend' : 'downtrend'} invalidated)</span></p>
+       <p class="small">An H1 body closed beyond the disruption POI ${T(S.trend_invalidated.t)}, so the old trend is over.</p>`
+    : S.valid
     ? `<p><b class="${S.trend === 1 ? 'up' : 'down'}">${S.trend === 1 ? 'Uptrend' : 'Downtrend'} is valid</b></p>
        <p class="small">Valid BOS ${T(S.anchor_t)} at ${P(S.level, d)}. ${S.slq ? 'Liquidity (SLQ) present.' : '2 or more BOS without SLQ.'}${S.shift_pending ? ' A newer BOS the other way is not valid yet.' : ''}</p>`
     : '<p class="mut">No valid structure yet.</p>') : '<p class="mut">No data.</p>') + '</div>';
