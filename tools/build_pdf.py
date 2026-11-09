@@ -197,7 +197,7 @@ story += table([
     ["Pillar", "Timeframe", "Question it answers", "What it gives you"],
     ["S: Market Structure", "H4", "Which way is the market going?", "A valid trend, found through its most valid break of structure"],
     ["O: Order Flow", "H1", "Where are the points of interest?", "Inducement and disruption, drawn as POI boxes on their order blocks"],
-    ["R: Reclamation", "M5", "Is price confirming at the POI?", "A confirmation (never an entry on its own)"],
+    ["R: Reclamation", "H1", "Is price confirming at the POI?", "A confirmation (never an entry on its own)"],
     ["K: Key Level", "H1 to find, M5 to enter", "Where do I enter, and where do I get out?", "Entry, stop loss, take profit, and the QML for reversals"],
 ], [34 * mm, 28 * mm, 48 * mm, CW - 110 * mm])
 story.append(P("Timeframe cheat sheet", h2))
@@ -207,7 +207,7 @@ story += table([
     ["Marking inducement, disruption and their POIs; judging if they are invalidated", "H1"],
     ["Finding a key level and judging whether it is valid", "H1"],
     ["Checking for a QML (and its confirmation)", "H1. The entry is on M5."],
-    ["Reclamation, and judging whether a reclamation is invalid", "M5"],
+    ["Reclamation at the inducement and disruption POIs, and judging whether a reclamation is invalid", "H1"],
     ["Entry confirmations (move out of the POI, engulf, harami)", "M5, inside the POI box"],
     ["Invalidating a key level (a body closing outside its POI)", "M5"],
     ["Bjeff zone", "An M5 key level inside the 50% of an H1 key level"],
@@ -286,12 +286,12 @@ story.append(P("Invalidation of order flow is judged on H1."))
 story += B(["<b>Bullish disruption:</b> if a candle body closes below its POI, the disruption is invalidated together with its inducement. "
             "The trend has ended and changed direction, and a new inducement and disruption are mapped in the current trend.",
             "<b>Bearish disruption:</b> the inverse. A candle body closing above its POI invalidates it together with its inducement."])
-story.append(P("Reclamation behavior and the disruption POI are two different things, so the M5 steps of a reclamation do not conflict with this rule.", small))
+story.append(P("Reclamation behavior and the disruption POI are two different things, so the H1 steps of a reclamation do not conflict with this rule.", small))
 
 # ------------------------------------------------------------------ 4. R
-story += banner("R", "Reclamation", "Timeframe: M5", GOLD)
+story += banner("R", "Reclamation", "Timeframe: H1", GOLD)
 story.append(P("POIs are drawn so they can be used for various things. One of them is waiting for a reclamation. A reclamation "
-               "happens from the POI of an inducement, a disruption, or any POI of a liquidity zone, and it is detected on M5."))
+               "happens from the POI of an inducement, a disruption, or any POI of a liquidity zone, and it is detected on H1."))
 story.append(P("The five steps", h2))
 story += table([
     ["Step", "Bullish reclamation (uptrend)", "Bearish reclamation (downtrend)"],
@@ -312,7 +312,7 @@ story += B(["<b>A break:</b> a candle body has to close beyond the far edge of t
             "<b>Direction rule:</b> the last step of a reclamation must match the trend of its inducement or disruption."])
 story.append(P("Confirmation, not entry", h2))
 story += rule("A reclamation is not used as an entry, only as a confirmation. We only use key levels for entry.", color=GOLD, bg=GOLDBG)
-story.append(P("<b>Invalid reclamation:</b> invalidation of a reclamation is judged on M5. If any of the reclamation steps is not complete, the "
+story.append(P("<b>Invalid reclamation:</b> invalidation of a reclamation is judged on H1. If any of the reclamation steps is not complete, the "
                "reclamation is invalid. The market then has to go through a valid reclamation before it counts as a confirmation."))
 story.append(P("Trading without a reclamation", h2))
 story.append(P("If you are trading from order flow without a reclamation, do not enter from the first key level. Use the second key level "
@@ -426,7 +426,7 @@ story += N(["<b>H4, trend:</b> find the trend through its most valid BOS. Liquid
             "<b>H1, order flow:</b> mark the inducement and disruption and draw their POIs (body to body). Check they are not invalidated by an H1 body close beyond the disruption POI.",
             "<b>H1, key level:</b> find a key level and wait for it to become RBS or SBR so it is valid. Count the wicks inside its POI: no more than 2.",
             "<b>Draw the POI</b> from the top to the bottom of the two bodies, and extend it to the right.",
-            "<b>M5, wait for the pullback</b> into the POI box. A valid reclamation can add confirmation.",
+            "<b>H1, check for a reclamation</b> at the inducement or disruption POI. A valid reclamation adds confirmation. <b>M5, wait for the pullback</b> into the key level POI box.",
             "<b>M5, confirm inside the POI box:</b> price moving out of the box, an engulf candle or a harami candle. A buy or sell limit at the box edge is the alternative entry.",
             "<b>Set the SL</b> slightly outside the POI and the <b>TP</b> with your risk reward ratio.",
             "<b>Close the trade</b> if a key level fails (a body closing outside the POI on M5), or when the TP or SL is hit.",

@@ -7,7 +7,7 @@ def fig_overview():
     cards = [
         ("S", "Market Structure", "H4", "Find the trend through\nits most valid break\nof structure", NAVY),
         ("O", "Order Flow", "H1", "Inducement, disruption\nand their POIs\n(order block boxes)", TEAL),
-        ("R", "Reclamation", "M5", "A move at the POI used\nas a confirmation\n(not as an entry)", GOLD),
+        ("R", "Reclamation", "H1", "A move at the POI used\nas a confirmation\n(not as an entry)", GOLD),
         ("K", "Key Level", "H1 / M5", "Found on H1, entered\non M5, with SL and TP\n(RBS, SBR, QML)", "#7A3E9D"),
     ]
     w, gap = 21, 4.5
