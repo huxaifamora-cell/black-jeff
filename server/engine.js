@@ -395,7 +395,8 @@ export function advanced(kl, m5, p, invT) {
   if (entered !== null) {
     const a5 = atr(seg, p.atrLen);
     for (const z of validateKls(seg, findKls(seg, p, a5, seg.length), p)) {
-      if (z.lo >= zl - 1e-12 && z.hi <= zh + 1e-12 && z.t1 + M5 >= entered - M5) {
+      // Only a valid M5 RBS (for a buy) or SBR (for a sell) counts: the same direction as the H1 key level.
+      if (z.status === 'valid' && z.dir === d && z.lo >= zl - 1e-12 && z.hi <= zh + 1e-12 && z.t1 + M5 >= entered - M5) {
         let active = null;
         for (const c of seg) if (c.t > z.t1 && z.lo <= c.c && c.c <= z.hi) { active = c.t + M5; break; }
         zones.push({ lo: z.lo, hi: z.hi, t0: z.t0, t: z.t1, active_t: active });
