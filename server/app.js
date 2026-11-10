@@ -63,6 +63,19 @@ export function createApp({ cfg = loadConfig(), store, svc, deriv, bot, log = co
     return cfg.requireAuth ? null : { id: 0, first_name: 'dev' };      // DEV_ALLOW_NO_AUTH=1 is for local testing only
   }
 
+  // Live chart: refresh just the symbol that is open, at most once per 1.5 s however many viewers there are.
+  const liveBusy = new Map(), liveLast = new Map();
+  async function liveRefresh(id) {
+    if (liveBusy.has(id)) return liveBusy.get(id);
+    if (Date.now() - (liveLast.get(id) || 0) < 1500) return;
+    const job = (async () => {
+      try { for (const a of await svc.refresh(deriv, id)) { log.info('alert', a.key); await notify(a); } }
+      catch (e) { log.warn('live refresh', id, 'failed:', e.message); }
+      finally { liveLast.set(id, Date.now()); liveBusy.delete(id); }
+    })();
+    liveBusy.set(id, job); return job;
+  }
+
   async function handle(req, res) {
     const url = new URL(req.url, 'http://x');
     const path = url.pathname;
@@ -80,7 +93,9 @@ export function createApp({ cfg = loadConfig(), store, svc, deriv, bot, log = co
     const q = url.searchParams;
     if (path === '/api/symbols' && req.method === 'GET') return json(res, 200, { symbols: svc.overview() });
     if (path.startsWith('/api/symbol/') && req.method === 'GET') {
-      const v = svc.symbolView(decodeURIComponent(path.slice('/api/symbol/'.length)));
+      const id = decodeURIComponent(path.slice('/api/symbol/'.length));
+      if (q.get('live') === '1') await liveRefresh(id);          // the open chart asks for fresh data every few seconds
+      const v = svc.symbolView(id);
       return v ? json(res, 200, v) : json(res, 404, { error: 'unknown symbol' });
     }
     if (path === '/api/alerts' && req.method === 'GET') {
