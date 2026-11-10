@@ -146,7 +146,8 @@ function cards(s, d) {
     (s.adv.zones.length ? s.adv.zones.map(z => `<p class="small">bjeff zone ${box(z, d)} ${z.active_t ? 'active ' + T(z.active_t) : 'waiting for a body close inside'}</p>`).join('') : '<p class="small">No bjeff zone yet.</p>') + '</div>';
   return h;
 }
-const TONE = { s: '#5d7a45', o: '#3C6B2D', k: '#C2A06A', qml: '#8a6a2a', pending: '#5d6875', dead: '#D2603F', adv: '#E3C16A', adv2: '#3C6B2D' };
+// Zone colours avoid the candle colours (green up, red-orange down) and the cyan live-price line.
+const TONE = { s: '#8A94A6', o: '#8E6BFF', k: '#C2A06A', qml: '#E58FD0', pending: '#5d6875', dead: '#6B7480', adv: '#E3C16A', adv2: '#4A7CFF' };
 function chart(cv, s, tf, name) {
   const dpr = window.devicePixelRatio || 1, W = cv.clientWidth, Hh = 340;
   cv.width = W * dpr; cv.height = Hh * dpr;
@@ -236,7 +237,7 @@ function chart(cv, s, tf, name) {
       g.fillStyle = l.col; g.beginPath(); g.arc(ax, ay, 2.5, 0, Math.PI * 2); g.fill();
     }
     g.fillStyle = l.col; g.globalAlpha = .95; g.beginPath(); g.roundRect ? g.roundRect(r.x, r.y, r.w, r.h, 3) : g.rect(r.x, r.y, r.w, r.h); g.fill(); g.globalAlpha = 1;
-    g.fillStyle = ['#C2A06A', '#E3C16A', '#5CC8E6'].includes(l.col) ? '#10150C' : '#F4F2E2'; g.textBaseline = 'middle'; g.fillText(l.text, r.x + 5, r.y + r.h / 2 + .5); g.textBaseline = 'alphabetic';
+    g.fillStyle = ['#C2A06A', '#E3C16A', '#5CC8E6', '#E58FD0', '#8A94A6'].includes(l.col) ? '#10150C' : '#F4F2E2'; g.textBaseline = 'middle'; g.fillText(l.text, r.x + 5, r.y + r.h / 2 + .5); g.textBaseline = 'alphabetic';
   });
   return { toPrice: y => lo + (Hh - 14 - y) / (Hh - 14 - TOP) * (hi - lo), xOf: X, step, lo, hi };
 }
