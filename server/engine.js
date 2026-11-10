@@ -175,19 +175,22 @@ export function orderFlow(h1, trend, p) {
   const res = { dir: trend, pois: [], invalidated: null, remapped: false };
   if (trend === 0) return res;
   let d = trend, minIdx = -1;
-  for (let attempt = 0; attempt < 2; attempt++) {
+  // Each time the disruption POI of the direction being mapped is broken by an H1 body, the order flow flips and is mapped again the other way.
+  // This repeats (up to 8 times), so a bearish order flow whose own disruption is later broken goes back to bullish. The last pass always maps.
+  for (let attempt = 0; attempt < 8; attempt++) {
     const mine = bos.filter((b) => b.dir === d && b.idx > minIdx);
     if (!mine.length) { res.dir = d; res.pois = []; return res; }
     const ind = mine[mine.length - 1];
     const dis = mine.length >= 2 ? mine[mine.length - 2] : null;
     const plq = mine.length >= 3 ? mine.slice(-4, -2) : [];
-    if (dis && attempt === 0) {
+    if (dis && attempt < 7) {
       const dp = poiOf(h1, dis, 'disruption', p);
+      let hit = null;                                  // checked afresh on every pass: only THIS pass's disruption counts
       for (let j = dis.idx + 1; j < h1.length; j++) {
         const c = h1[j];
-        if ((d === 1 && c.c < dp.lo) || (d === -1 && c.c > dp.hi)) { res.invalidated = { dir: d, t: c.t, idx: j, poi: dp }; break; }
+        if ((d === 1 && c.c < dp.lo) || (d === -1 && c.c > dp.hi)) { hit = { dir: d, t: c.t, idx: j, poi: dp }; break; }
       }
-      if (res.invalidated) { minIdx = res.invalidated.idx - 3; d = -d; res.remapped = true; continue; }
+      if (hit) { res.invalidated = hit; minIdx = hit.idx - 3; d = -d; res.remapped = true; continue; }
     }
     const pois = [poiOf(h1, ind, 'inducement', p)];
     if (dis) pois.push(poiOf(h1, dis, 'disruption', p));
@@ -443,7 +446,7 @@ export function evaluate(h4, h1All, m5, p = defaultParams, digits = 3) {
   const ms = marketStructure(h4, p), anc = ms.anchor;
   // The old trend is also invalidated when its disruption POI is invalidated (an H1 body closes beyond it).
   const of = orderFlow(h1, ms.trend, p);
-  const flipped = !!of.invalidated;
+  const flipped = ms.trend !== 0 && of.dir !== ms.trend;      // order flow ended up against the H4 bias (it can flip back to the bias direction)
   const trend = flipped ? of.dir : ms.trend;
   // H4 directional bias: read from the H4 market structure ONLY (latest valid BOS), so it does not change when an H1 disruption POI breaks.
   // bias_shift = a newer H4 BOS the other way exists but is not valid yet (the bias may be about to change).
