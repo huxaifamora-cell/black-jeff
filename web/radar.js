@@ -20,11 +20,11 @@ const Radar = (() => {
 
   function mount(cv, readout, symbols, onPick) {
     unmount();
-    const list = contacts(symbols), reduce = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const list = contacts(symbols), reduce = false;   // the sweep always runs: phones with "reduce motion" or battery saver on used to freeze it
     const g = cv.getContext('2d');
     let W = 0, cx = 0, cy = 0, R = 0, dpr = 1;
     const size = () => {
-      dpr = Math.max(window.devicePixelRatio || 1, 2); W = Math.min(cv.parentElement.clientWidth - 16, 560);          // minus the scope's 8px side padding
+      dpr = 2; W = Math.min(cv.parentElement.clientWidth - 16, 560);          // minus the scope's 8px side padding
       cv.style.width = W + 'px'; cv.style.height = W + 'px'; cv.width = W * dpr; cv.height = W * dpr; g.setTransform(dpr, 0, 0, dpr, 0, 0);
       cx = cy = W / 2; R = W / 2 - 22;
     };
