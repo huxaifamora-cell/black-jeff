@@ -156,7 +156,7 @@ def cover(c, doc):
     c.drawCentredString(W / 2, H * 0.38 + 5 * mm, "Study Guide with illustrations")
     c.setFillColor(NAVY)
     c.setFont("Helvetica-Bold", 12)
-    c.drawCentredString(W / 2, H * 0.38 - 20 * mm, "A forex trading concept by black jeff")
+    c.drawCentredString(W / 2, H * 0.38 - 20 * mm, "A forex trading concept by B-Jeff")
     c.setFont("Helvetica", 9.5)
     c.setFillColor(GREY)
     c.drawCentredString(W / 2, H * 0.38 - 30 * mm, "Market Structure  |  Order Flow  |  Reclamation  |  Key Level")
@@ -178,7 +178,7 @@ def later(c, doc):
 
 
 doc = BaseDocTemplate(OUT, pagesize=A4, leftMargin=LM, rightMargin=RM, topMargin=TM, bottomMargin=BM,
-                      title="SORK Trading Concept - Study Guide", author="black jeff",
+                      title="SORK Trading Concept - Study Guide", author="B-Jeff",
                       subject="Forex trading concept study guide")
 frame = Frame(LM, BM, CW, H - TM - BM, id="f", leftPadding=0, rightPadding=0, topPadding=0, bottomPadding=0)
 doc.addPageTemplates([PageTemplate(id="cover", frames=[Frame(LM, BM, CW, H - TM - BM, id="c0")], onPage=cover),
@@ -402,14 +402,14 @@ story += B(["<b>QML plus inverse:</b> if a directional key level has failed, the
             "The wick rule applies to QML POIs too."])
 
 # ------------------------------------------------------------------ 7. advanced
-story += simple_banner("Advanced key level and the black jeff zone", NAVY)
+story += simple_banner("Advanced key level and the B-Jeff zone", NAVY)
 story.append(P("Advanced key level", h2))
 story += N(["On the H1 key level, mark out <b>100%</b> of the key level. The 100% is the full POI box, from the top to the bottom of the two bodies.",
             "Allow the market to retrace and come back into <b>50%</b> of the key level. The 50% is the middle of that box.",
             "Take the trade on M5 by looking for candle reversal patterns (engulf, harami and others) as the entry confirmation, inside the key level POI or outside it."])
 story.append(P("For the advanced key level the confirmation can be inside or outside the POI. This differs from the standard key level, where every M5 confirmation "
                "has to be inside the POI box. The stop loss and take profit stay the same.", small))
-story.append(P("Black jeff zone (bjeff zone)", h2))
+story.append(P("B-Jeff zone (bjeff zone)", h2))
 story.append(P("On H1, mark the 100% of the key level POI, then use the fibonacci retracement to find the 50% of the POI and draw the new POI. "
                "The new 50% POI is the half that price enters second: the <b>bottom half for RBS</b> and the <b>top half for SBR</b>. "
                "Inside it there is a <b>bjeff zone</b>, which is a valid M5 key level within the 50% of an H1 key level and of the same direction: an M5 <b>RBS</b> for an H1 RBS (buy), an M5 <b>SBR</b> for an H1 SBR (sell)."))
