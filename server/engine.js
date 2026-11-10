@@ -444,7 +444,10 @@ export function evaluate(h4, h1All, m5, p = defaultParams, digits = 3) {
   const of = orderFlow(h1, ms.trend, p);
   const flipped = !!of.invalidated;
   const trend = flipped ? of.dir : ms.trend;
+  // H4 directional bias: read from the H4 market structure ONLY (latest valid BOS), so it does not change when an H1 disruption POI breaks.
+  // bias_shift = a newer H4 BOS the other way exists but is not valid yet (the bias may be about to change).
   state.s = {
+    bias: ms.trend, bias_shift: ms.shift_pending, bias_t: anc ? anc.t : null, bias_level: anc ? anc.level : null,
     trend, shift_pending: flipped ? false : ms.shift_pending, valid: anc !== null,
     trend_invalidated: flipped ? { by: 'disruption', old_dir: ms.trend, t: of.invalidated.t + H1 } : null, anchor_t: anc ? anc.t : null, level: anc ? anc.level : null,
     slq: anc ? anc.slq : null, swings: ms.swings,
