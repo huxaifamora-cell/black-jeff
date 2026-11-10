@@ -182,7 +182,7 @@ function chart(cv, s, tf, name) {
       const x = XL(o.t0), x1 = W;
       if (o.tone === 'adv') { g.strokeStyle = col; g.lineWidth = 1.5; g.setLineDash([6, 4]); g.strokeRect(x, Y(o.hi), x1 - x, Y(o.lo) - Y(o.hi)); g.setLineDash([]); g.lineWidth = 1; }   // 50% POI: dashed
       else { g.fillStyle = col + '40'; g.fillRect(x, Y(o.hi), x1 - x, Y(o.lo) - Y(o.hi)); g.strokeStyle = col; g.strokeRect(x, Y(o.hi), x1 - x, Y(o.lo) - Y(o.hi)); }
-      labels.push({ text: o.label, col, kind: 'box', x: Math.max(2, x + 2) });
+      labels.push({ text: o.label, col, kind: 'box', x: Math.max(2, x + 2), top: Y(o.hi), bot: Y(o.lo) });
     } else {
       const x = X(o.t0); g.strokeStyle = col; g.setLineDash([4, 3]); g.beginPath(); g.moveTo(x, Y(o.y)); g.lineTo(W, Y(o.y)); g.stroke(); g.setLineDash([]);
       labels.push({ text: o.label, col, kind: 'line', y: Y(o.y) - LH / 2 });
@@ -213,6 +213,10 @@ function chart(cv, s, tf, name) {
     if (l.kind === 'line') {                                                      // gutter first (nearest free slot to its price), then the top band
       const x = W - w - 2, base = Math.max(1, Math.min(l.y, Hh - LH - 1));
       for (let d = 0; d < Hh; d += LH + GAP) for (const y of [base + d, base - d]) { const r = { x, y, w, h: LH }; if (y >= 1 && y + LH <= Hh - 1 && free(r)) return r; }
+    }
+    if (l.kind === 'box') {                                                       // zone label: on or beside its own box, nearest its left edge
+      const ysB = [l.top + 1, l.top - LH - 1, l.bot - LH - 1, l.bot + 1];         // inside top, just above, inside bottom, just below
+      for (let x = l.x; x + w <= W - 2; x += 6) for (const y of ysB) { const r = { x, y, w, h: LH }; if (y >= 1 && y + LH <= Hh - 1 && free(r)) return r; }
     }
     const want = l.x ?? W, order = []; for (let x = 2; x + w <= W - 2; x += 6) order.push(x); order.sort((a, b) => Math.abs(a - want) - Math.abs(b - want));
     for (const y of ys) for (const x of order) { const r = { x, y, w, h: LH }; if (free(r)) return r; }      // empty space, top rows first
