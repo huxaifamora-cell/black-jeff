@@ -84,7 +84,7 @@ function liveUpdate(v) {
   if (sig !== liveCtx.sig) return false;                           // the setup changed: full redraw
   const px = document.getElementById('lvPx'); if (px && s.price != null) px.textContent = N(s.price, s.digits ?? 3);
   const up = document.getElementById('lvUp'); if (up) up.textContent = T(s.updated);
-  liveCtx.s = s; chart(document.getElementById('chart'), s, tf); return true;
+  liveCtx.s = s; chart(document.getElementById('chart'), s, tf, liveCtx.name); return true;
 }
 function drawSymbol(v, alerts) {
   const s = v.state, d = s ? s.digits : 3;
@@ -104,14 +104,14 @@ function drawSymbol(v, alerts) {
     `<div class="row"><button class="btn" id="mute">Mute alerts for this symbol</button></div>`;
   view.innerHTML = h;
   document.getElementById('back').onclick = goBack; rkRouteReview(v);
-  const redraw = () => chart(document.getElementById('chart'), s, tf);
+  const redraw = () => chart(document.getElementById('chart'), s, tf, v.short);
   view.querySelectorAll('.pills button').forEach(b => b.onclick = () => { tf = b.dataset.tf; drawSymbol(v, alerts); });
   document.getElementById('mute').onclick = async () => {
     const { me } = await api('/api/me'); const m = new Set(me.muted); m.add(current);
     await api('/api/me/settings', { method: 'POST', body: JSON.stringify({ muted: [...m] }) });
     if (tg) tg.showAlert('Muted. You can unmute in the Alerts tab.'); else alert('Muted.');
   };
-  liveCtx = { id: current, sig: v.status + '|' + v.steps.map(x => x.state).join(''), s };
+  liveCtx = { id: current, name: v.short, sig: v.status + '|' + v.steps.map(x => x.state).join(''), s };
   redraw();
 }
 function box(b, d) { return `${P(b.lo, d)} to ${P(b.hi, d)}`; }
@@ -147,7 +147,7 @@ function cards(s, d) {
   return h;
 }
 const TONE = { s: '#5d7a45', o: '#3C6B2D', k: '#C2A06A', qml: '#8a6a2a', pending: '#5d6875', dead: '#D2603F', adv: '#E3C16A', adv2: '#3C6B2D' };
-function chart(cv, s, tf) {
+function chart(cv, s, tf, name) {
   const dpr = window.devicePixelRatio || 1, W = cv.clientWidth, Hh = 340;
   cv.width = W * dpr; cv.height = Hh * dpr;
   const g = cv.getContext('2d'); g.scale(dpr, dpr);
@@ -158,43 +158,75 @@ function chart(cv, s, tf) {
     : (o.tf === tf && o.y >= lo - span * .3 && o.y <= hi + span * .3));
   ov.forEach(o => { lo = Math.min(lo, o.lo ?? o.y); hi = Math.max(hi, o.hi ?? o.y); });
   const pad = (hi - lo) * .06; lo -= pad; hi += pad;
-  const Y = v => Hh - 14 - (v - lo) / (hi - lo) * (Hh - 28), step = (W - 6) / cs.length;
-  const X = t => { const i = cs.findIndex(c => c[0] >= t); return i < 0 ? W : i === 0 ? 0 : i * step; };
-  // A box starts at the LEFT EDGE of the first candle that formed it (the candle body is drawn 60% of a slot wide, centred).
-  const XL = t => { const i = cs.findIndex(c => c[0] >= t); return i < 0 ? W : i === 0 && cs[0][0] > t ? 0 : i * step + step * .2; };
+  const LH = 15, GAP = 1;
   g.font = '11px "JetBrains Mono", ui-monospace, monospace';
-  const labels = [];                                  // drawn last, on solid tags, so candles and zones never hide them
+  const tw = t => Math.ceil(g.measureText(t).width) + 10;
+  // Labels: zone labels live in an empty band above the candles; line labels and the live price sit in a gutter on the right.
+  const boxes = ov.filter(o => o.type === 'box'), lines = ov.filter(o => o.type !== 'box');
+  const priceTxt = s.price != null ? Number(s.price).toFixed(s.digits ?? 3) : '';
+  const gutter = Math.min(Math.ceil(W * .3), Math.max(priceTxt ? tw(priceTxt) : 0, ...lines.map(o => tw(o.label))) + 4);
+  const titleTxt = (name ? name + '  ' : '') + tf.toUpperCase();
+  g.font = '700 12px "JetBrains Mono", ui-monospace, monospace'; const titleW = Math.ceil(g.measureText(titleTxt).width) + 14;
+  g.font = '11px "JetBrains Mono", ui-monospace, monospace';
+  const bandW = Math.max(40, W - 8 - titleW), need = boxes.reduce((n, o) => n + tw(o.label) + 3, 0);
+  const rows = Math.min(3, Math.max(1, Math.ceil(need / bandW)));
+  const TOP = 8 + 18 + (rows > 1 ? (rows - 1) * (LH + GAP) : 0) + 6;            // empty headroom above the highest candle
+  const Y = v => Hh - 14 - (v - lo) / (hi - lo) * (Hh - 14 - TOP), plotW = W - gutter, step = (plotW - 6) / cs.length;
+  const X = t => { const i = cs.findIndex(c => c[0] >= t); return i < 0 ? plotW : i === 0 ? 0 : i * step; };
+  // A box starts at the LEFT EDGE of the first candle that formed it (the candle body is drawn 60% of a slot wide, centred).
+  const XL = t => { const i = cs.findIndex(c => c[0] >= t); return i < 0 ? plotW : i === 0 && cs[0][0] > t ? 0 : i * step + step * .2; };
+  const labels = [];
   ov.forEach(o => {
     const col = TONE[o.tone] || '#888';
     if (o.type === 'box') {
-      const x = XL(o.t0);
-      if (o.tone === 'adv') { g.strokeStyle = col; g.lineWidth = 1.5; g.setLineDash([6, 4]); g.strokeRect(x, Y(o.hi), W - x, Y(o.lo) - Y(o.hi)); g.setLineDash([]); g.lineWidth = 1; }   // 50% POI: dashed
-      else { g.fillStyle = col + '40'; g.fillRect(x, Y(o.hi), W - x, Y(o.lo) - Y(o.hi)); g.strokeStyle = col; g.strokeRect(x, Y(o.hi), W - x, Y(o.lo) - Y(o.hi)); }
-      labels.push({ text: o.label, col, x: Math.max(2, x + 2), y: Y(o.hi) + 1 });
+      const x = XL(o.t0), x1 = W;
+      if (o.tone === 'adv') { g.strokeStyle = col; g.lineWidth = 1.5; g.setLineDash([6, 4]); g.strokeRect(x, Y(o.hi), x1 - x, Y(o.lo) - Y(o.hi)); g.setLineDash([]); g.lineWidth = 1; }   // 50% POI: dashed
+      else { g.fillStyle = col + '40'; g.fillRect(x, Y(o.hi), x1 - x, Y(o.lo) - Y(o.hi)); g.strokeStyle = col; g.strokeRect(x, Y(o.hi), x1 - x, Y(o.lo) - Y(o.hi)); }
+      labels.push({ text: o.label, col, kind: 'box', x: Math.max(2, x + 2) });
     } else {
       const x = X(o.t0); g.strokeStyle = col; g.setLineDash([4, 3]); g.beginPath(); g.moveTo(x, Y(o.y)); g.lineTo(W, Y(o.y)); g.stroke(); g.setLineDash([]);
-      labels.push({ text: o.label, col, x: null, y: Y(o.y) - 15 });
+      labels.push({ text: o.label, col, kind: 'line', y: Y(o.y) - LH / 2 });
     }
   });
+  if (s.price != null && s.price >= lo && s.price <= hi) {                         // live price line
+    const y = Y(s.price), col = '#5CC8E6'; g.strokeStyle = col; g.setLineDash([2, 3]); g.beginPath(); g.moveTo(0, y); g.lineTo(W, y); g.stroke(); g.setLineDash([]);
+    labels.unshift({ text: priceTxt, col, kind: 'line', y: y - LH / 2, live: true });
+  }
+  // candles, and a list of the space they occupy (labels must stay off it)
+  const solid = [];
   cs.forEach((c, i) => {
     const x = i * step + step / 2, up = c[4] >= c[1], col = up ? '#5AFF64' : '#D2603F';
     g.strokeStyle = col; g.fillStyle = col; g.beginPath(); g.moveTo(x, Y(c[2])); g.lineTo(x, Y(c[3])); g.stroke();
     const y1 = Y(Math.max(c[1], c[4])), y2 = Y(Math.min(c[1], c[4])); g.fillRect(x - step * .3, y1, step * .6, Math.max(1, y2 - y1));
+    solid.push({ x: x - step * .3 - 1, w: step * .6 + 2, y: Y(c[2]) - 1, h: Y(c[3]) - Y(c[2]) + 2 });
   });
-  if (s.price != null && s.price >= lo && s.price <= hi) {            // live price line
-    const y = Y(s.price), col = '#5CC8E6'; g.strokeStyle = col; g.setLineDash([2, 3]); g.beginPath(); g.moveTo(0, y); g.lineTo(W, y); g.stroke(); g.setLineDash([]);
-    labels.push({ text: Number(s.price).toFixed(s.digits ?? 3), col, x: null, y: y - 7, live: true });
-  }
+  const hit = (a, r) => a.x < r.x + r.w && a.x + a.w > r.x && a.y < r.y + r.h && a.y + a.h > r.y;
   const taken = [];
+  // title tag: symbol name and timeframe, top left
+  { const r = { x: 4, y: 4, w: titleW, h: 18 }; taken.push(r);
+    g.fillStyle = 'rgba(12,17,9,.92)'; g.strokeStyle = '#5CC8E6'; g.beginPath(); g.roundRect ? g.roundRect(r.x, r.y, r.w, r.h, 3) : g.rect(r.x, r.y, r.w, r.h); g.fill(); g.stroke();
+    g.fillStyle = '#EDEBD8'; g.font = '700 12px "JetBrains Mono", ui-monospace, monospace'; g.textBaseline = 'middle'; g.fillText(titleTxt, r.x + 7, r.y + r.h / 2 + .5); g.textBaseline = 'alphabetic'; g.font = '11px "JetBrains Mono", ui-monospace, monospace'; }
+  const free = r => !taken.some(t => hit(r, t)) && !solid.some(t => hit(r, t));
+  const place = (l, w) => {
+    const bandTop = 4, ys = [];
+    for (let y = bandTop; y + LH <= Hh - 2; y += LH + GAP) ys.push(y);
+    if (l.kind === 'line') {                                                      // gutter first (nearest free slot to its price), then the top band
+      const x = W - w - 2, base = Math.max(1, Math.min(l.y, Hh - LH - 1));
+      for (let d = 0; d < Hh; d += LH + GAP) for (const y of [base + d, base - d]) { const r = { x, y, w, h: LH }; if (y >= 1 && y + LH <= Hh - 1 && free(r)) return r; }
+    }
+    const want = l.x ?? W, order = []; for (let x = 2; x + w <= W - 2; x += 6) order.push(x); order.sort((a, b) => Math.abs(a - want) - Math.abs(b - want));
+    for (const y of ys) for (const x of order) { const r = { x, y, w, h: LH }; if (free(r)) return r; }      // empty space, top rows first
+    const x = l.kind === 'line' ? W - w - 2 : Math.min(l.x ?? 2, W - w - 2); let y = l.kind === 'line' ? l.y : ys[0];      // no empty space left: overlap as little as possible
+    for (let n = 0; n < 30 && taken.some(t => hit({ x, y, w, h: LH }, t)); n++) y += LH + GAP;
+    return { x, y: Math.max(1, Math.min(y, Hh - LH - 1)), w, h: LH };
+  };
+  labels.sort((a, b) => (b.live ? 1 : 0) - (a.live ? 1 : 0));
   labels.forEach(l => {
-    const w = Math.ceil(g.measureText(l.text).width) + 10, h = 15;
-    let x = l.x == null ? W - w - 2 : Math.min(l.x, W - w - 2), y = Math.max(1, Math.min(l.y, Hh - h - 1));
-    for (let n = 0; n < 20 && taken.some(r => x < r.x + r.w && x + w > r.x && y < r.y + h && y + h > r.y); n++) y = y + h + 1 > Hh - h ? 1 : y + h + 1;
-    taken.push({ x, y, w });
-    g.fillStyle = l.col; g.globalAlpha = .95; g.beginPath(); g.roundRect ? g.roundRect(x, y, w, h, 3) : g.rect(x, y, w, h); g.fill(); g.globalAlpha = 1;
-    g.fillStyle = ['#C2A06A', '#E3C16A', '#5CC8E6'].includes(l.col) ? '#10150C' : '#F4F2E2'; g.textBaseline = 'middle'; g.fillText(l.text, x + 5, y + h / 2 + .5); g.textBaseline = 'alphabetic';
+    const w = tw(l.text), r = place(l, w); taken.push(r);
+    g.fillStyle = l.col; g.globalAlpha = .95; g.beginPath(); g.roundRect ? g.roundRect(r.x, r.y, r.w, r.h, 3) : g.rect(r.x, r.y, r.w, r.h); g.fill(); g.globalAlpha = 1;
+    g.fillStyle = ['#C2A06A', '#E3C16A', '#5CC8E6'].includes(l.col) ? '#10150C' : '#F4F2E2'; g.textBaseline = 'middle'; g.fillText(l.text, r.x + 5, r.y + r.h / 2 + .5); g.textBaseline = 'alphabetic';
   });
-  return { toPrice: y => lo + (Hh - 14 - y) / (Hh - 28) * (hi - lo), xOf: X, step, lo, hi };
+  return { toPrice: y => lo + (Hh - 14 - y) / (Hh - 14 - TOP) * (hi - lo), xOf: X, step, lo, hi };
 }
 
 // ------------------------------------------------------------ alerts
