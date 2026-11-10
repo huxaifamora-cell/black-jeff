@@ -463,7 +463,8 @@ export function evaluate(h4, h1All, m5, p = defaultParams, digits = 3) {
       `Valid through ${how}. BOS broke ${f(anc.level)}. Look for ${side(anc.dir)} setups on H1.`, anc.t));
   }
   for (const b of ms.valid_bos) {
-    overlays.push({ type: 'line', tf: 'h4', y: b.level, t0: h4[b.broken_idx].t, label: 'BOS', tone: 's' });
+    // the label carries the current H4 bias (not the direction of that single break)
+    overlays.push({ type: 'line', tf: 'h4', y: b.level, t0: h4[b.broken_idx].t, label: ms.trend === 1 ? 'BULLISH BOS' : ms.trend === -1 ? 'BEARISH BOS' : 'BOS', tone: 's' });
   }
 
   // ---- O: order flow on H1
