@@ -19,7 +19,7 @@ export class Bot {
     return this.call('sendMessage', params);
   }
 
-  setMenuButton(url, text = 'SORK') {
+  setMenuButton(url, text = 'B-JEFF TERMINAL') {
     return this.call('setChatMenuButton', { menu_button: { type: 'web_app', text, web_app: { url } } });
   }
 

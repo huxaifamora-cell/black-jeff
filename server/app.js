@@ -18,8 +18,7 @@ const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; cha
   '.png': 'image/png', '.pdf': 'application/pdf', '.svg': 'image/svg+xml', '.json': 'application/json' };
 const sleep = (ms, signal) => new Promise((r) => { const t = setTimeout(r, ms); signal?.addEventListener('abort', () => { clearTimeout(t); r(); }, { once: true }); });
 
-const HELP = '<b>SORK bot</b>\nOpen the mini app for the study guide, the 23 Volatility indices and the alert feed.\n\n' +
-  '/alerts_on  turn alert messages on\n/alerts_off  pause alert messages\n/help  this message';
+const HELP = '<b>B-JEFF bot</b>\nOpen the B-Jeff terminal';
 
 export function createApp({ cfg = loadConfig(), store, svc, deriv, bot, log = console, background = true } = {}) {
   store ||= new Store(cfg.dbPath);
@@ -183,7 +182,7 @@ export function createApp({ cfg = loadConfig(), store, svc, deriv, bot, log = co
     if (!chat || !text.startsWith('/')) return;
     const cmd = text.split(/\s+/)[0].split('@')[0].toLowerCase(), uid = (m.from && m.from.id) || chat;
     store.upsertUser(uid, (m.from && m.from.first_name) || '');
-    const button = cfg.webappUrl ? { text: 'Open SORK', url: cfg.webappUrl } : null;
+    const button = cfg.webappUrl ? { text: 'Open B-JEFF terminal', url: cfg.webappUrl } : null;
     if (cmd === '/start' || cmd === '/help') await bot.send(chat, HELP, button);
     else if (cmd === '/alerts_on') { store.updateSettings(uid, { subscribed: true }); await bot.send(chat, 'Alerts are on.'); }
     else if (cmd === '/alerts_off') { store.updateSettings(uid, { subscribed: false }); await bot.send(chat, 'Alerts are paused. /alerts_on turns them back on.'); }
