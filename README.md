@@ -93,6 +93,8 @@ Telegram only opens mini apps over HTTPS, so to test inside Telegram locally use
   reclamation and the QML liquidity check all use that window.
 - Key level edges: a resistant key level needs equal (or almost equal) body TOPS, a support key level needs equal body BOTTOMS; the other edge can be any length.
   RBS follows the resistant rule and SBR the support rule. Key level POI boxes start at the left edge of the first candle of the key level.
+- M5 is live, with two rules. Invalidation (key level and QML) and price touching a level use the candle that is still forming, so they react at once. Signals wait for the candle to close: entry confirmations (engulf, harami, pin bar, move out of the box), M5 key levels for the bjeff zone, and the bjeff zone becoming active. So a signal never repaints. The feed flags the forming candle (`forming`), H1 and H4 use closed candles only, and `liveM5: false` turns the live feed off.
+- The bjeff zone is a valid M5 RBS (for an H1 RBS, buy) or M5 SBR (for an H1 SBR, sell) that sits fully inside the 50% POI; other M5 key levels are ignored.
 - A QML is only alerted when its reversal point is at, or within `plqNearAtr` x H1 ATR of, a point of liquidity (any H1 BOS in the window except the
   current inducement and disruption, and formed before the reversal).
 - `server/service.js` evaluates each symbol, stores alerts (duplicates are ignored) and only notifies fresh events.
@@ -111,7 +113,7 @@ Python with matplotlib, reportlab and Pillow: `python tools/make_figs2.py && pyt
 - The engine is covered by offline tests on hand-made candles, and its output was checked against an earlier
   reference implementation on 40 random markets. It has not yet been run against live Deriv data, so check the first
   alerts against your own chart reading and tune `defaultParams`.
-- Only closed candles are used, so signals do not repaint.
+- H1 and H4 use closed candles only. M5 signals wait for the candle to close; only invalidation uses the forming M5 candle.
 - Educational tool, not financial advice.
 
 ## Troubleshooting
