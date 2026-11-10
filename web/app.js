@@ -143,7 +143,7 @@ function cards(s, d) {
     : '<p class="mut">No valid key level (RBS or SBR) yet.</p>') +
     '</div>';
   if (s.qml) h += `<div class="card"><h4>QML (H1)</h4><p><b>${s.qml.dir === 1 ? 'Buy' : 'Sell'}</b> POI ${box(s.qml, d)} ${s.qml.invalidated_t ? '<span class="down">invalidated</span>' : ''}</p>
-    <p class="small">${s.qml.at_extreme ? 'At the extreme (H1 swing high or low).' : 'Not at the extreme, so it is not alerted.'}</p></div>`;
+    <p class="small">${s.qml.at_liquidity ? `Reversal ${s.qml.plq.inside ? 'at' : 'close to'} an H1 point of liquidity (POI ${box(s.qml.plq, d)}).` : 'Reversal is not at or close to a point of liquidity, so it is not alerted.'}</p></div>`;
   if (s.adv) h += `<div class="card"><h4>Advanced key level and bjeff zone</h4><p>50% POI ${box({ lo: s.adv.half[0], hi: s.adv.half[1] }, d)} ${s.adv.entered_t ? `<span class="small">price entered ${T(s.adv.entered_t)}</span>` : ''}</p>` +
     (s.adv.zones.length ? s.adv.zones.map(z => `<p class="small">bjeff zone ${box(z, d)} ${z.active_t ? 'active ' + T(z.active_t) : 'waiting for a body close inside'}</p>`).join('') : '<p class="small">No bjeff zone yet.</p>') + '</div>';
   return h;
@@ -162,12 +162,14 @@ function chart(cv, s, tf) {
   const pad = (hi - lo) * .06; lo -= pad; hi += pad;
   const Y = v => Hh - 14 - (v - lo) / (hi - lo) * (Hh - 28), step = (W - 6) / cs.length;
   const X = t => { const i = cs.findIndex(c => c[0] >= t); return i < 0 ? W : i === 0 ? 0 : i * step; };
+  // A box starts at the LEFT EDGE of the first candle that formed it (the candle body is drawn 60% of a slot wide, centred).
+  const XL = t => { const i = cs.findIndex(c => c[0] >= t); return i < 0 ? W : i === 0 && cs[0][0] > t ? 0 : i * step + step * .2; };
   g.font = '11px "JetBrains Mono", ui-monospace, monospace';
   const labels = [];                                  // drawn last, on solid tags, so candles and zones never hide them
   ov.forEach(o => {
     const col = TONE[o.tone] || '#888';
     if (o.type === 'box') {
-      const x = X(o.t0);
+      const x = XL(o.t0);
       if (o.tone === 'adv') { g.strokeStyle = col; g.lineWidth = 1.5; g.setLineDash([6, 4]); g.strokeRect(x, Y(o.hi), W - x, Y(o.lo) - Y(o.hi)); g.setLineDash([]); g.lineWidth = 1; }   // 50% POI: dashed
       else { g.fillStyle = col + '40'; g.fillRect(x, Y(o.hi), W - x, Y(o.lo) - Y(o.hi)); g.strokeStyle = col; g.strokeRect(x, Y(o.hi), W - x, Y(o.lo) - Y(o.hi)); }
       labels.push({ text: o.label, col, x: Math.max(2, x + 2), y: Y(o.hi) + 1 });
