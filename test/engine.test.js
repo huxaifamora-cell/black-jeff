@@ -96,10 +96,28 @@ test('entry confirmations, invalidation, QML and advanced key level', () => {
   assert.equal(inv.t, tClose + 8 * M5);
   const q = qmlFor(kl, inv, h1, m5b, P, atr(h1));
   assert.equal(q.dir, -1); near(q.lo, 102.4); near(q.hi, 112);
-  const adv = advanced(kl, m5From([[104, 104.2, 100.9, 101], [101, 101.1, 100.0, 100.2], [100.0, 100.9, 99.6, 100.8], [100.8, 101.0, 99.7, 100.1],
-    [100.1, 100.6, 100.0, 100.5], [100.5, 100.55, 100.2, 100.25], [100.2, 100.9, 100.15, 100.8]], tClose), P, null);
+  const adv = advanced(kl, m5From(BJ_BUY, tClose), P, null);
   assert.ok(adv.entered_t !== null && adv.zones.some((z) => z.active_t));
   assert.ok(adv.signals.some((s) => s.type === 'engulf'));
+});
+
+// bjeff zone: only a valid M5 RBS (buy) / SBR (sell), the same direction as the H1 key level
+const BJ_BUY = [[104, 104.2, 100.9, 101], [101, 101.1, 100.0, 100.2], [100.0, 100.9, 99.6, 100.8], [100.8, 101.0, 99.7, 100.1],
+  [100.1, 100.6, 100.0, 100.5], [100.5, 100.55, 100.2, 100.25], [100.2, 100.9, 100.15, 100.8], [100.8, 100.9, 100.3, 100.4], [100.35, 101.0, 100.3, 100.9]];
+const BJ_WRONG = [[104, 104.2, 100.9, 101], [101, 101.0, 100.3, 100.4], [100.4, 100.9, 100.35, 100.8], [100.8, 100.85, 100.0, 100.1], [100.1, 100.7, 100.05, 100.6]];
+
+test('bjeff zone is an M5 RBS for an H1 RBS (buy) and an M5 SBR for an H1 SBR (sell)', () => {
+  const h1 = klSeries(), kl = rbs(h1), tClose = kl.t_valid + H1;
+  const buy = advanced(kl, m5From(BJ_BUY, tClose), P, null);
+  assert.equal(buy.zones.length, 1); near(buy.zones[0].lo, 100.1); near(buy.zones[0].hi, 100.5);
+  assert.equal(buy.zones[0].t0, tClose + 4 * M5, 'the zone starts at its first candle');
+  const wrong = advanced(kl, m5From(BJ_WRONG, tClose), P, null);   // a valid M5 SBR sits in the half, but the H1 trade is a buy
+  assert.equal(wrong.zones.length, 0, 'an M5 SBR is not a bjeff zone for an H1 RBS');
+  const klS = { ...kl, dir: -1, type: 'SBR', lo: -kl.hi, hi: -kl.lo };
+  const sell = advanced(klS, m5From(BJ_BUY, tClose).map(mirror), P, null);
+  assert.equal(sell.zones.length, 1, 'mirror image: M5 SBR for an H1 SBR');
+  const sellWrong = advanced(klS, m5From(BJ_WRONG, tClose).map(mirror), P, null);
+  assert.equal(sellWrong.zones.length, 0, 'an M5 RBS is not a bjeff zone for an H1 SBR');
 });
 
 test('evaluate runs end to end and returns JSON-able state', () => {
