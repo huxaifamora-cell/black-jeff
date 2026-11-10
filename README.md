@@ -91,6 +91,7 @@ Telegram only opens mini apps over HTTPS, so to test inside Telegram locally use
   `defaultParams` at the top of the file (swing size, "almost identical" tolerance, "longer than average" body, "slightly outside" buffer, and so on).
 - H1 always means the last 2 months of H1 candles (`h1Days: 60`, about 1,440 candles; the feed requests that many). Key levels, order flow,
   reclamation and the QML liquidity check all use that window.
+- Trend continuation: a key level only counts when it agrees with the H4 bias (RBS in a bullish bias, SBR in a bearish bias, none when there is no bias). The QML is the exception, because it is built from an invalidated key level and trades the other way. `klWithBias: false` turns the filter off.
 - Key level edges: a resistant key level needs equal (or almost equal) body TOPS, a support key level needs equal body BOTTOMS; the other edge can be any length.
   RBS follows the resistant rule and SBR the support rule. Key level POI boxes start at the left edge of the first candle of the key level.
 - M5 is live, with two rules. Invalidation (key level and QML) and price touching a level use the candle that is still forming, so they react at once. Signals wait for the candle to close: entry confirmations (engulf, harami, pin bar, move out of the box), M5 key levels for the bjeff zone, and the bjeff zone becoming active. So a signal never repaints. The feed flags the forming candle (`forming`), H1 and H4 use closed candles only, and `liveM5: false` turns the live feed off.
