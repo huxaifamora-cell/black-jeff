@@ -321,9 +321,10 @@ story.append(P("If you are trading from order flow without a reclamation, do not
 
 # ------------------------------------------------------------------ 5. K
 story += banner("K", "Key Level", "Found on H1, entered on M5", PURPLE)
-story.append(P("A <b>key level</b> is two opposite candle bodies that have equal length on the top or on the bottom, or that are almost identical. "
-               "The two opposite candles have to sit right next to each other, and either their top edges or their bottom edges have to be at "
-               "the same level, or almost identical. Key levels are found on H1 and their validity is judged on H1. The direction of the market "
+story.append(P("A <b>key level</b> is two opposite candle bodies that sit right next to each other. In a <b>resistant key level</b> the "
+               "<b>tops</b> of the two bodies must be at the same height, or almost the same; the bottoms can be any length. In a <b>support key level</b> "
+               "the <b>bottoms</b> of the two bodies must be at the same height, or almost the same; the tops can be any length. RBS follows the same logic "
+               "as the resistant key level, and SBR follows the same logic as the support key level. Key levels are found on H1 and their validity is judged on H1. The direction of the market "
                "is called market bias, so resistant, support, RBS and SBR are all <b>directional bias key levels</b>."))
 story.append(P("The four types", h2))
 story += table([
@@ -334,7 +335,7 @@ story += table([
     ["Support becomes resistant (SBR)", "A support key level that has another bearish candle body closing below its longest wick.", "Valid. Look for sells."],
 ], [48 * mm, 80 * mm, CW - 128 * mm], head_color=PURPLE)
 story.append(figure("f08_kl_types.png",
-                    "A resistant key level (bullish candle first, equal top edges) and a support key level (bearish candle first, equal bottom edges)."))
+                    "A resistant key level (bullish candle first, the tops of the bodies are equal, the bottoms can differ) and a support key level (bearish candle first, the bottoms of the bodies are equal, the tops can differ)."))
 story.append(figure("f09_rbs.png",
                     "RBS and SBR. The dotted line is the longest wick of the key level; a body closing beyond it turns the key level into RBS or SBR. "
                     "The POI box runs from the key level to that candle and then extends to the right."))
@@ -343,7 +344,7 @@ story += B(["At a resistant key level, look for sell opportunities, at the stage
             "At a support key level, look for buy opportunities, at the stage before it becomes SBR.",
             "At RBS, look for buy trades. At SBR, look for sell trades."])
 story.append(P("Drawing the POI of a valid key level", h2))
-story.append(P("Draw the POI box the same way as for a reclamation: from the top to the bottom of the two bodies that form the key level. "
+story.append(P("Draw the POI box the same way as for a reclamation: from the top to the bottom of the two bodies that form the key level. The box starts at the left edge of the first (left) candle that formed the key level. "
                "For an RBS or SBR the box extends from the key level to the candle that closed to make it valid, and then extends "
                "horizontally to the right."))
 story.append(P("High and low probability setups", h2))
@@ -390,11 +391,11 @@ story += table([
 ], [32 * mm, 40 * mm, 46 * mm, CW - 118 * mm], head_color=PURPLE)
 story.append(P("For the SBR case the box is the exact mirror: the bottom of the invalidated POI becomes the top of the new POI.", small))
 story.append(figure("f12_qml.png",
-                    "QML after an invalidated RBS. A body closes below the RBS POI. The top of that POI becomes the bottom of the QML POI, and the swing high becomes its top. "
+                    "QML after an invalidated RBS. A body closes below the RBS POI. The top of that POI becomes the bottom of the QML POI, and the highest point (at a point of liquidity) becomes its top. "
                     "Price comes up into the QML POI and sells off.", width=CW * 0.95))
 story.append(P("Things to watch out for", h2))
-story += rule("A QML must be traded at the extreme, for example when the market is close to a place where there was a major reversal. "
-              "The extreme is identified as a swing high or low on H1.", color=PURPLE, bg=colors.HexColor("#F3ECF7"))
+story += rule("A QML must be traded where the reversal happened at a point of liquidity, or close to a point of liquidity. "
+              "Points of liquidity are looked for in the last 2 months of H1 candles.", color=PURPLE, bg=colors.HexColor("#F3ECF7"))
 story += B(["<b>QML plus inverse:</b> if a directional key level has failed, the QML is how to enter in the inverse direction. After that, every other key "
             "level can be traded in the inverse direction.",
             "<b>Stop loss and take profit</b> stay the same as for directional key levels: the SL slightly outside the POI, the TP set with a risk reward ratio.",
@@ -443,7 +444,7 @@ story += table([
     ["OB", "Order block: the last opposite candle before the move starts."],
     ["POI", "Point of interest: the box drawn on an order block, key level or QML."],
     ["Market bias", "The direction of the market."],
-    ["KL", "Key level: two adjacent opposite candle bodies with equal or almost identical top or bottom edges."],
+    ["KL", "Key level: two adjacent opposite candle bodies. Resistant: equal or almost equal tops. Support: equal or almost equal bottoms."],
     ["RKL / SKL", "Resistant key level / support key level."],
     ["RBS / SBR", "Resistant becomes support / support becomes resistant."],
     ["QML", "Quasimodo Level: the inverse key level used for market reversal."],

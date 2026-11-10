@@ -127,19 +127,19 @@ def fig_reclamation():
 
 
 def fig_kl_types():
-    kl = [(100, 102.6, 99.5, 102.4), (102.4, 105.5, 98.5, 99.6)]
+    kl = [(100, 102.6, 99.5, 102.4), (102.4, 105.5, 97.6, 98.2)]
     fig, axes = plt.subplots(1, 2, figsize=(6.9, 2.6))
     ax = axes[0]
     setup(ax, (-0.8, 4.6), (96, 107), "Resistant key level")
     candles(ax, kl, x0=0.5)
     hline(ax, 102.4, -0.2, 2.8, color=RED)
-    txt(ax, 3.0, 102.4, "equal top\nedges", color=RED, fs=7.6, bold=True)
+    txt(ax, 3.0, 102.4, "equal tops\n(bottoms can differ)", color=RED, fs=7.6, bold=True)
     txt(ax, 0.5, 97.0, "bullish first", color=GREEN, fs=7.6, bold=True, ha="center")
     ax = axes[1]
     setup(ax, (-0.8, 4.6), (96, 107), "Support key level")
     candles(ax, mirror(kl, 204), x0=0.5)
     hline(ax, 101.6, -0.2, 2.8, color=GREEN)
-    txt(ax, 3.0, 101.6, "equal bottom\nedges", color=GREEN, fs=7.6, bold=True)
+    txt(ax, 3.0, 101.6, "equal bottoms\n(tops can differ)", color=GREEN, fs=7.6, bold=True)
     txt(ax, 0.5, 105.2, "bearish first", color=RED, fs=7.6, bold=True, ha="center")
     fig.tight_layout(w_pad=1.5)
     save(fig, "f08_kl_types.png")
@@ -212,7 +212,7 @@ def fig_qml():
     txt(ax, 14.2, 110.4, "QML POI", color=GOLD, ha="right", fs=9, bold=True)
     txt(ax, 14.2, 108.6, "bottom: top of old POI", color=GREY, ha="right", fs=7.2)
     txt(ax, 14.2, 107.2, "top: highest point", color=GREY, ha="right", fs=7.2)
-    ax.annotate("Swing high (the extreme)", xy=(5, 112.3), xytext=(0.8, 115.6), fontsize=7.6,
+    ax.annotate("Reversal at a point of liquidity", xy=(5, 112.3), xytext=(0.8, 115.6), fontsize=7.6,
                 color=NAVY, fontweight="bold", arrowprops=dict(arrowstyle="-|>", color=NAVY, lw=1.1),
                 va="center")
     ax.annotate("A body closes below\nthe POI = invalid", xy=(7, 98.0), xytext=(7.6, 93.4),
