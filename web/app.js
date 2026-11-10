@@ -172,7 +172,8 @@ function chart(cv, s, tf, name) {
   // Labels: zone labels live in an empty band above the candles; line labels and the live price sit in a gutter on the right.
   const boxes = ov.filter(o => o.type === 'box'), lines = ov.filter(o => o.type !== 'box');
   const priceTxt = s.price != null ? Number(s.price).toFixed(s.digits ?? 3) : '';
-  const gutter = Math.min(Math.ceil(W * .3), Math.max(priceTxt ? tw(priceTxt) : 0, ...lines.map(o => tw(o.label))) + 4);
+  // The right-hand space after the live candle is also where zone labels sit (inside their box), so it is as wide as the widest label.
+  const gutter = Math.min(Math.ceil(W * .4), Math.max(priceTxt ? tw(priceTxt) : 0, ...lines.map(o => tw(o.label)), ...boxes.map(o => tw(o.label) + 6)) + 8);
   const titleTxt = (name ? name + '  ' : '') + tf.toUpperCase();
   g.font = '700 12px "JetBrains Mono", ui-monospace, monospace'; const titleW = Math.ceil(g.measureText(titleTxt).width) + 14;
   g.font = '11px "JetBrains Mono", ui-monospace, monospace';
@@ -222,10 +223,13 @@ function chart(cv, s, tf, name) {
       const x = W - w - 2, base = Math.max(1, Math.min(l.y, Hh - LH - 1));
       for (let d = 0; d < Hh; d += LH + GAP) for (const y of [base + d, base - d]) { const r = { x, y, w, h: LH }; if (y >= 1 && y + LH <= Hh - 1 && free(r)) return r; }
     }
-    if (l.kind === 'box') {                                                       // zone label: ON its own box first, wherever the candles leave room
-      for (let x = l.x; x + w <= W - 2; x += 6) for (let y = l.top + 1; y + LH <= l.bot - 1; y += 3) { const r = { x, y, w, h: LH, inside: true }; if (y >= 1 && y + LH <= Hh - 1 && free(r)) return r; }
-      const ysB = [l.top - LH - 1, l.bot + 1];                                     // otherwise just above or below it (a leader line points back to the box)
-      for (let x = l.x; x + w <= W - 2; x += 6) for (const y of ysB) { const r = { x, y, w, h: LH }; if (y >= 1 && y + LH <= Hh - 1 && free(r)) return r; }
+    if (l.kind === 'box') {                                                       // zone label: INSIDE its own box, in the space after the live candle
+      const rx = plotW + 8, xs = [];                                              // (the box runs on to the right edge, past the live candle)
+      if (rx + w <= W - 2) xs.push(rx);
+      for (let x = l.x; x + w <= W - 2; x += 6) xs.push(x);                       // fallback: wherever the candles leave room
+      for (const x of xs) for (let y = l.top + 1; y + LH <= l.bot - 1; y += 3) { const r = { x, y, w, h: LH, inside: true }; if (y >= 1 && y + LH <= Hh - 1 && free(r)) return r; }
+      const ysB = []; for (let k = 0; k < 4; k++) ysB.push(l.bot + 1 + k * (LH + 1), l.top - LH - 1 - k * (LH + 1));   // box too thin: just below or above it, nearest first (a leader line points back to the box)
+      for (const x of xs) for (const y of ysB) { const r = { x, y, w, h: LH }; if (y >= 1 && y + LH <= Hh - 1 && free(r)) return r; }
     }
     const want = l.x ?? W, order = []; for (let x = 2; x + w <= W - 2; x += 6) order.push(x); order.sort((a, b) => Math.abs(a - want) - Math.abs(b - want));
     for (const y of ys) for (const x of order) { const r = { x, y, w, h: LH }; if (free(r)) return r; }      // empty space, top rows first
