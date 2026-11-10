@@ -88,14 +88,16 @@ export class Deriv {
     try { return await fn(); } finally { this.active--; this.waiters.shift()?.(); }
   }
 
-  // Closed candles only (the candle still forming is dropped).
-  async candles(code, granularity, count) {
+  // Closed candles only (the candle still forming is dropped), unless `live` is true: then the forming candle is kept as the last one
+  // (its high, low and close move with every tick).
+  async candles(code, granularity, count, live = false) {
     const data = await this.#limit(() => this.request({
       ticks_history: code, adjust_start_time: 1, count, end: 'latest', style: 'candles', granularity }));
     const now = Date.now() / 1000;
     return (data.candles || [])
       .map((c) => C(Number(c.epoch), Number(c.open), Number(c.high), Number(c.low), Number(c.close)))
-      .filter((c) => c.t + granularity <= now + 1);
+      .filter((c) => live || c.t + granularity <= now + 1)
+      .map((c) => { if (c.t + granularity > now + 1) c.forming = true; return c; });   // only a live fetch can still hold the forming candle
   }
 
   close() { clearInterval(this.ping); try { this.ws?.close(); } catch { /* ignore */ } }

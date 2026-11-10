@@ -17,6 +17,7 @@ export const defaultParams = {
   slBufferAtr: 0.25,    // "slightly outside the POI" = this x M5 ATR
   rr: 2.0,              // risk reward ratio used for the example TP
   plqNearAtr: 0.5,      // QML reversal is "close to" a point of liquidity when it is within this x H1 ATR of it
+  liveM5: true,         // the M5 candle still forming is used (live price); H1 and H4 stay closed-candle only
   maxScanH1: 1440,      // H1 candles scanned for reclamations (after the inducement / disruption BOS); 2 months of H1
 };
 
@@ -31,6 +32,12 @@ const loWick = (c) => bot(c) - c.l;
 // The last `days` of candles, counted back from the newest candle (H1 uses 2 months).
 export const lastDays = (cs, days) => (cs.length ? cs.filter((c) => c.t >= cs[cs.length - 1].t - days * 86400) : cs);
 export const mirror = (c) => ({ t: c.t, o: -c.o, h: -c.l, l: -c.h, c: -c.c });
+
+// The M5 candle that is still forming is flagged `forming` by the feed. Signals (confirmation patterns, M5 key levels, active bjeff zone)
+// only use closed candles; invalidations and the price touching a level use the live candle too.
+export const closedOnly = (cs) => (cs.length && cs[cs.length - 1].forming ? cs.slice(0, -1) : cs);
+// ATR of M5 candles: the forming candle is left out (just opened it is tiny and would shrink the average).
+export const atrM5 = (cs, p) => atr(closedOnly(cs), p.atrLen);
 
 export function atr(cs, n = 14) {
   if (cs.length < 2) return 0;
@@ -386,25 +393,26 @@ export function advanced(kl, m5, p, invT) {
   const { lo, hi, dir: d } = kl, mid = (lo + hi) / 2;
   const [zl, zh] = d === 1 ? [lo, mid] : [mid, hi];     // RBS: bottom half, SBR: top half
   const since = kl.t_valid + H1;
-  const seg = m5.filter((c) => c.t >= since && (invT === null || invT === undefined || c.t < invT));
+  const seg = m5.filter((c) => c.t >= since && (invT === null || invT === undefined || c.t < invT));   // live: price touching the 50% line counts at once
+  const segC = closedOnly(seg);                                                                          // zones and signals wait for the candle to close
   let entered = null;
   for (const c of seg) {
     if ((d === 1 && c.l <= mid) || (d === -1 && c.h >= mid)) { entered = c.t + M5; break; }
   }
   const zones = [];
   if (entered !== null) {
-    const a5 = atr(seg, p.atrLen);
-    for (const z of validateKls(seg, findKls(seg, p, a5, seg.length), p)) {
+    const a5 = atrM5(segC, p);
+    for (const z of validateKls(segC, findKls(segC, p, a5, segC.length), p)) {
       // Only a valid M5 RBS (for a buy) or SBR (for a sell) counts: the same direction as the H1 key level.
       if (z.status === 'valid' && z.dir === d && z.lo >= zl - 1e-12 && z.hi <= zh + 1e-12 && z.t1 + M5 >= entered - M5) {
         let active = null;
-        for (const c of seg) if (c.t > z.t1 && z.lo <= c.c && c.c <= z.hi) { active = c.t + M5; break; }
+        for (const c of segC) if (c.t > z.t1 && z.lo <= c.c && c.c <= z.hi) { active = c.t + M5; break; }
         zones.push({ lo: z.lo, hi: z.hi, t0: z.t0, t: z.t1, active_t: active });
       }
     }
   }
   const uniq = new Map();
-  for (const z of zones) if (z.active_t) for (const s of reversalSignals(seg, d, z.active_t)) uniq.set(`${s.t}|${s.type}`, s);
+  for (const z of zones) if (z.active_t) for (const s of reversalSignals(segC, d, z.active_t)) uniq.set(`${s.t}|${s.type}`, s);
   const signals = [...uniq.values()].sort((a, b) => a.t - b.t).slice(-3);
   return { half: [zl, zh], entered_t: entered, zones: zones.slice(-3), signals };
 }
@@ -427,7 +435,8 @@ export function evaluate(h4, h1All, m5, p = defaultParams, digits = 3) {
     Object.assign(state, { note: 'Not enough candle history yet.', candles: { m5: tail(m5, 150), h1: tail(h1, 150), h4: tail(h4, 120) }, overlays, digits });
     return { state, events };
   }
-  const atr1 = atr(h1, p.atrLen), atr5 = atr(m5, p.atrLen);
+  const m5c = closedOnly(m5);                  // closed M5 candles: confirmation patterns wait for the candle to close
+  const atr1 = atr(h1, p.atrLen), atr5 = atrM5(m5, p);
 
   // ---- S: market structure on H4
   const ms = marketStructure(h4, p), anc = ms.anchor;
@@ -502,7 +511,7 @@ export function evaluate(h4, h1All, m5, p = defaultParams, digits = 3) {
           q.plan = qp;
           events.push(ev('QML', 'qml_valid', q.dir, q.t, M5, `QML: ${side(q.dir)} Quasimodo level formed ${q.plq.inside ? 'at' : 'close to'} a point of liquidity`,
             `Reversal at ${f(q.extreme)}, ${q.plq.inside ? 'inside' : 'close to'} an H1 point of liquidity (POI ${f(q.plq.lo)} to ${f(q.plq.hi)}). QML POI ${f(q.lo)} to ${f(q.hi)}. ${cap(side(q.dir))} limit ${f(qp.entry)}, SL ${f(qp.sl)}, TP (1:${p.rr}) ${f(qp.tp)}.`, `qml-${q.t}`, { lo: q.lo, hi: q.hi, ...qp }));
-          for (const cf of confirmations(m5, q.lo, q.hi, q.dir, q.t).slice(-3)) {
+          for (const cf of confirmations(m5c, q.lo, q.hi, q.dir, q.t).slice(-3)) {
             events.push(ev('QML', 'qml_entry', q.dir, cf.t + M5, M5, `QML: ${side(q.dir)} confirmation (${nice(cf.type)})`,
               `${cap(nice(cf.type))} inside the QML POI. ${cap(side(q.dir))} limit ${f(qp.entry)}, SL ${f(qp.sl)}, TP ${f(qp.tp)}.`, `qml-${q.t}-${cf.t}-${cf.type}`));
           }
@@ -512,7 +521,7 @@ export function evaluate(h4, h1All, m5, p = defaultParams, digits = 3) {
       events.push(ev('K', 'kl_valid', act.dir, act.t_valid + H1, H1, `K: valid ${act.type} key level (${side(act.dir)} setup)`,
         `POI ${f(act.lo)} to ${f(act.hi)}, ${act.wicks} wick(s) inside (high probability). ${cap(side(act.dir))} limit ${f(plan.entry)}, SL ${f(plan.sl)}, TP (1:${p.rr}) ${f(plan.tp)}.`,
         uid, { lo: act.lo, hi: act.hi, ...plan }));
-      const cfs = confirmations(m5, act.lo, act.hi, act.dir, act.t_valid + H1).slice(-3);
+      const cfs = confirmations(m5c, act.lo, act.hi, act.dir, act.t_valid + H1).slice(-3);
       state.signals = cfs;
       for (const cf of cfs) {
         events.push(ev('K', 'kl_entry', act.dir, cf.t + M5, M5, `K: ${side(act.dir)} confirmation on ${act.type} (${nice(cf.type)})`,

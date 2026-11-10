@@ -75,7 +75,7 @@ export class Service {
     for (const ev of res.events) {
       if (now - ev.t > 3 * ev.tf) continue;                    // stale events are not alerted
       const a = {
-        key: `${sid}|${ev.concept}|${ev.kind}|${ev.uid}`, ts: ev.t, symbol: sid, symbol_name: s.name, concept: ev.concept,
+        key: `${sid}|${ev.concept}|${ev.kind}|${ev.uid}`, ts: Math.min(ev.t, Math.floor(now)), symbol: sid, symbol_name: s.name, concept: ev.concept,
         kind: ev.kind, dir: ev.dir, title: ev.title, body: ev.body, payload: ev.extra,
       };
       a.id = this.store.addAlert(a);
@@ -84,15 +84,38 @@ export class Service {
     return fresh;
   }
 
+  // Live M5: the history is fetched once, then on every poll only the last 3 candles are fetched and merged in (the forming
+  // candle keeps changing, the one before it gets its final values). A bigger gap (restart, lost connection) fetches everything again.
+  async #liveM5(deriv, s, cache, now) {
+    const ent = cache[M5], prev = (Math.floor(now / M5) - 1) * M5;
+    const last = ent && ent.cs.length ? ent.cs[ent.cs.length - 1].t : null;
+    if (last === null || last < prev) {
+      cache[M5] = { cs: await deriv.candles(s.code, M5, countsFor(this.p)[M5], true) };
+      return;
+    }
+    const tail = await deriv.candles(s.code, M5, 3, true);
+    const byT = new Map(ent.cs.map((c) => [c.t, c]));
+    for (const c of tail) byT.set(c.t, c);
+    ent.cs = [...byT.values()].sort((a, b) => a.t - b.t).slice(-countsFor(this.p)[M5]);
+  }
+
   async refresh(deriv, sid) {
     const s = this.byId.get(sid);
     if (!s.available) return [];
     const now = Date.now() / 1000, cache = this.cache.get(sid);
     let changed = false;
-    for (const gran of [H4, H1, M5]) {
+    for (const gran of [H4, H1]) {                              // H4 and H1: closed candles only, fetched once per candle
       const bucket = Math.floor(now / gran), ent = cache[gran];
       if (!ent || (ent.bucket !== bucket && now - bucket * gran >= 3)) {
         cache[gran] = { bucket, cs: await deriv.candles(s.code, gran, countsFor(this.p)[gran]) };
+        changed = true;
+      }
+    }
+    if (this.p.liveM5) { await this.#liveM5(deriv, s, cache, now); changed = true; }   // M5: the forming candle too, refreshed on every poll
+    else {
+      const bucket = Math.floor(now / M5), ent = cache[M5];
+      if (!ent || (ent.bucket !== bucket && now - bucket * M5 >= 3)) {
+        cache[M5] = { bucket, cs: await deriv.candles(s.code, M5, countsFor(this.p)[M5]) };
         changed = true;
       }
     }
