@@ -18,6 +18,7 @@ export const defaultParams = {
   rr: 2.0,              // risk reward ratio used for the example TP
   plqNearAtr: 0.5,      // QML reversal is "close to" a point of liquidity when it is within this x H1 ATR of it
   liveM5: true,         // the M5 candle still forming is used (live price); H1 and H4 stay closed-candle only
+  klWithBias: true,     // trend continuation: only key levels in the direction of the H4 bias count (RBS in a bullish bias, SBR in a bearish bias). QML is the exception.
   maxScanH1: 1440,      // H1 candles scanned for reclamations (after the inducement / disruption BOS); 2 months of H1
 };
 
@@ -491,7 +492,8 @@ export function evaluate(h4, h1All, m5, p = defaultParams, digits = 3) {
 
   // ---- K: key levels on H1
   const vk = validateKls(h1, findKls(h1, p, atr1, h1.length), p);
-  const valid = vk.filter((k) => k.status === 'valid');
+  // Trend continuation model: the key level must agree with the H4 bias (no bias = no key level). A QML is built from an invalidated key level and may go against it.
+  const valid = vk.filter((k) => k.status === 'valid' && (!p.klWithBias || (ms.trend !== 0 && k.dir === ms.trend)));
   const kState = { active: null, pending: [] };      // RKL/SKL (levels not yet valid) are not shown or alerted
   state.k = kState;
   if (valid.length) {
