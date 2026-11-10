@@ -42,7 +42,7 @@ h3{margin:16px 0 6px;font:700 14px var(--head);text-transform:uppercase;letter-s
 .pills button.on,.chip.on{background:var(--chipbg);border-color:var(--tan);color:var(--chipfg)}
 .chip{font-family:var(--mono)}
 /* chart card: 8px camo strip on top (the canvas border), dark inner box below */
-canvas{width:100%;height:268px;display:block;border:1px solid var(--edge);border-top:8px solid transparent;
+canvas{width:100%;height:340px;display:block;border:1px solid var(--edge);border-top:8px solid transparent;
   background:linear-gradient(var(--inner),var(--inner)) padding-box,var(--camo) 0 0/200px 160px repeat border-box}
 .btn{border:1px solid var(--tan);background:var(--btn);color:var(--btnfg);padding:9px 14px;font:700 14px var(--head);letter-spacing:2px;text-transform:uppercase}
 .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:6px 0}
@@ -164,3 +164,7 @@ main{max-width:760px;margin:0 auto}
 .scopeinfo{display:flex;justify-content:space-between;gap:8px;padding:6px 2px 8px;font:500 10px var(--mono);color:#5CC8E6;letter-spacing:.5px}
 .scopeinfo b{color:var(--gold)}
 @media (prefers-reduced-motion:reduce){.scope canvas{cursor:pointer}}
+
+.livedot{display:inline-block;width:7px;height:7px;border-radius:50%;background:#5CC8E6;margin-right:6px;box-shadow:0 0 6px #5CC8E6;animation:lv 1.4s infinite}
+@keyframes lv{50%{opacity:.25}}
+@media (prefers-reduced-motion:reduce){.livedot{animation:none}}

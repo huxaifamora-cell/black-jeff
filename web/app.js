@@ -20,7 +20,7 @@ document.getElementById('tabs').addEventListener('click', e => {
   setTab(b.dataset.tab);
 });
 function setTab(t) {
-  tab = t; current = null; clearInterval(timer);
+  tab = t; current = null; liveCtx = null; clearInterval(timer);
   document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === t));
   if (tg) tg.BackButton.hide();
   rkLeave(); Radar.unmount();
@@ -61,20 +61,34 @@ async function renderSymbols() {
 
 // ------------------------------------------------------------ symbol page
 function openSymbol(id) {
-  rkLeave(); Radar.unmount(); current = id; tf = 'm5'; clearInterval(timer);
+  rkLeave(); Radar.unmount(); current = id; tf = 'm5'; liveCtx = null; clearInterval(timer);
   if (tg) { tg.BackButton.show(); tg.BackButton.onClick(() => setTab(tab === 'alerts' ? 'alerts' : 'symbols')); }
-  loadSymbol(); timer = setInterval(loadSymbol, 30000);
+  loadSymbol(); timer = setInterval(loadSymbol, 3000);          // live: the chart refreshes every 3 s
 }
+let liveCtx = null;                                   // {id, tf, sig} of the page that is currently drawn
 async function loadSymbol() {
-  if (!current) return;
+  if (!current || loadSymbol.busy) return;
+  const live = !!(liveCtx && liveCtx.id === current && document.getElementById('chart'));
+  loadSymbol.busy = true;
   try {
-    const [v, al] = await Promise.all([api('/api/symbol/' + current), api('/api/alerts?symbol=' + current + '&limit=15')]);
+    const v = await api('/api/symbol/' + current + '?live=1');
+    if (live && v.state && liveUpdate(v)) return;                  // nothing but price and candles changed
+    const al = await api('/api/alerts?symbol=' + current + '&limit=15').catch(() => ({ alerts: [] }));
     drawSymbol(v, al.alerts); rkSymbolSeen(v);
-  } catch (e) { view.innerHTML = `<p class="down">${esc(e.message)}</p>`; }
+  } catch (e) { if (!live) view.innerHTML = `<p class="down">${esc(e.message)}</p>`; }
+  finally { loadSymbol.busy = false; }
+}
+// Live tick: only the price, the clock and the chart change. A full redraw happens only when the setup itself changed.
+function liveUpdate(v) {
+  const s = v.state, sig = v.status + '|' + v.steps.map(x => x.state).join('');
+  if (sig !== liveCtx.sig) return false;                           // the setup changed: full redraw
+  const px = document.getElementById('lvPx'); if (px && s.price != null) px.textContent = N(s.price, s.digits ?? 3);
+  const up = document.getElementById('lvUp'); if (up) up.textContent = T(s.updated);
+  liveCtx.s = s; chart(document.getElementById('chart'), s, tf); return true;
 }
 function drawSymbol(v, alerts) {
   const s = v.state, d = s ? s.digits : 3;
-  let h = `<div class="row"><button class="back" id="back">&#8249; ${esc(v.short)}</button><span class="px">${s && s.price != null ? N(s.price, d) : ''}</span>${arrow(s && s.s ? s.s.trend : null)}</div><div class="small">${esc(v.name)}</div>`;
+  let h = `<div class="row"><button class="back" id="back">&#8249; ${esc(v.short)}</button><span class="px" id="lvPx">${s && s.price != null ? N(s.price, d) : ''}</span>${arrow(s && s.s ? s.s.trend : null)}</div><div class="small">${esc(v.name)}</div>`;
   if (!v.available) h += '<p class="down">This symbol was not found on Deriv, so it is not monitored.</p>';
   const goBack = () => setTab(tab === 'alerts' ? 'alerts' : 'symbols');
   if (!s) { view.innerHTML = h + '<p class="mut">Waiting for the first data...</p>'; document.getElementById('back').onclick = goBack; return; }
@@ -82,13 +96,10 @@ function drawSymbol(v, alerts) {
   const NAME = { S: 'STRUCTURE', O: 'ORDER FLOW', R: 'RECLAMATION', K: 'KEY LEVEL' }, COL = { done: '#5AFF64', now: '#E3C16A', todo: '#3A4A2A' };
   const done = v.steps.filter(x => x.state === 'done').length, nextWp = v.steps.find(x => x.state !== 'done');
   const stp = v.steps.map(x => `<div class="rt ${x.state}"><i>${x.state === 'done' ? '&#10003;' : x.state === 'now' ? '&#9679;' : '&#9675;'}</i><b>${x.k}</b> ${esc(x.text)}</div>`).join('');
-  h += `<div class="card"><h4>Sector map &middot; ${done} of 4 cleared</h4>
-    <svg class="map" viewBox="0 0 366 450" role="img" aria-label="To-scale map of this symbol: structure, order flow, reclamation, key level, entry, stop loss and take profit">${symMap(v)}</svg>
-    <p class="small">Tap each step below to confirm you have read it.<br>${nextWp ? `Next waypoint: <span class="px">${nextWp.k}</span> &middot; ${esc(nextWp.text)}` : 'All waypoints cleared. Target reached.'}</p><div class="rts">${stp}</div>` +
-    (v.plan && v.status === 'ready' ? `<div class="plan"><div><small>${v.plan.dir === 1 ? 'BUY LIMIT' : 'SELL LIMIT'}</small><span class="px">${N(s.k.active.plan.entry, d)}</span></div><div><small>STOP LOSS</small><span class="down">${N(s.k.active.plan.sl, d)}</span></div><div><small>TAKE PROFIT 1:${s.k.active.plan.rr}</small><span class="up">${N(s.k.active.plan.tp, d)}</span></div></div>` : '') + '</div>';
+  const plan = v.plan && v.status === 'ready' ? `<div class="plan"><div><small>${v.plan.dir === 1 ? 'BUY LIMIT' : 'SELL LIMIT'}</small><span class="px">${N(s.k.active.plan.entry, d)}</span></div><div><small>STOP LOSS</small><span class="down">${N(s.k.active.plan.sl, d)}</span></div><div><small>TAKE PROFIT 1:${s.k.active.plan.rr}</small><span class="up">${N(s.k.active.plan.tp, d)}</span></div></div>` : '';
   h += `<div class="pills">${['m5', 'h1', 'h4'].map(x => `<button data-tf="${x}" class="${x === tf ? 'on' : ''}">${x.toUpperCase()}</button>`).join('')}</div>
-    <canvas id="chart"></canvas><div class="small">Updated ${T(s.updated)}. Closed candles with the SORK zones.</div>
-    <details class="more"${wasOpen ? ' open' : ''}><summary>Full details</summary>` + cards(s, d) + `</details>` +
+    <canvas id="chart"></canvas><div class="small"><span class="livedot"></span>LIVE &middot; updated <span id="lvUp">${T(s.updated)}</span></div>` + plan +
+    `<details class="more"${wasOpen ? ' open' : ''}><summary>Full details</summary><div class="small">${done} of 4 steps cleared. ${nextWp ? `Next: <span class="px">${nextWp.k}</span> &middot; ${esc(nextWp.text)}` : 'All steps cleared.'}</div><div class="rts">${stp}</div>` + cards(s, d) + `</details>` +
     `<h3>Alerts for this symbol</h3>` + (alerts.length ? alerts.map(a => alertHtml(a)).join('') : '<p class="mut">No alerts yet.</p>') +
     `<div class="row"><button class="btn" id="mute">Mute alerts for this symbol</button></div>`;
   view.innerHTML = h;
@@ -100,6 +111,7 @@ function drawSymbol(v, alerts) {
     await api('/api/me/settings', { method: 'POST', body: JSON.stringify({ muted: [...m] }) });
     if (tg) tg.showAlert('Muted. You can unmute in the Alerts tab.'); else alert('Muted.');
   };
+  liveCtx = { id: current, sig: v.status + '|' + v.steps.map(x => x.state).join(''), s };
   redraw();
 }
 function box(b, d) { return `${P(b.lo, d)} to ${P(b.hi, d)}`; }
@@ -136,7 +148,7 @@ function cards(s, d) {
 }
 const TONE = { s: '#5d7a45', o: '#3C6B2D', k: '#C2A06A', qml: '#8a6a2a', pending: '#5d6875', dead: '#D2603F', adv: '#E3C16A', adv2: '#3C6B2D' };
 function chart(cv, s, tf) {
-  const dpr = window.devicePixelRatio || 1, W = cv.clientWidth, Hh = 260;
+  const dpr = window.devicePixelRatio || 1, W = cv.clientWidth, Hh = 340;
   cv.width = W * dpr; cv.height = Hh * dpr;
   const g = cv.getContext('2d'); g.scale(dpr, dpr);
   const cs = (s.candles[tf] || []).slice(-80); if (!cs.length) return;
@@ -169,6 +181,10 @@ function chart(cv, s, tf) {
     g.strokeStyle = col; g.fillStyle = col; g.beginPath(); g.moveTo(x, Y(c[2])); g.lineTo(x, Y(c[3])); g.stroke();
     const y1 = Y(Math.max(c[1], c[4])), y2 = Y(Math.min(c[1], c[4])); g.fillRect(x - step * .3, y1, step * .6, Math.max(1, y2 - y1));
   });
+  if (s.price != null && s.price >= lo && s.price <= hi) {            // live price line
+    const y = Y(s.price), col = '#5CC8E6'; g.strokeStyle = col; g.setLineDash([2, 3]); g.beginPath(); g.moveTo(0, y); g.lineTo(W, y); g.stroke(); g.setLineDash([]);
+    labels.push({ text: Number(s.price).toFixed(s.digits ?? 3), col, x: null, y: y - 7, live: true });
+  }
   const taken = [];
   labels.forEach(l => {
     const w = Math.ceil(g.measureText(l.text).width) + 10, h = 15;
@@ -176,7 +192,7 @@ function chart(cv, s, tf) {
     for (let n = 0; n < 20 && taken.some(r => x < r.x + r.w && x + w > r.x && y < r.y + h && y + h > r.y); n++) y = y + h + 1 > Hh - h ? 1 : y + h + 1;
     taken.push({ x, y, w });
     g.fillStyle = l.col; g.globalAlpha = .95; g.beginPath(); g.roundRect ? g.roundRect(x, y, w, h, 3) : g.rect(x, y, w, h); g.fill(); g.globalAlpha = 1;
-    g.fillStyle = ['#C2A06A', '#E3C16A'].includes(l.col) ? '#10150C' : '#F4F2E2'; g.textBaseline = 'middle'; g.fillText(l.text, x + 5, y + h / 2 + .5); g.textBaseline = 'alphabetic';
+    g.fillStyle = ['#C2A06A', '#E3C16A', '#5CC8E6'].includes(l.col) ? '#10150C' : '#F4F2E2'; g.textBaseline = 'middle'; g.fillText(l.text, x + 5, y + h / 2 + .5); g.textBaseline = 'alphabetic';
   });
   return { toPrice: y => lo + (Hh - 14 - y) / (Hh - 28) * (hi - lo), xOf: X, step, lo, hi };
 }
