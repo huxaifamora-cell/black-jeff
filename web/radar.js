@@ -1,19 +1,19 @@
 // Live radar scope (PPI display). Canvas, no dependencies.
 // Bearing = fixed slot per symbol (stable, no overlaps). Range = how far the symbol still is from a trade:
-// READY sits on the inner ring (inbound), BUILDING further out (more SORK steps still to clear), QUIET is not painted.
+// Only symbols that are READY to trade are painted (inner ring); BUILDING and QUIET symbols never appear on the scope.
+// The scope chrome is cyan so it never clashes with the green BUY / red SELL markers.
 // The beam sweeps once every 6 s; a contact lights up when the beam crosses it and then fades like phosphor.
 const Radar = (() => {
-  const SWEEP = 6, GREEN = '143,209,79', RED = '232,116,90', AMBER = '227,193,106';
+  const SWEEP = 6, SCOPE = '92,200,230', GREEN = '143,209,79', RED = '232,116,90';   // SCOPE = radar chrome (cyan); GREEN/RED = buy/sell contacts only
   let raf = 0, stop = null;
 
   function contacts(symbols) {
     const n = symbols.length || 1;
     return symbols.map((s, i) => {
-      if (s.status !== 'ready' && s.status !== 'building') return null;
-      const done = s.steps ? s.steps.filter(x => x.state === 'done').length : 0;
-      const range = s.status === 'ready' ? 0.34 : 0.52 + 0.4 * (1 - Math.min(3, done) / 3);     // 0..1 of the scope radius
+      if (s.status !== 'ready') return null;
+      const range = 0.34;                                                                         // 0..1 of the scope radius: inner ring
       const wob = ((i * 7919) % 13) / 13 * 0.05;                                               // tiny fixed offset, keeps neighbours apart
-      return { s, ang: (i / n) * Math.PI * 2, r: Math.min(.94, range + wob), ready: s.status === 'ready',
+      return { s, ang: (i / n) * Math.PI * 2, r: Math.min(.94, range + wob), ready: true,
         buy: !!(s.plan && s.plan.dir === 1), lit: -1, px: 0, py: 0 };
     }).filter(Boolean);
   }
@@ -39,24 +39,24 @@ const Radar = (() => {
       g.clearRect(0, 0, W, W);
       // scope face
       const bg = g.createRadialGradient(cx, cy, 0, cx, cy, R);
-      bg.addColorStop(0, '#12200E'); bg.addColorStop(1, '#070C06');
+      bg.addColorStop(0, '#0B1A22'); bg.addColorStop(1, '#050B0F');
       g.fillStyle = bg; g.beginPath(); g.arc(cx, cy, R, 0, 7); g.fill();
       g.save(); g.beginPath(); g.arc(cx, cy, R, 0, 7); g.clip();
       // range rings and spokes
-      g.lineWidth = 1; g.strokeStyle = `rgba(${GREEN},.28)`;
+      g.lineWidth = 1; g.strokeStyle = `rgba(${SCOPE},.28)`;
       for (let i = 1; i <= 4; i++) { g.beginPath(); g.arc(cx, cy, R * i / 4, 0, 7); g.stroke(); }
-      g.strokeStyle = `rgba(${GREEN},.16)`;
+      g.strokeStyle = `rgba(${SCOPE},.16)`;
       for (let a = 0; a < 12; a++) { const t = a * Math.PI / 6; g.beginPath(); g.moveTo(cx, cy); g.lineTo(cx + Math.sin(t) * R, cy - Math.cos(t) * R); g.stroke(); }
       // inbound zone (ready ring) tint
-      g.strokeStyle = `rgba(${GREEN},.18)`; g.lineWidth = 10; g.beginPath(); g.arc(cx, cy, R * .34, 0, 7); g.stroke(); g.lineWidth = 1;
+      g.strokeStyle = `rgba(${SCOPE},.18)`; g.lineWidth = 10; g.beginPath(); g.arc(cx, cy, R * .34, 0, 7); g.stroke(); g.lineWidth = 1;
       // sweep: fading wedge behind the beam
       const a0 = beam - Math.PI / 2;                                                             // canvas angle of the beam
       if (g.createConicGradient) {
         const cg = g.createConicGradient(a0 - 1.25, cx, cy);
-        cg.addColorStop(0, `rgba(${GREEN},0)`); cg.addColorStop(.2, `rgba(${GREEN},.34)`); cg.addColorStop(.2001, `rgba(${GREEN},0)`);
+        cg.addColorStop(0, `rgba(${SCOPE},0)`); cg.addColorStop(.2, `rgba(${SCOPE},.34)`); cg.addColorStop(.2001, `rgba(${SCOPE},0)`);
         g.fillStyle = cg; g.beginPath(); g.moveTo(cx, cy); g.arc(cx, cy, R, a0 - 1.25, a0); g.closePath(); g.fill();
-      } else { g.fillStyle = `rgba(${GREEN},.12)`; g.beginPath(); g.moveTo(cx, cy); g.arc(cx, cy, R, a0 - .6, a0); g.fill(); }
-      g.strokeStyle = `rgba(${GREEN},.95)`; g.lineWidth = 2; g.shadowColor = `rgb(${GREEN})`; g.shadowBlur = 8;
+      } else { g.fillStyle = `rgba(${SCOPE},.12)`; g.beginPath(); g.moveTo(cx, cy); g.arc(cx, cy, R, a0 - .6, a0); g.fill(); }
+      g.strokeStyle = `rgba(${SCOPE},.95)`; g.lineWidth = 2; g.shadowColor = `rgb(${SCOPE})`; g.shadowBlur = 8;
       g.beginPath(); g.moveTo(cx, cy); g.lineTo(cx + Math.cos(a0) * R, cy + Math.sin(a0) * R); g.stroke(); g.shadowBlur = 0; g.lineWidth = 1;
       // contacts
       g.font = '700 11px "JetBrains Mono", ui-monospace, monospace'; g.textBaseline = 'middle';
@@ -66,14 +66,13 @@ const Radar = (() => {
         const dAng = (((beam - c.ang) % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);           // radians since the beam passed it
         if (reduce) c.lit = 0; else if (dAng < 0.12 && c.lit !== tt) c.lit = tt;                   // beam on it: re-light
         const age = reduce ? 0 : Math.min(1, dAng / (Math.PI * 2));
-        const glow = c.ready ? 1 - age * .55 : .75 - age * .45;                                   // phosphor decay, never fully dark
-        const col = c.ready ? (c.buy ? GREEN : RED) : AMBER;
+        const glow = 1 - age * .55;                                   // phosphor decay, never fully dark
+        const col = c.buy ? GREEN : RED;
         // trail of the last positions is the same point: draw a ping ring just after the hit
         const since = reduce ? 9 : (tt - c.lit); if (since >= 0 && since < 1.2) { g.strokeStyle = `rgba(${col},${.8 * (1 - since / 1.2)})`; g.beginPath(); g.arc(c.px, c.py, 6 + since * 22, 0, 7); g.stroke(); }
-        g.fillStyle = `rgba(${col},${glow})`; g.shadowColor = `rgb(${col})`; g.shadowBlur = c.ready ? 12 : 5;
+        g.fillStyle = `rgba(${col},${glow})`; g.shadowColor = `rgb(${col})`; g.shadowBlur = 12;
         g.beginPath();
-        if (c.ready) { const u = c.buy ? -1 : 1; g.moveTo(c.px, c.py + u * 7); g.lineTo(c.px - 6, c.py - u * 5); g.lineTo(c.px + 6, c.py - u * 5); g.closePath(); }   // heading chevron: up = buy, down = sell
-        else g.arc(c.px, c.py, 3.2, 0, 7);
+        { const u = c.buy ? -1 : 1; g.moveTo(c.px, c.py + u * 7); g.lineTo(c.px - 6, c.py - u * 5); g.lineTo(c.px + 6, c.py - u * 5); g.closePath(); }   // heading chevron: up = buy, down = sell
         g.fill(); g.shadowBlur = 0;
         // callsign tag, nudged away from other tags
         const txt = c.s.short + (c.ready ? (c.buy ? ' ▲' : ' ▼') : ''), w = g.measureText(txt).width;
@@ -86,20 +85,20 @@ const Radar = (() => {
       });
       g.restore();
       // bezel, bearing ticks and labels
-      g.strokeStyle = `rgba(${GREEN},.7)`; g.lineWidth = 2; g.beginPath(); g.arc(cx, cy, R, 0, 7); g.stroke(); g.lineWidth = 1;
+      g.strokeStyle = `rgba(${SCOPE},.7)`; g.lineWidth = 2; g.beginPath(); g.arc(cx, cy, R, 0, 7); g.stroke(); g.lineWidth = 1;
       for (let d = 0; d < 360; d += 5) {
         const t = d * Math.PI / 180, l = d % 30 === 0 ? 10 : d % 10 === 0 ? 6 : 3;
-        g.strokeStyle = `rgba(${GREEN},${d % 30 === 0 ? .85 : .45})`; g.beginPath();
+        g.strokeStyle = `rgba(${SCOPE},${d % 30 === 0 ? .85 : .45})`; g.beginPath();
         g.moveTo(cx + Math.sin(t) * R, cy - Math.cos(t) * R); g.lineTo(cx + Math.sin(t) * (R - l), cy - Math.cos(t) * (R - l)); g.stroke();
       }
-      g.fillStyle = `rgba(${GREEN},.85)`; g.font = '500 9px "JetBrains Mono", ui-monospace, monospace'; g.textAlign = 'center';
+      g.fillStyle = `rgba(${SCOPE},.85)`; g.font = '500 9px "JetBrains Mono", ui-monospace, monospace'; g.textAlign = 'center';
       for (let d = 0; d < 360; d += 30) { const t = d * Math.PI / 180, lab = { 0: 'N', 90: 'E', 180: 'S', 270: 'W' }[d] || String(d).padStart(3, '0');
         g.fillText(lab, cx + Math.sin(t) * (R + 11), cy - Math.cos(t) * (R + 11)); }
-      g.fillStyle = `rgba(${GREEN},.5)`; g.font = '500 8px "JetBrains Mono", ui-monospace, monospace'; g.textAlign = 'left';
-      ['INBOUND', 'CLOSING', 'FAR'].forEach((t, i) => g.fillText(t, cx + 4, cy - R * (.34 + i * .26) - 3));
+      g.fillStyle = `rgba(${SCOPE},.5)`; g.font = '500 8px "JetBrains Mono", ui-monospace, monospace'; g.textAlign = 'left';
+      g.fillText('READY', cx + 4, cy - R * .34 - 3);
       g.textAlign = 'center';
       // centre mark (own station)
-      g.strokeStyle = `rgba(${GREEN},.9)`; g.beginPath(); g.moveTo(cx - 6, cy); g.lineTo(cx + 6, cy); g.moveTo(cx, cy - 6); g.lineTo(cx, cy + 6); g.stroke();
+      g.strokeStyle = `rgba(${SCOPE},.9)`; g.beginPath(); g.moveTo(cx - 6, cy); g.lineTo(cx + 6, cy); g.moveTo(cx, cy - 6); g.lineTo(cx, cy + 6); g.stroke();
       g.textAlign = 'start';
       if (readout) readout(beam, list);
       raf = requestAnimationFrame(frame);
