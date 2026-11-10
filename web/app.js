@@ -182,7 +182,7 @@ function chart(cv, s, tf, name) {
       const x = XL(o.t0), x1 = W;
       if (o.tone === 'adv') { g.strokeStyle = col; g.lineWidth = 1.5; g.setLineDash([6, 4]); g.strokeRect(x, Y(o.hi), x1 - x, Y(o.lo) - Y(o.hi)); g.setLineDash([]); g.lineWidth = 1; }   // 50% POI: dashed
       else { g.fillStyle = col + '40'; g.fillRect(x, Y(o.hi), x1 - x, Y(o.lo) - Y(o.hi)); g.strokeStyle = col; g.strokeRect(x, Y(o.hi), x1 - x, Y(o.lo) - Y(o.hi)); }
-      labels.push({ text: o.label, col, kind: 'box', x: Math.max(2, x + 2), top: Y(o.hi), bot: Y(o.lo) });
+      labels.push({ text: o.label, col, kind: 'box', x: Math.max(2, x + 2), bx: x, top: Y(o.hi), bot: Y(o.lo) });
     } else {
       const x = X(o.t0); g.strokeStyle = col; g.setLineDash([4, 3]); g.beginPath(); g.moveTo(x, Y(o.y)); g.lineTo(W, Y(o.y)); g.stroke(); g.setLineDash([]);
       labels.push({ text: o.label, col, kind: 'line', y: Y(o.y) - LH / 2 });
@@ -214,8 +214,9 @@ function chart(cv, s, tf, name) {
       const x = W - w - 2, base = Math.max(1, Math.min(l.y, Hh - LH - 1));
       for (let d = 0; d < Hh; d += LH + GAP) for (const y of [base + d, base - d]) { const r = { x, y, w, h: LH }; if (y >= 1 && y + LH <= Hh - 1 && free(r)) return r; }
     }
-    if (l.kind === 'box') {                                                       // zone label: on or beside its own box, nearest its left edge
-      const ysB = [l.top + 1, l.top - LH - 1, l.bot - LH - 1, l.bot + 1];         // inside top, just above, inside bottom, just below
+    if (l.kind === 'box') {                                                       // zone label: ON its own box first, wherever the candles leave room
+      for (let x = l.x; x + w <= W - 2; x += 6) for (let y = l.top + 1; y + LH <= l.bot - 1; y += 3) { const r = { x, y, w, h: LH, inside: true }; if (y >= 1 && y + LH <= Hh - 1 && free(r)) return r; }
+      const ysB = [l.top - LH - 1, l.bot + 1];                                     // otherwise just above or below it (a leader line points back to the box)
       for (let x = l.x; x + w <= W - 2; x += 6) for (const y of ysB) { const r = { x, y, w, h: LH }; if (y >= 1 && y + LH <= Hh - 1 && free(r)) return r; }
     }
     const want = l.x ?? W, order = []; for (let x = 2; x + w <= W - 2; x += 6) order.push(x); order.sort((a, b) => Math.abs(a - want) - Math.abs(b - want));
@@ -227,6 +228,13 @@ function chart(cv, s, tf, name) {
   labels.sort((a, b) => (b.live ? 1 : 0) - (a.live ? 1 : 0));
   labels.forEach(l => {
     const w = tw(l.text), r = place(l, w); taken.push(r);
+    if (l.kind === 'box' && !r.inside) {                                           // leader line: label -> its box
+      const cx = r.x + r.w / 2, ax = Math.min(Math.max(cx, l.bx + 2), W - 2);
+      const above = r.y + LH <= l.top, below = r.y >= l.bot;
+      const sy = above ? r.y + LH : below ? r.y : r.y + LH / 2, ay = above ? l.top : below ? l.bot : Math.min(Math.max(r.y + LH / 2, l.top), l.bot);
+      g.strokeStyle = l.col; g.lineWidth = 1.5; g.beginPath(); g.moveTo(cx, sy); g.lineTo(ax, ay); g.stroke(); g.lineWidth = 1;
+      g.fillStyle = l.col; g.beginPath(); g.arc(ax, ay, 2.5, 0, Math.PI * 2); g.fill();
+    }
     g.fillStyle = l.col; g.globalAlpha = .95; g.beginPath(); g.roundRect ? g.roundRect(r.x, r.y, r.w, r.h, 3) : g.rect(r.x, r.y, r.w, r.h); g.fill(); g.globalAlpha = 1;
     g.fillStyle = ['#C2A06A', '#E3C16A', '#5CC8E6'].includes(l.col) ? '#10150C' : '#F4F2E2'; g.textBaseline = 'middle'; g.fillText(l.text, r.x + 5, r.y + r.h / 2 + .5); g.textBaseline = 'alphabetic';
   });
