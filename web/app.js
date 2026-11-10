@@ -151,7 +151,7 @@ const TONE = { s: '#8A94A6', o: '#8E6BFF', k: '#8DC3FF', qml: '#E58FD0', pending
 // Which overlays each timeframe shows (everything else is hidden, not deleted: the engine still computes and alerts on it).
 //  H4: BOS lines.  H1: inducement, disruption, key level POI, QML POI.  M5: key level POI with its 50% POI, and the bjeff zone.
 const SHOW = {
-  h4: o => o.type === 'line' && o.label === 'BOS',
+  h4: o => o.type === 'line' && /BOS$/.test(o.label),
   h1: o => o.grp === 'o' || o.grp === 'k' || o.label === 'QML',
   m5: o => o.grp === 'k' || o.tone === 'adv' || o.tone === 'adv2',
 };
