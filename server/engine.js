@@ -497,7 +497,7 @@ export function evaluate(h4, h1All, m5, p = defaultParams, digits = 3) {
     const plan = tradePlan(act.lo, act.hi, act.dir, atr5, p);
     kState.active = { type: act.type, dir: act.dir, lo: act.lo, hi: act.hi, t0: act.t0, t_valid: act.t_valid, wicks: act.wicks,
       high_prob: act.high_prob, invalidated: inv, plan };
-    overlays.push({ type: 'box', grp: 'k', lo: act.lo, hi: act.hi, t0: act.t0, label: act.type + (act.high_prob ? '' : ' (low probability)'), tone: inv ? 'dead' : 'k' });
+    overlays.push({ type: 'box', grp: 'k', lo: act.lo, hi: act.hi, t0: act.t0, label: act.type + ' Key Level' + (act.high_prob ? '' : ' (low probability)'), tone: inv ? 'dead' : 'k' });
     const uid = `${act.type}-${act.t_valid}`;
     if (inv) {
       events.push(ev('K', 'kl_invalid', act.dir, inv.t, M5, `K: ${act.type} invalidated`,
