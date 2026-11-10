@@ -210,7 +210,7 @@ story += table([
     ["Reclamation at the inducement and disruption POIs, and judging whether a reclamation is invalid", "H1"],
     ["Entry confirmations (move out of the POI, engulf, harami)", "M5, inside the POI box"],
     ["Invalidating a key level (a body closing outside its POI)", "M5"],
-    ["Bjeff zone", "An M5 key level inside the 50% of an H1 key level"],
+    ["Bjeff zone", "A valid M5 key level of the same direction (RBS for a buy, SBR for a sell) inside the 50% of an H1 key level"],
 ], [CW * 0.58, CW * 0.42])
 
 # ------------------------------------------------------------------ 2. S
@@ -412,7 +412,7 @@ story.append(P("For the advanced key level the confirmation can be inside or out
 story.append(P("Black jeff zone (bjeff zone)", h2))
 story.append(P("On H1, mark the 100% of the key level POI, then use the fibonacci retracement to find the 50% of the POI and draw the new POI. "
                "The new 50% POI is the half that price enters second: the <b>bottom half for RBS</b> and the <b>top half for SBR</b>. "
-               "Inside it there is a <b>bjeff zone</b>, which is an M5 key level within the 50% of an H1 key level."))
+               "Inside it there is a <b>bjeff zone</b>, which is a valid M5 key level within the 50% of an H1 key level and of the same direction: an M5 <b>RBS</b> for an H1 RBS (buy), an M5 <b>SBR</b> for an H1 SBR (sell)."))
 story += B(["Wait for price to get into the bjeff zone.",
             "Then wait for any confirmation entry to place a trade.",
             "Find a bjeff zone key level and trade from there if a body candle closes inside it.",
@@ -448,7 +448,7 @@ story += table([
     ["RKL / SKL", "Resistant key level / support key level."],
     ["RBS / SBR", "Resistant becomes support / support becomes resistant."],
     ["QML", "Quasimodo Level: the inverse key level used for market reversal."],
-    ["Bjeff zone", "An M5 key level within the 50% of an H1 key level."],
+    ["Bjeff zone", "A valid M5 RBS (buy) or SBR (sell), the same type as the H1 key level, within its 50%."],
 ], [34 * mm, CW - 34 * mm])
 story += rule("The concept above is defined. Still to be set outside the concept itself: target pairs, performance targets, risk per trade and risk limits.",
               color=GREY, bg=LIGHT, title="Not covered yet")
