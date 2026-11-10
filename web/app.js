@@ -148,13 +148,20 @@ function cards(s, d) {
 }
 // Zone colours avoid the candle colours (green up, red-orange down) and the cyan live-price line.
 const TONE = { s: '#8A94A6', o: '#8E6BFF', k: '#C2A06A', qml: '#E58FD0', pending: '#5d6875', dead: '#6B7480', adv: '#E3C16A', adv2: '#4A7CFF' };
+// Which overlays each timeframe shows (everything else is hidden, not deleted: the engine still computes and alerts on it).
+//  H4: BOS lines.  H1: inducement, disruption, key level POI, QML POI.  M5: key level POI with its 50% POI, and the bjeff zone.
+const SHOW = {
+  h4: o => o.type === 'line' && o.label === 'BOS',
+  h1: o => o.grp === 'o' || o.grp === 'k' || o.label === 'QML',
+  m5: o => o.grp === 'k' || o.tone === 'adv' || o.tone === 'adv2',
+};
 function chart(cv, s, tf, name) {
   const dpr = window.devicePixelRatio || 1, W = cv.clientWidth, Hh = 340;
   cv.width = W * dpr; cv.height = Hh * dpr;
   const g = cv.getContext('2d'); g.scale(dpr, dpr);
   const cs = (s.candles[tf] || []).slice(-80); if (!cs.length) return;
   let lo = Math.min(...cs.map(c => c[3])), hi = Math.max(...cs.map(c => c[2]));
-  const shown = s.overlays || [];
+  const shown = (s.overlays || []).filter(SHOW[tf] || (() => true));
   const span = hi - lo || 1, ov = shown.filter(o => o.type === 'box' ? (o.hi >= lo - span * .3 && o.lo <= hi + span * .3)
     : (o.tf === tf && o.y >= lo - span * .3 && o.y <= hi + span * .3));
   ov.forEach(o => { lo = Math.min(lo, o.lo ?? o.y); hi = Math.max(hi, o.hi ?? o.y); });
