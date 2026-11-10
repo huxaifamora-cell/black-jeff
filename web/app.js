@@ -47,7 +47,7 @@ async function renderSymbols() {
       <div class="scopeinfo"><span id="rdBrg">BRG 000&deg;</span><span>CONTACTS <b id="rdN">${ready.length}</b></span><span id="rdClk"></span></div></div>`;
     const last = al.alerts && al.alerts[0];
     view.innerHTML = `<h3 style="margin-top:0">Tactical radar</h3>${map}
-      <div class="legend"><span><i style="background:#8FD14F"></i>BUY READY</span><span><i style="background:#E8745A"></i>SELL READY</span></div>` +
+      <div class="legend"><span><i style="background:#5AFF64"></i>BUY READY</span><span><i style="background:#FF6955"></i>SELL READY</span></div>` +
       `<div class="rtabs" role="tablist">${[['ready', 'Ready to trade'], ['building', 'Building'], ['quiet', 'Quiet']].map(([k, t]) => `<button role="tab" class="${radarTab === k ? 'on' : ''}" data-rt="${k}">${t} <span>${G[k].length}</span></button>`).join('')}</div>` +
       (G[radarTab].length ? G[radarTab].map(row).join('') : `<p class="mut">${{ ready: 'No symbols are ready to trade.', building: 'Nothing is building right now.', quiet: 'No quiet symbols.' }[radarTab]}</p>`) +
       (last ? `<div class="latest"><span>LATEST</span><span style="flex:1">${esc(last.title)}</span><span class="mut">${T(last.ts)}</span></div>` : '') +
@@ -79,7 +79,7 @@ function drawSymbol(v, alerts) {
   const goBack = () => setTab(tab === 'alerts' ? 'alerts' : 'symbols');
   if (!s) { view.innerHTML = h + '<p class="mut">Waiting for the first data...</p>'; document.getElementById('back').onclick = goBack; return; }
   const wasOpen = !!view.querySelector('details.more[open]');       // keep "Full details" open across refreshes
-  const NAME = { S: 'STRUCTURE', O: 'ORDER FLOW', R: 'RECLAMATION', K: 'KEY LEVEL' }, COL = { done: '#8FD14F', now: '#E3C16A', todo: '#3A4A2A' };
+  const NAME = { S: 'STRUCTURE', O: 'ORDER FLOW', R: 'RECLAMATION', K: 'KEY LEVEL' }, COL = { done: '#5AFF64', now: '#E3C16A', todo: '#3A4A2A' };
   const done = v.steps.filter(x => x.state === 'done').length, nextWp = v.steps.find(x => x.state !== 'done');
   const stp = v.steps.map(x => `<div class="rt ${x.state}"><i>${x.state === 'done' ? '&#10003;' : x.state === 'now' ? '&#9679;' : '&#9675;'}</i><b>${x.k}</b> ${esc(x.text)}</div>`).join('');
   h += `<div class="card"><h4>Sector map &middot; ${done} of 4 cleared</h4>
@@ -165,7 +165,7 @@ function chart(cv, s, tf) {
     }
   });
   cs.forEach((c, i) => {
-    const x = i * step + step / 2, up = c[4] >= c[1], col = up ? '#8FD14F' : '#D2603F';
+    const x = i * step + step / 2, up = c[4] >= c[1], col = up ? '#5AFF64' : '#D2603F';
     g.strokeStyle = col; g.fillStyle = col; g.beginPath(); g.moveTo(x, Y(c[2])); g.lineTo(x, Y(c[3])); g.stroke();
     const y1 = Y(Math.max(c[1], c[4])), y2 = Y(Math.min(c[1], c[4])); g.fillRect(x - step * .3, y1, step * .6, Math.max(1, y2 - y1));
   });

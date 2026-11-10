@@ -4,7 +4,7 @@
 // The scope chrome is cyan so it never clashes with the green BUY / red SELL markers.
 // The beam sweeps once every 6 s; a contact lights up when the beam crosses it and then fades like phosphor.
 const Radar = (() => {
-  const SWEEP = 6, SCOPE = '92,200,230', GREEN = '143,209,79', RED = '232,116,90';   // SCOPE = radar chrome (cyan); GREEN/RED = buy/sell contacts only
+  const SWEEP = 6, SCOPE = '92,200,230', GREEN = '90,255,100', RED = '255,105,85';   // SCOPE = radar chrome (cyan); GREEN/RED = buy/sell contacts only
   let raf = 0, stop = null;
 
   function contacts(symbols) {
@@ -59,28 +59,29 @@ const Radar = (() => {
       g.strokeStyle = `rgba(${SCOPE},.95)`; g.lineWidth = 2; g.shadowColor = `rgb(${SCOPE})`; g.shadowBlur = 8;
       g.beginPath(); g.moveTo(cx, cy); g.lineTo(cx + Math.cos(a0) * R, cy + Math.sin(a0) * R); g.stroke(); g.shadowBlur = 0; g.lineWidth = 1;
       // contacts
-      g.font = '700 11px "JetBrains Mono", ui-monospace, monospace'; g.textBaseline = 'middle';
+      g.font = '700 14px "JetBrains Mono", ui-monospace, monospace'; g.textBaseline = 'middle';
       const taken = [];
       list.forEach(c => {
         pos(c);
         const dAng = (((beam - c.ang) % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);           // radians since the beam passed it
         if (reduce) c.lit = 0; else if (dAng < 0.12 && c.lit !== tt) c.lit = tt;                   // beam on it: re-light
         const age = reduce ? 0 : Math.min(1, dAng / (Math.PI * 2));
-        const glow = 1 - age * .55;                                   // phosphor decay, never fully dark
+        const glow = 1 - age * .1;                                    // ready contacts stay bright; only a faint pulse as the beam passes
         const col = c.buy ? GREEN : RED;
         // trail of the last positions is the same point: draw a ping ring just after the hit
         const since = reduce ? 9 : (tt - c.lit); if (since >= 0 && since < 1.2) { g.strokeStyle = `rgba(${col},${.8 * (1 - since / 1.2)})`; g.beginPath(); g.arc(c.px, c.py, 6 + since * 22, 0, 7); g.stroke(); }
-        g.fillStyle = `rgba(${col},${glow})`; g.shadowColor = `rgb(${col})`; g.shadowBlur = 12;
+        g.fillStyle = `rgba(${col},${glow})`; g.shadowColor = `rgb(${col})`; g.shadowBlur = 20;
         g.beginPath();
-        { const u = c.buy ? -1 : 1; g.moveTo(c.px, c.py + u * 7); g.lineTo(c.px - 6, c.py - u * 5); g.lineTo(c.px + 6, c.py - u * 5); g.closePath(); }   // heading chevron: up = buy, down = sell
-        g.fill(); g.shadowBlur = 0;
+        { const u = c.buy ? -1 : 1; g.moveTo(c.px, c.py + u * 10); g.lineTo(c.px - 8, c.py - u * 7); g.lineTo(c.px + 8, c.py - u * 7); g.closePath(); }   // heading chevron: up = buy, down = sell
+        g.fill(); g.shadowBlur = 0; g.lineWidth = 1.5; g.strokeStyle = 'rgba(255,255,255,.85)'; g.stroke(); g.lineWidth = 1;   // bright rim
         // callsign tag, nudged away from other tags
         const txt = c.s.short + (c.ready ? (c.buy ? ' ▲' : ' ▼') : ''), w = g.measureText(txt).width;
-        let lx = c.px + 10, ly = c.py - 12;
+        let lx = c.px + 13, ly = c.py - 14;
         if (lx + w > W - 4) lx = c.px - 10 - w;
-        for (let n = 0; n < 8 && taken.some(r => lx < r.x + r.w && lx + w > r.x && Math.abs(ly - r.y) < 12); n++) ly += 12;
+        for (let n = 0; n < 8 && taken.some(r => lx < r.x + r.w && lx + w > r.x && Math.abs(ly - r.y) < 16); n++) ly += 16;
         taken.push({ x: lx, y: ly, w });
-        g.fillStyle = `rgba(${col},${Math.max(.6, glow)})`; g.fillText(txt, lx, ly);
+        g.lineJoin = 'round'; g.lineWidth = 4; g.strokeStyle = 'rgba(3,8,12,.95)'; g.strokeText(txt, lx, ly); g.lineWidth = 1;   // dark halo for legibility
+        g.fillStyle = `rgb(${col})`; g.shadowColor = `rgb(${col})`; g.shadowBlur = 6; g.fillText(txt, lx, ly); g.shadowBlur = 0;
         c.hit = { x: c.px, y: c.py };
       });
       g.restore();
