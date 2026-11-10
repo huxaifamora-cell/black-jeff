@@ -23,7 +23,7 @@ td{border-color:var(--edge)!important;color:var(--fg)}
 tr:nth-child(even) td{background:var(--inner)!important}
 a{color:#E3C16A}
 
-/* content sits on dark plates over the camo, like the BLACK JEFF title */
+/* content sits on dark plates over the camo, like the B-JEFF title */
 body>:where(h2,h3,p,figure,.tw){background:rgba(12,17,9,.84);border:1px solid var(--edge);padding:8px 12px}
 body>:where(ul,ol){background:rgba(12,17,9,.84);border:1px solid var(--edge);padding:8px 12px 8px 34px}
 body>:where(h2,h3,p){width:fit-content;max-width:100%;box-sizing:border-box}

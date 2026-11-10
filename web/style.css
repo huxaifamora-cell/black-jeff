@@ -1,4 +1,4 @@
-/* BLACK JEFF field terminal theme: woodland camo. Colours, fonts and visual style only. */
+/* B-JEFF field terminal theme: woodland camo. Colours, fonts and visual style only. */
 :root{
   --bg:#10150C; --fg:#EDEBD8; --hint:#A0A78A; --link:#E3C16A;
   --btn:#3C6B2D; --btnfg:#F4F2E2; --card:#1A2214; --edge:#3A4A2A; --inner:#0C1109; --tan:#C2A06A; --gold:#E3C16A;
@@ -169,7 +169,7 @@ main{max-width:760px;margin:0 auto}
 @keyframes lv{50%{opacity:.25}}
 @media (prefers-reduced-motion:reduce){.livedot{animation:none}}
 
-/* ---------- camo on every page: the whole background is camo, and content sits on dark plates, like the BLACK JEFF title ---------- */
+/* ---------- camo on every page: the whole background is camo, and content sits on dark plates, like the B-JEFF title ---------- */
 :root{--plate:rgba(12,17,9,.84);--card:rgba(20,28,15,.88)}
 html{background:var(--camo) 0 0/200px 160px repeat,var(--bg)}
 body{background:none}
