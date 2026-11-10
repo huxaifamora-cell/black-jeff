@@ -168,3 +168,15 @@ main{max-width:760px;margin:0 auto}
 .livedot{display:inline-block;width:7px;height:7px;border-radius:50%;background:#5CC8E6;margin-right:6px;box-shadow:0 0 6px #5CC8E6;animation:lv 1.4s infinite}
 @keyframes lv{50%{opacity:.25}}
 @media (prefers-reduced-motion:reduce){.livedot{animation:none}}
+
+/* ---------- camo on every page: the whole background is camo, and content sits on dark plates, like the BLACK JEFF title ---------- */
+:root{--plate:rgba(12,17,9,.84);--card:rgba(20,28,15,.88)}
+html{background:var(--camo) 0 0/200px 160px repeat,var(--bg)}
+body{background:none}
+main > :where(:not(canvas,iframe,.scope,.card,.rrow,.alert,.sym,.alist,.latest,.xpbar)){background:var(--plate);border:1px solid var(--edge);padding:8px 12px}
+main > :where(h3,p,.small){width:fit-content;max-width:100%}
+main > div:empty{display:none}
+main > details.more>summary{margin:0}
+.alist,.latest{background:var(--plate)}
+#toast{background:#1A2214}
+main > .xpl{width:auto;padding:4px 8px}

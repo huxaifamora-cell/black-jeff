@@ -1,7 +1,7 @@
 /* Field guide: same camo theme as the app. Overrides the inline colours of the generated guide. */
 :root{color-scheme:dark;--bg:#10150C;--card:#1A2214;--edge:#3A4A2A;--inner:#0C1109;--tan:#C2A06A;--fg:#EDEBD8;--hint:#A0A78A;--camo:url(/static/camo.svg)}
 *{border-radius:3px}
-html,body{background:var(--bg)!important;color:var(--fg)!important}
+html{background:var(--camo) 0 0/200px 160px repeat,var(--bg)!important}body{background:none!important;color:var(--fg)!important}
 body{font:15px/1.6 'Inter',-apple-system,'Segoe UI',sans-serif!important}
 h1{position:relative;background:var(--card)!important;color:var(--fg)!important;border:1px solid var(--edge);padding:10px 12px!important;
   font:700 19px 'Rajdhani','Arial Narrow',sans-serif!important;letter-spacing:2px;text-transform:uppercase}
@@ -22,3 +22,9 @@ tr[style]{background:#3C6B2D!important}
 td{border-color:var(--edge)!important;color:var(--fg)}
 tr:nth-child(even) td{background:var(--inner)!important}
 a{color:#E3C16A}
+
+/* content sits on dark plates over the camo, like the BLACK JEFF title */
+body>:where(h2,h3,p,figure,.tw){background:rgba(12,17,9,.84);border:1px solid var(--edge);padding:8px 12px}
+body>:where(ul,ol){background:rgba(12,17,9,.84);border:1px solid var(--edge);padding:8px 12px 8px 34px}
+body>:where(h2,h3,p){width:fit-content;max-width:100%;box-sizing:border-box}
+body>.rule{background:rgba(20,28,15,.9)!important}
