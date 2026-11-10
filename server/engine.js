@@ -12,12 +12,12 @@ export const defaultParams = {
   avgBodyLen: 20,
   obScanBack: 6,        // how far back from the V tip to look for the order block candle
   klTolAtr: 0.10,       // "equal / almost identical" edges = within this x ATR
-  klLookback: 200,      // H1 candles scanned for key levels
+  h1Days: 60,           // H1 candles used everywhere: the last 2 months (key levels, order flow, reclamation, QML liquidity)
   maxKlWicks: 2,        // high probability key level: no more than this many wicks in the POI
   slBufferAtr: 0.25,    // "slightly outside the POI" = this x M5 ATR
   rr: 2.0,              // risk reward ratio used for the example TP
-  extremeLookback: 100, // H1 candles used to judge "at the extreme" for a QML
-  maxScanH1: 150,       // H1 candles scanned for reclamations (after the inducement / disruption BOS)
+  plqNearAtr: 0.5,      // QML reversal is "close to" a point of liquidity when it is within this x H1 ATR of it
+  maxScanH1: 1440,      // H1 candles scanned for reclamations (after the inducement / disruption BOS); 2 months of H1
 };
 
 export const C = (t, o, h, l, c) => ({ t, o, h, l, c });
@@ -28,6 +28,8 @@ const bot = (c) => Math.min(c.o, c.c);
 const body = (c) => Math.abs(c.c - c.o);
 const upWick = (c) => c.h - top(c);
 const loWick = (c) => bot(c) - c.l;
+// The last `days` of candles, counted back from the newest candle (H1 uses 2 months).
+export const lastDays = (cs, days) => (cs.length ? cs.filter((c) => c.t >= cs[cs.length - 1].t - days * 86400) : cs);
 export const mirror = (c) => ({ t: c.t, o: -c.o, h: -c.l, l: -c.h, c: -c.c });
 
 export function atr(cs, n = 14) {
@@ -221,16 +223,20 @@ export function reclamation(h1, poi, p) {
 }
 
 // ---------------------------------------------------------------- key levels (H1 and M5)
+// A key level is two opposite candle bodies side by side.
+// Resistant (R, bull then bear): the TOPS of the two bodies must be equal or almost equal; the bottoms can be any length.
+// Support (S, bear then bull): the BOTTOMS of the two bodies must be equal or almost equal; the tops can be any length.
+// RBS shares the logic of R, SBR shares the logic of S.
 export function findKls(cs, p, atrV, lookback) {
   const out = [], tol = p.klTolAtr * atrV;
   for (let i = Math.max(1, cs.length - lookback); i < cs.length; i++) {
     const a = cs[i - 1], b = cs[i];
     if (body(a) === 0 || body(b) === 0 || bull(a) === bull(b)) continue;
-    const eqTop = Math.abs(top(a) - top(b)) <= tol, eqBot = Math.abs(bot(a) - bot(b)) <= tol;
-    if (!(eqTop || eqBot)) continue;
     const kind = bull(a) ? 'R' : 'S';
+    const equal = kind === 'R' ? Math.abs(top(a) - top(b)) <= tol : Math.abs(bot(a) - bot(b)) <= tol;
+    if (!equal) continue;
     const tip = kind === 'R' ? (upWick(a) >= upWick(b) ? a : b).h : (loWick(a) >= loWick(b) ? a : b).l;
-    out.push({ kind, i, t0: a.t, t1: b.t, lo: Math.min(bot(a), bot(b)), hi: Math.max(top(a), top(b)), tip, eq: eqTop ? 'top' : 'bottom' });
+    out.push({ kind, i, t0: a.t, t1: b.t, lo: Math.min(bot(a), bot(b)), hi: Math.max(top(a), top(b)), tip, eq: kind === 'R' ? 'top' : 'bottom' });
   }
   return out;
 }
@@ -303,31 +309,58 @@ export function tradePlan(lo, hi, d, atr5, p) {
 }
 
 // ---------------------------------------------------------------- QML
+// Points of liquidity: every H1 BOS in the window (2 months) except the current inducement and disruption.
+// Each one is a POI (order block box) plus its horizontal line.
+export function liquidityPoints(h1, of, p) {
+  const skip = new Set(((of && of.pois) || []).filter((x) => x.role === 'inducement' || x.role === 'disruption').map((x) => x.bos_idx));
+  const out = [];
+  for (const b of findBos(h1, p.swingK)) {
+    if (skip.has(b.idx)) continue;
+    const poi = poiOf(h1, b, 'plq', p);
+    out.push({ dir: b.dir, t: b.t, line: b.tip_price, lo: poi.lo, hi: poi.hi });
+  }
+  return out;
+}
+
+// Is the reversal price at, or close to, a point of liquidity that already existed when the reversal formed?
+// Distance to a point = 0 inside its POI, otherwise the gap to the POI edge or to its line, whichever is smaller.
+export function nearLiquidity(price, tBefore, liq, atr1, p) {
+  const tol = p.plqNearAtr * atr1;
+  let best = null;
+  for (const q of liq) {
+    if (q.t >= tBefore) continue;                                   // it must exist before the reversal formed
+    const toBox = price < q.lo ? q.lo - price : price > q.hi ? price - q.hi : 0;
+    const dist = Math.min(toBox, Math.abs(price - q.line));
+    if (dist <= tol && (best === null || dist < best.dist)) best = { t: q.t, dir: q.dir, lo: q.lo, hi: q.hi, line: q.line, dist, inside: toBox === 0 };
+  }
+  return best;
+}
+
 // After a key level is invalidated, build the inverse key level (Quasimodo level) POI.
-export function qmlFor(kl, inv, h1, m5, p, atr1) {
+// `liq` = points of liquidity (see liquidityPoints). The QML only counts when its reversal point is at or close to one.
+export function qmlFor(kl, inv, h1, m5, p, atr1, liq = []) {
   const t0 = kl.t0, tInv = inv.t;
   const hcs = h1.filter((c) => c.t >= t0 && c.t < tInv);
   const lastH1End = hcs.length ? hcs[hcs.length - 1].t + H1 : t0;
   const all = hcs.concat(m5.filter((c) => c.t >= lastH1End && c.t < tInv));
   if (!all.length) return null;
-  let lo, hi, d, extreme, atExtreme;
+  let lo, hi, d, extreme, extremeT = all[0].t;
   if (kl.dir === 1) {          // RBS invalidated -> QML sells
-    extreme = Math.max(...all.map((c) => c.h));
+    extreme = -Infinity;
+    for (const c of all) if (c.h > extreme) { extreme = c.h; extremeT = c.t; }
     [lo, hi, d] = [kl.hi, extreme, -1];
-    const ref = h1.filter((c) => c.t < tInv).map((c) => c.h).slice(-p.extremeLookback);
-    atExtreme = ref.length > 0 && extreme >= Math.max(...ref) - 0.1 * atr1;
   } else {                     // SBR invalidated -> QML buys
-    extreme = Math.min(...all.map((c) => c.l));
+    extreme = Infinity;
+    for (const c of all) if (c.l < extreme) { extreme = c.l; extremeT = c.t; }
     [lo, hi, d] = [extreme, kl.lo, 1];
-    const ref = h1.filter((c) => c.t < tInv).map((c) => c.l).slice(-p.extremeLookback);
-    atExtreme = ref.length > 0 && extreme <= Math.min(...ref) + 0.1 * atr1;
   }
   if (hi <= lo) return null;
+  const plq = nearLiquidity(extreme, extremeT, liq, atr1, p);
   let dead = null;
   for (const c of m5) {
     if (c.t >= tInv && ((d === -1 && c.c > hi) || (d === 1 && c.c < lo))) { dead = c.t + M5; break; }
   }
-  return { dir: d, lo, hi, t: tInv, extreme, at_extreme: atExtreme, invalidated_t: dead };
+  return { dir: d, lo, hi, t: tInv, extreme, extreme_t: extremeT, at_liquidity: plq !== null, plq, invalidated_t: dead };
 }
 
 // ---------------------------------------------------------------- advanced key level / bjeff zone
@@ -365,7 +398,7 @@ export function advanced(kl, m5, p, invT) {
       if (z.lo >= zl - 1e-12 && z.hi <= zh + 1e-12 && z.t1 + M5 >= entered - M5) {
         let active = null;
         for (const c of seg) if (c.t > z.t1 && z.lo <= c.c && c.c <= z.hi) { active = c.t + M5; break; }
-        zones.push({ lo: z.lo, hi: z.hi, t: z.t1, active_t: active });
+        zones.push({ lo: z.lo, hi: z.hi, t0: z.t0, t: z.t1, active_t: active });
       }
     }
   }
@@ -383,7 +416,8 @@ const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
 const nice = (s) => s.replace('_', ' ');
 const tail = (cs, n) => cs.slice(-n).map((c) => [c.t, c.o, c.h, c.l, c.c]);
 
-export function evaluate(h4, h1, m5, p = defaultParams, digits = 3) {
+export function evaluate(h4, h1All, m5, p = defaultParams, digits = 3) {
+  const h1 = lastDays(h1All, p.h1Days);        // H1 candles: only the last 2 months are used
   const f = (x) => Number(x).toFixed(digits);
   const events = [], overlays = [];
   const state = { s: null, o: null, r: [], k: null, qml: null, adv: null, signals: [] };
@@ -443,7 +477,7 @@ export function evaluate(h4, h1, m5, p = defaultParams, digits = 3) {
   }
 
   // ---- K: key levels on H1
-  const vk = validateKls(h1, findKls(h1, p, atr1, p.klLookback), p);
+  const vk = validateKls(h1, findKls(h1, p, atr1, h1.length), p);
   const valid = vk.filter((k) => k.status === 'valid');
   const kState = { active: null, pending: [] };      // RKL/SKL (levels not yet valid) are not shown or alerted
   state.k = kState;
@@ -458,15 +492,15 @@ export function evaluate(h4, h1, m5, p = defaultParams, digits = 3) {
     if (inv) {
       events.push(ev('K', 'kl_invalid', act.dir, inv.t, M5, `K: ${act.type} invalidated`,
         `An M5 body closed outside the POI (${f(act.lo)} to ${f(act.hi)}). All older key levels are invalid too. Watch for the QML.`, `${uid}-inv-${inv.t}`));
-      const q = qmlFor(act, inv, h1, m5, p, atr1);
+      const q = qmlFor(act, inv, h1, m5, p, atr1, liquidityPoints(h1, of, p));
       if (q) {
         state.qml = q;
         overlays.push({ type: 'box', lo: q.lo, hi: q.hi, t0: q.t, label: 'QML', tone: q.invalidated_t ? 'dead' : 'qml' });
-        if (q.at_extreme && !q.invalidated_t) {
+        if (q.at_liquidity && !q.invalidated_t) {
           const qp = tradePlan(q.lo, q.hi, q.dir, atr5, p);
           q.plan = qp;
-          events.push(ev('QML', 'qml_valid', q.dir, q.t, M5, `QML: ${side(q.dir)} Quasimodo level formed at the extreme`,
-            `QML POI ${f(q.lo)} to ${f(q.hi)}. ${cap(side(q.dir))} limit ${f(qp.entry)}, SL ${f(qp.sl)}, TP (1:${p.rr}) ${f(qp.tp)}.`, `qml-${q.t}`, { lo: q.lo, hi: q.hi, ...qp }));
+          events.push(ev('QML', 'qml_valid', q.dir, q.t, M5, `QML: ${side(q.dir)} Quasimodo level formed ${q.plq.inside ? 'at' : 'close to'} a point of liquidity`,
+            `Reversal at ${f(q.extreme)}, ${q.plq.inside ? 'inside' : 'close to'} an H1 point of liquidity (POI ${f(q.plq.lo)} to ${f(q.plq.hi)}). QML POI ${f(q.lo)} to ${f(q.hi)}. ${cap(side(q.dir))} limit ${f(qp.entry)}, SL ${f(qp.sl)}, TP (1:${p.rr}) ${f(qp.tp)}.`, `qml-${q.t}`, { lo: q.lo, hi: q.hi, ...qp }));
           for (const cf of confirmations(m5, q.lo, q.hi, q.dir, q.t).slice(-3)) {
             events.push(ev('QML', 'qml_entry', q.dir, cf.t + M5, M5, `QML: ${side(q.dir)} confirmation (${nice(cf.type)})`,
               `${cap(nice(cf.type))} inside the QML POI. ${cap(side(q.dir))} limit ${f(qp.entry)}, SL ${f(qp.sl)}, TP ${f(qp.tp)}.`, `qml-${q.t}-${cf.t}-${cf.type}`));
@@ -488,7 +522,7 @@ export function evaluate(h4, h1, m5, p = defaultParams, digits = 3) {
       state.adv = adv;
       overlays.push({ type: 'box', lo: adv.half[0], hi: adv.half[1], t0: act.t0, label: '50% POI', tone: 'adv' });
       for (const z of adv.zones) {
-        overlays.push({ type: 'box', lo: z.lo, hi: z.hi, t0: z.t, label: 'bjeff zone', tone: 'adv2' });
+        overlays.push({ type: 'box', lo: z.lo, hi: z.hi, t0: z.t0, label: 'bjeff zone', tone: 'adv2' });
         if (z.active_t) {
           events.push(ev('ADV', 'bjeff_valid', act.dir, z.active_t, M5, 'ADV: bjeff zone is active',
             `M5 key level ${f(z.lo)} to ${f(z.hi)} inside the 50% of the H1 ${act.type}. A body candle closed inside it. Wait for any confirmation entry.`, `bj-${act.t_valid}-${z.t}`));

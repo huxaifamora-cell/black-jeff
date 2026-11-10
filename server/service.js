@@ -2,7 +2,8 @@
 import { H1, H4, M5, defaultParams, evaluate } from './engine.js';
 import { SYMBOLS, norm } from './symbols.js';
 
-const COUNTS = { [H4]: 400, [H1]: 500, [M5]: 500 };
+// H1 needs the last 2 months (h1Days x 24 candles, the Deriv indices trade round the clock) plus a small margin.
+const countsFor = (p) => ({ [H4]: 400, [H1]: Math.ceil(p.h1Days * 24) + 48, [M5]: 500 });
 
 // Number of decimals to show, guessed from the prices (Deriv indices use 2 to 4).
 export function digitsFor(candles) {
@@ -91,7 +92,7 @@ export class Service {
     for (const gran of [H4, H1, M5]) {
       const bucket = Math.floor(now / gran), ent = cache[gran];
       if (!ent || (ent.bucket !== bucket && now - bucket * gran >= 3)) {
-        cache[gran] = { bucket, cs: await deriv.candles(s.code, gran, COUNTS[gran]) };
+        cache[gran] = { bucket, cs: await deriv.candles(s.code, gran, countsFor(this.p)[gran]) };
         changed = true;
       }
     }
