@@ -178,7 +178,8 @@ function chart(cv, s, tf, name) {
   const gutter = Math.min(Math.ceil(W * .4), Math.max(priceTxt ? tw(priceTxt) : 0, ...lines.map(o => tw(o.label)), ...boxes.map(o => tw(o.label) + 6)) + 8);
   const titleTxt = (name ? name + '  ' : '') + tf.toUpperCase();
   // every timeframe also shows the current H4 trend
-  const tr = s.s ? s.s.trend : 0, trTxt = tr === 1 ? 'H4 \u25B2 UPTREND' : tr === -1 ? 'H4 \u25BC DOWNTREND' : 'H4 NO TREND', trCol = tr === 1 ? '#5AFF64' : tr === -1 ? '#FF6955' : '#8A94A6';
+  // H4 bias comes from the H4 market structure alone (s.s.bias); '?' means a newer opposite H4 BOS is not valid yet
+  const tr = s.s ? (s.s.bias ?? s.s.trend) : 0, sh = !!(s.s && s.s.bias_shift), trTxt = (tr === 1 ? 'H4 \u25B2 BULLISH BIAS' : tr === -1 ? 'H4 \u25BC BEARISH BIAS' : 'H4 NO BIAS') + (tr && sh ? ' (SHIFT?)' : ''), trCol = tr === 1 ? '#5AFF64' : tr === -1 ? '#FF6955' : '#8A94A6';
   g.font = `700 ${FS + 1}px ${MONO}`; const titleW = Math.ceil(g.measureText(titleTxt).width) + 14, trW = Math.ceil(g.measureText(trTxt).width) + 14;
   g.font = `${FS}px ${MONO}`;
   const bandW = Math.max(40, W - 14 - titleW - trW), need = boxes.reduce((n, o) => n + tw(o.label) + 3, 0);
