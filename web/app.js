@@ -156,8 +156,10 @@ const SHOW = {
   m5: o => o.grp === 'k' || o.tone === 'adv' || o.tone === 'adv2',
 };
 function chart(cv, s, tf, name) {
-  const dpr = window.devicePixelRatio || 1, W = cv.clientWidth, Hh = 340;
-  cv.width = W * dpr; cv.height = Hh * dpr;
+  const W = cv.clientWidth, wide = W >= 600;                                        // desktop: bigger text and a taller chart
+  const dpr = Math.max(window.devicePixelRatio || 1, 2), Hh = wide ? 440 : 340;   // always draw at 2x or more, so a normal desktop screen is as sharp as a phone
+  const FS = wide ? 13 : 11, MONO = '"JetBrains Mono", ui-monospace, monospace';
+  cv.style.height = Hh + 'px'; cv.width = W * dpr; cv.height = Hh * dpr;
   const g = cv.getContext('2d'); g.scale(dpr, dpr);
   const cs = (s.candles[tf] || []).slice(-80); if (!cs.length) return;
   let lo = Math.min(...cs.map(c => c[3])), hi = Math.max(...cs.map(c => c[2]));
@@ -166,8 +168,8 @@ function chart(cv, s, tf, name) {
     : (o.tf === tf && o.y >= lo - span * .3 && o.y <= hi + span * .3));
   ov.forEach(o => { lo = Math.min(lo, o.lo ?? o.y); hi = Math.max(hi, o.hi ?? o.y); });
   const pad = (hi - lo) * .06; lo -= pad; hi += pad;
-  const LH = 15, GAP = 1;
-  g.font = '11px "JetBrains Mono", ui-monospace, monospace';
+  const LH = FS + 4, GAP = 1, TH = FS + 7;
+  g.font = `${FS}px ${MONO}`;
   const tw = t => Math.ceil(g.measureText(t).width) + 10;
   // Labels: zone labels live in an empty band above the candles; line labels and the live price sit in a gutter on the right.
   const boxes = ov.filter(o => o.type === 'box'), lines = ov.filter(o => o.type !== 'box');
@@ -175,11 +177,13 @@ function chart(cv, s, tf, name) {
   // The right-hand space after the live candle is also where zone labels sit (inside their box), so it is as wide as the widest label.
   const gutter = Math.min(Math.ceil(W * .4), Math.max(priceTxt ? tw(priceTxt) : 0, ...lines.map(o => tw(o.label)), ...boxes.map(o => tw(o.label) + 6)) + 8);
   const titleTxt = (name ? name + '  ' : '') + tf.toUpperCase();
-  g.font = '700 12px "JetBrains Mono", ui-monospace, monospace'; const titleW = Math.ceil(g.measureText(titleTxt).width) + 14;
-  g.font = '11px "JetBrains Mono", ui-monospace, monospace';
-  const bandW = Math.max(40, W - 8 - titleW), need = boxes.reduce((n, o) => n + tw(o.label) + 3, 0);
+  // every timeframe also shows the current H4 trend
+  const tr = s.s ? s.s.trend : 0, trTxt = tr === 1 ? 'H4 \u25B2 UPTREND' : tr === -1 ? 'H4 \u25BC DOWNTREND' : 'H4 NO TREND', trCol = tr === 1 ? '#5AFF64' : tr === -1 ? '#FF6955' : '#8A94A6';
+  g.font = `700 ${FS + 1}px ${MONO}`; const titleW = Math.ceil(g.measureText(titleTxt).width) + 14, trW = Math.ceil(g.measureText(trTxt).width) + 14;
+  g.font = `${FS}px ${MONO}`;
+  const bandW = Math.max(40, W - 14 - titleW - trW), need = boxes.reduce((n, o) => n + tw(o.label) + 3, 0);
   const rows = Math.min(3, Math.max(1, Math.ceil(need / bandW)));
-  const TOP = 8 + 18 + (rows > 1 ? (rows - 1) * (LH + GAP) : 0) + 6;            // empty headroom above the highest candle
+  const TOP = 8 + TH + (rows > 1 ? (rows - 1) * (LH + GAP) : 0) + 6;            // empty headroom above the highest candle
   const Y = v => Hh - 14 - (v - lo) / (hi - lo) * (Hh - 14 - TOP), plotW = W - gutter, step = (plotW - 6) / cs.length;
   const X = t => { const i = cs.findIndex(c => c[0] >= t); return i < 0 ? plotW : i === 0 ? 0 : i * step; };
   // A box starts at the LEFT EDGE of the first candle that formed it (the candle body is drawn 60% of a slot wide, centred).
@@ -212,9 +216,13 @@ function chart(cv, s, tf, name) {
   const hit = (a, r) => a.x < r.x + r.w && a.x + a.w > r.x && a.y < r.y + r.h && a.y + a.h > r.y;
   const taken = [];
   // title tag: symbol name and timeframe, top left
-  { const r = { x: 4, y: 4, w: titleW, h: 18 }; taken.push(r);
+  { const r = { x: 4, y: 4, w: titleW, h: TH }; taken.push(r);
     g.fillStyle = 'rgba(12,17,9,.92)'; g.strokeStyle = '#5CC8E6'; g.beginPath(); g.roundRect ? g.roundRect(r.x, r.y, r.w, r.h, 3) : g.rect(r.x, r.y, r.w, r.h); g.fill(); g.stroke();
-    g.fillStyle = '#EDEBD8'; g.font = '700 12px "JetBrains Mono", ui-monospace, monospace'; g.textBaseline = 'middle'; g.fillText(titleTxt, r.x + 7, r.y + r.h / 2 + .5); g.textBaseline = 'alphabetic'; g.font = '11px "JetBrains Mono", ui-monospace, monospace'; }
+    g.fillStyle = '#EDEBD8'; g.font = `700 ${FS + 1}px ${MONO}`; g.textBaseline = 'middle'; g.fillText(titleTxt, r.x + 7, r.y + r.h / 2 + .5);
+    // H4 trend badge, right after the title tag: green = uptrend, red = downtrend, grey = no valid trend yet
+    const t = { x: r.x + r.w + 6, y: 4, w: trW, h: TH }; taken.push(t);
+    g.fillStyle = 'rgba(12,17,9,.92)'; g.strokeStyle = trCol; g.lineWidth = 1.5; g.beginPath(); g.roundRect ? g.roundRect(t.x, t.y, t.w, t.h, 3) : g.rect(t.x, t.y, t.w, t.h); g.fill(); g.stroke(); g.lineWidth = 1;
+    g.fillStyle = trCol; g.fillText(trTxt, t.x + 7, t.y + t.h / 2 + .5); g.textBaseline = 'alphabetic'; g.font = `${FS}px ${MONO}`; }
   const free = r => !taken.some(t => hit(r, t)) && !solid.some(t => hit(r, t));
   const place = (l, w) => {
     const bandTop = 4, ys = [];

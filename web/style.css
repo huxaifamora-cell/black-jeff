@@ -159,10 +159,10 @@ main{max-width:760px;margin:0 auto}
 .rt{cursor:pointer}.rt.rd{color:var(--fg)}.rt.rd:after{content:" \2713";color:var(--up)}
 
 /* live radar scope */
-.scope{position:relative;background:radial-gradient(circle at 50% 50%,#0b1a22,#050b0f);border:1px solid var(--edge);padding:8px 8px 0}
+.scope{position:relative;background:#000;border:1px solid var(--edge);padding:8px 8px 0}
 .scope canvas{display:block;margin:0 auto;width:auto;max-width:100%;border:0;background:none;cursor:crosshair}
-.scopeinfo{display:flex;justify-content:space-between;gap:8px;padding:6px 2px 8px;font:500 10px var(--mono);color:#5CC8E6;letter-spacing:.5px}
-.scopeinfo b{color:var(--gold)}
+.scopeinfo{display:flex;justify-content:space-between;gap:8px;padding:6px 2px 8px;font:500 10px var(--mono);color:#fff;letter-spacing:.5px}
+.scopeinfo b{color:#fff}
 @media (prefers-reduced-motion:reduce){.scope canvas{cursor:pointer}}
 
 .livedot{display:inline-block;width:7px;height:7px;border-radius:50%;background:#5CC8E6;margin-right:6px;box-shadow:0 0 6px #5CC8E6;animation:lv 1.4s infinite}

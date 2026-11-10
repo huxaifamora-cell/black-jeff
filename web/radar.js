@@ -1,10 +1,10 @@
 // Live radar scope (PPI display). Canvas, no dependencies.
 // Bearing = fixed slot per symbol (stable, no overlaps). Range = how far the symbol still is from a trade:
 // Only symbols that are READY to trade are painted (inner ring); BUILDING and QUIET symbols never appear on the scope.
-// The scope chrome is cyan so it never clashes with the green BUY / red SELL markers.
+// The scope chrome is white on a black face, so it never clashes with the green BUY / red SELL contacts.
 // The beam sweeps once every 6 s; a contact lights up when the beam crosses it and then fades like phosphor.
 const Radar = (() => {
-  const SWEEP = 6, SCOPE = '92,200,230', GREEN = '90,255,100', RED = '255,105,85';   // SCOPE = radar chrome (cyan); GREEN/RED = buy/sell contacts only
+  const SWEEP = 6, SCOPE = '255,255,255', GREEN = '90,255,100', RED = '255,105,85';   // SCOPE = radar chrome (white); GREEN/RED = buy/sell contacts only
   let raf = 0, stop = null;
 
   function contacts(symbols) {
@@ -24,8 +24,8 @@ const Radar = (() => {
     const g = cv.getContext('2d');
     let W = 0, cx = 0, cy = 0, R = 0, dpr = 1;
     const size = () => {
-      dpr = window.devicePixelRatio || 1; W = Math.min(cv.parentElement.clientWidth, 560);
-      cv.style.height = W + 'px'; cv.width = W * dpr; cv.height = W * dpr; g.setTransform(dpr, 0, 0, dpr, 0, 0);
+      dpr = Math.max(window.devicePixelRatio || 1, 2); W = Math.min(cv.parentElement.clientWidth - 16, 560);          // minus the scope's 8px side padding
+      cv.style.width = W + 'px'; cv.style.height = W + 'px'; cv.width = W * dpr; cv.height = W * dpr; g.setTransform(dpr, 0, 0, dpr, 0, 0);
       cx = cy = W / 2; R = W / 2 - 22;
     };
     size();
@@ -38,9 +38,7 @@ const Radar = (() => {
       const tt = (now - t0) / 1000, beam = reduce ? 0 : ((tt % SWEEP) / SWEEP) * Math.PI * 2;   // beam bearing, clockwise from up
       g.clearRect(0, 0, W, W);
       // scope face
-      const bg = g.createRadialGradient(cx, cy, 0, cx, cy, R);
-      bg.addColorStop(0, '#0B1A22'); bg.addColorStop(1, '#050B0F');
-      g.fillStyle = bg; g.beginPath(); g.arc(cx, cy, R, 0, 7); g.fill();
+      g.fillStyle = '#000'; g.beginPath(); g.arc(cx, cy, R, 0, 7); g.fill();
       g.save(); g.beginPath(); g.arc(cx, cy, R, 0, 7); g.clip();
       // range rings and spokes
       g.lineWidth = 1; g.strokeStyle = `rgba(${SCOPE},.28)`;
@@ -70,18 +68,13 @@ const Radar = (() => {
         const col = c.buy ? GREEN : RED;
         // trail of the last positions is the same point: draw a ping ring just after the hit
         const since = reduce ? 9 : (tt - c.lit); if (since >= 0 && since < 1.2) { g.strokeStyle = `rgba(${col},${.8 * (1 - since / 1.2)})`; g.beginPath(); g.arc(c.px, c.py, 6 + since * 22, 0, 7); g.stroke(); }
-        g.fillStyle = `rgba(${col},${glow})`; g.shadowColor = `rgb(${col})`; g.shadowBlur = 20;
-        g.beginPath();
-        { const u = c.buy ? -1 : 1; g.moveTo(c.px, c.py + u * 10); g.lineTo(c.px - 8, c.py - u * 7); g.lineTo(c.px + 8, c.py - u * 7); g.closePath(); }   // heading chevron: up = buy, down = sell
-        g.fill(); g.shadowBlur = 0; g.lineWidth = 1.5; g.strokeStyle = 'rgba(255,255,255,.85)'; g.stroke(); g.lineWidth = 1;   // bright rim
-        // callsign tag, nudged away from other tags
-        const txt = c.s.short + (c.ready ? (c.buy ? ' ▲' : ' ▼') : ''), w = g.measureText(txt).width;
-        let lx = c.px + 13, ly = c.py - 14;
-        if (lx + w > W - 4) lx = c.px - 10 - w;
-        for (let n = 0; n < 8 && taken.some(r => lx < r.x + r.w && lx + w > r.x && Math.abs(ly - r.y) < 16); n++) ly += 16;
+        // no arrow marker: the callsign itself marks the contact (the ping ring still shows when the beam hits it)
+        const txt = c.s.short + (c.ready ? (c.buy ? ' \u25B2' : ' \u25BC') : ''), w = g.measureText(txt).width;
+        let lx = Math.min(Math.max(c.px - w / 2, 4), W - 4 - w), ly = c.py;
+        for (let n = 0; n < 8 && taken.some(r => lx < r.x + r.w && lx + w > r.x && Math.abs(ly - r.y) < 16); n++) ly += 16;      // nudged away from other callsigns
         taken.push({ x: lx, y: ly, w });
-        g.lineJoin = 'round'; g.lineWidth = 4; g.strokeStyle = 'rgba(3,8,12,.95)'; g.strokeText(txt, lx, ly); g.lineWidth = 1;   // dark halo for legibility
-        g.fillStyle = `rgb(${col})`; g.shadowColor = `rgb(${col})`; g.shadowBlur = 6; g.fillText(txt, lx, ly); g.shadowBlur = 0;
+        g.lineJoin = 'round'; g.lineWidth = 4; g.strokeStyle = 'rgba(0,0,0,.95)'; g.strokeText(txt, lx, ly); g.lineWidth = 1;   // black halo for legibility
+        g.fillStyle = `rgba(${col},${glow})`; g.shadowColor = `rgb(${col})`; g.shadowBlur = 6; g.fillText(txt, lx, ly); g.shadowBlur = 0;
         c.hit = { x: c.px, y: c.py };
       });
       g.restore();
