@@ -123,6 +123,7 @@ export function createApp({ cfg = loadConfig(), store, svc, deriv, bot, log = co
   });
 
   // ------------------------------------------------------------ background work
+  const CHAT_SKIP_KINDS = new Set(['kl_invalid', 'invalidated']);   // alert kinds never posted to groups or channels
   async function notify(alert, force) {
     if (!bot || (!warm && !force)) return;
     const short = alert.symbol_name.replace('Volatility ', 'V').replace(' Index', '');
@@ -134,8 +135,9 @@ export function createApp({ cfg = loadConfig(), store, svc, deriv, bot, log = co
       if (cfg.miniAppLink) return { text: label, url: `${cfg.miniAppLink}?startapp=${param}`, plain: true };   // t.me link: works in groups and channels
       return cfg.webappUrl ? { text: label, url: `${cfg.webappUrl}/?p=${param}`, plain: signed } : null;
     };
-    if ((cfg.chatConcepts || ['R', 'K', 'QML', 'ADV']).includes(alert.concept)) {
-      for (const chat of cfg.alertChats || []) {      // groups and channels: reclamation, key level, QML, advanced key level only
+    // Groups and channels: reclamation, key level, QML and bjeff zone only, and never an invalidation (those stay in the app's Alerts tab and in private messages).
+    if ((cfg.chatConcepts || ['R', 'K', 'QML', 'ADV']).includes(alert.concept) && !CHAT_SKIP_KINDS.has(alert.kind)) {
+      for (const chat of cfg.alertChats || []) {
         try { await bot.send(chat, formatAlert(alert), btn(true)); }
         catch (e) { log.warn('could not post to', chat + ':', e.message); }
         await sleep(50);
