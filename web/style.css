@@ -142,6 +142,16 @@ main{max-width:760px;margin:0 auto}
 .at .m{font:11px var(--mono);color:var(--hint)}.tm{flex:none;font:11px var(--mono);color:var(--hint)}
 .ab{padding:0 12px 12px 52px;font-size:13px;color:var(--fg)}.ab .btn{margin-top:10px;min-height:38px;padding:6px 16px}
 
+/* per-symbol alert menu: one button per SORK concept */
+.snav{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin:8px 0}
+.snav button{position:relative;display:flex;flex-direction:column;align-items:center;gap:4px;min-height:64px;padding:8px 2px 6px;border:1px solid var(--edge);background:var(--inner);color:var(--hint);font:700 10px var(--head);letter-spacing:.5px;text-transform:uppercase}
+.snav svg{width:24px;height:24px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:square;stroke-linejoin:miter}
+.snav em{position:absolute;top:3px;right:4px;font:700 10px var(--mono);font-style:normal;color:var(--hint)}
+.snav button.on{background:var(--chipbg);border-color:var(--tan);color:var(--chipfg);box-shadow:inset 0 -3px 0 var(--gold)}
+.snav button.on em{color:var(--gold)}
+@media (hover:hover){.snav button:hover{filter:brightness(1.18)}}
+.snav button:active{transform:scale(.975)}
+
 /* rank */
 #toast{position:fixed;left:50%;top:12px;transform:translate(-50%,-140%);z-index:20;max-width:92vw;background:var(--card);border:1px solid var(--tan);border-left:4px solid var(--gold);padding:10px 14px;font-size:13px;box-shadow:0 6px 24px rgba(0,0,0,.6);transition:transform .25s ease}
 #toast.on{transform:translate(-50%,0)}#toast b{color:var(--gold)}

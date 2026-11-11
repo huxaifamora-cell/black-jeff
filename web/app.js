@@ -1,7 +1,7 @@
 const tg = window.Telegram && Telegram.WebApp;
 if (tg) { tg.ready(); tg.expand(); }
 const view = document.getElementById('view');
-let tab = 'symbols', current = null, timer = null, tf = 'm5', concept = '';
+let tab = 'symbols', current = null, timer = null, tf = 'm5', concept = '', symConcept = '';
 
 async function api(path, opts = {}) {
   const r = await fetch(path, { ...opts, headers: { 'Content-Type': 'application/json',
@@ -73,7 +73,7 @@ async function loadSymbol() {
   try {
     const v = await api('/api/symbol/' + current + '?live=1');
     if (live && v.state && liveUpdate(v)) return;                  // nothing but price and candles changed
-    const al = await api('/api/alerts?symbol=' + current + '&limit=15').catch(() => ({ alerts: [] }));
+    const al = await api('/api/alerts?symbol=' + current + '&limit=40').catch(() => ({ alerts: [] }));
     drawSymbol(v, al.alerts); rkSymbolSeen(v);
   } catch (e) { if (!live) view.innerHTML = `<p class="down">${esc(e.message)}</p>`; }
   finally { loadSymbol.busy = false; }
@@ -85,6 +85,20 @@ function liveUpdate(v) {
   const px = document.getElementById('lvPx'); if (px && s.price != null) px.textContent = N(s.price, s.digits ?? 3);
   const up = document.getElementById('lvUp'); if (up) up.textContent = T(s.updated);
   liveCtx.s = s; chart(document.getElementById('chart'), s, tf, liveCtx.name); return true;
+}
+// Alerts for one symbol: one navigation menu per SORK concept (structure, order flow, reclamation, key level), each with a military icon.
+const SNAV = [
+  ['S', 'Structure', 'M4 21V7h3v3h2V7h6v3h2V7h3v14zM10 21v-5h4v5'],                                   // fortress wall
+  ['O', 'Order flow', 'M3 15h18l-2 4H5zM8 15v-3h6v3M14 13.5h7'],                                      // armoured tank
+  ['R', 'Reclamation', 'M6 21V3M6 4h12l-3 4 3 4H6M3 21h6'],                                           // flag planted on retaken ground
+  ['K', 'Key level', 'M12 2v5M12 17v5M2 12h5M17 12h5M12 8.5a3.5 3.5 0 100 7 3.5 3.5 0 000-7z'],    // crosshair
+];
+function symAlerts(alerts) {
+  const n = c => alerts.filter(a => a.concept === c).length;
+  const cur = symConcept || (SNAV.find(x => n(x[0]))?.[0]) || 'S';
+  const nav = `<div class="snav">${SNAV.map(([c, name, ic]) => `<button data-sc="${c}" class="${c === cur ? 'on' : ''}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="${ic}"/></svg><span>${name}</span><em>${n(c)}</em></button>`).join('')}</div>`;
+  const list = alerts.filter(a => a.concept === cur);
+  return nav + (list.length ? list.map(a => alertHtml(a)).join('') : `<p class="mut">No ${SNAV.find(x => x[0] === cur)[1].toLowerCase()} alerts yet.</p>`);
 }
 function drawSymbol(v, alerts) {
   const s = v.state, d = s ? s.digits : 3;
@@ -100,12 +114,13 @@ function drawSymbol(v, alerts) {
   h += `<div class="pills">${['m5', 'h1', 'h4'].map(x => `<button data-tf="${x}" class="${x === tf ? 'on' : ''}">${x.toUpperCase()}</button>`).join('')}</div>
     <canvas id="chart"></canvas><div class="small"><span class="livedot"></span>LIVE &middot; updated <span id="lvUp">${T(s.updated)}</span></div>` + plan +
     `<details class="more"${wasOpen ? ' open' : ''}><summary>Full details</summary><div class="small">${done} of 4 steps cleared. ${nextWp ? `Next: <span class="px">${nextWp.k}</span> &middot; ${esc(nextWp.text)}` : 'All steps cleared.'}</div><div class="rts">${stp}</div>` + cards(s, d) + `</details>` +
-    `<h3>Alerts for this symbol</h3>` + (alerts.length ? alerts.map(a => alertHtml(a)).join('') : '<p class="mut">No alerts yet.</p>') +
+    `<h3>Alerts for this symbol</h3>` + symAlerts(alerts) +
     `<div class="row"><button class="btn" id="mute">Mute alerts for this symbol</button></div>`;
   view.innerHTML = h;
   document.getElementById('back').onclick = goBack; rkRouteReview(v);
   const redraw = () => chart(document.getElementById('chart'), s, tf, v.short);
   view.querySelectorAll('.pills button').forEach(b => b.onclick = () => { tf = b.dataset.tf; drawSymbol(v, alerts); });
+  view.querySelectorAll('.snav button').forEach(b => b.onclick = () => { symConcept = b.dataset.sc; drawSymbol(v, alerts); });
   document.getElementById('mute').onclick = async () => {
     const { me } = await api('/api/me'); const m = new Set(me.muted); m.add(current);
     await api('/api/me/settings', { method: 'POST', body: JSON.stringify({ muted: [...m] }) });
