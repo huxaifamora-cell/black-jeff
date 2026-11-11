@@ -73,7 +73,7 @@ async function rk() {
   if (RKS.d.date !== today()) RKS.d = { date: today(), drill: 0 };
   return RKS;
 }
-const rkSave = () => kvSet('sork_rank', JSON.stringify(RKS));
+const rkSave = () => { kvSet('sork_rank', JSON.stringify(RKS)); rkHeader(); };
 const rankIdx = xp => { let i = 0; RANKS.forEach((r, k) => { if (xp >= r[1]) i = k; }); return i; };
 
 function toast(html, long) {
@@ -251,6 +251,15 @@ async function renderDrill() {
   } catch (e) { view.innerHTML = `<p class="down">${esc(e.message)}</p>`; }
 }
 
+// ---- header: the person's rank insignia, rank name and name, under the B-JEFF logo
+const rkName = () => (tgs && tgs.initDataUnsafe && tgs.initDataUnsafe.user && tgs.initDataUnsafe.user.first_name) || 'Operator';
+function rkHeader() {
+  const el = document.getElementById('hrank'); if (!el || !RKS) return;
+  const i = rankIdx(RKS.xp);
+  el.innerHTML = `${insignia(i, 24)}<b class="hr">${RANKS[i][0]}</b><span class="hn">${esc(rkName())}</span>`;
+}
+window.addEventListener('load', () => { rk().then(rkHeader); });
+
 // ---- rank page
 function insignia(i, size = 44) {
   const c = '#E3C16A';
@@ -269,7 +278,7 @@ let rkSub = 'rank';
 async function renderRank() {
   const s = await rk(), i = rankIdx(s.xp), nx = RANKS[i + 1], cur = RANKS[i][1];
   const pct = nx ? Math.min(100, Math.round((s.xp - cur) / (nx[1] - cur) * 100)) : 100;
-  const name = (tgs && tgs.initDataUnsafe && tgs.initDataUnsafe.user && tgs.initDataUnsafe.user.first_name) || 'Operator';
+  const name = rkName();
   const m = (t, d, p, btn, id, ic) => `<div class="card"><h4>${ic ? ico(ic) : ''}${t} <span class="px">${p}</span></h4><p class="small">${d}</p>${btn ? `<button class="btn" id="${id}">${btn}</button>` : ''}</div>`;
   const examsPassed = CHAPTERS.filter((_, k) => (s.qz[k] || 0) >= 2).length;
   const pages = {
