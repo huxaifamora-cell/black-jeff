@@ -223,3 +223,9 @@ main > .xpl{display:block;text-align:center;font-size:12px;margin:6px 0 10px}
 #hrank svg{flex:none}
 #hrank .hr{font:700 14px var(--head);letter-spacing:2px;color:var(--gold);text-transform:uppercase}
 #hrank .hn{font:700 14px var(--head);letter-spacing:1.5px;color:var(--fg);text-transform:uppercase}
+
+/* radar status tabs with military icons */
+.rtabs button{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;padding:7px 2px}
+.rtabs button svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.rtabs button em{font-style:normal}
+.rtabs button.on svg{color:var(--gold)}

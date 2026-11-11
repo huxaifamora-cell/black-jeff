@@ -28,6 +28,12 @@ function setTab(t) {
 }
 
 // ------------------------------------------------------------ symbols
+// Radar status tab icons: ready = target lock, building = sandbag wall going up, quiet = camp tent
+const RT_ICON = {
+  ready: '<path d="M4 8V4h4M16 4h4v4M20 16v4h-4M8 20H4v-4"/><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r="1" fill="currentColor"/><path d="M12 5v3M12 16v3M5 12h3M16 12h3"/>',
+  building: '<rect x="3" y="16" width="8.5" height="4.5" rx="2"/><rect x="12.5" y="16" width="8.5" height="4.5" rx="2"/><rect x="7.5" y="10.5" width="9" height="4.5" rx="2"/><path d="M10 7l2-3 2 3"/>',
+  quiet: '<path d="M2 20.5L12 4l10 16.5z"/><path d="M12 20.5l-3-6.5h6z"/><path d="M12 4V2"/>',
+};
 // ---- tactical radar: a live sweeping scope (web/radar.js); only ready symbols are shown as targets
 let radarTab = 'ready';
 async function renderSymbols() {
@@ -46,9 +52,9 @@ async function renderSymbols() {
     const map = `<div class="scope"><canvas id="radar" tabindex="0" role="img" aria-label="Live radar: ${ready.length} symbol(s) ready to trade"></canvas>
       <div class="scopeinfo"><span id="rdBrg">BRG 000&deg;</span><span>TARGETS <b id="rdN">${ready.length}</b></span><span id="rdClk"></span></div></div>`;
     const last = al.alerts && al.alerts[0];
-    view.innerHTML = `<h3 style="margin-top:0;text-align:center">Tactical radar</h3>${map}
+    view.innerHTML = `<h3 class="ctr" style="margin-top:0">Tactical radar</h3>${map}
       <div class="legend"><span><i style="background:#5AFF64"></i>BUY READY</span><span><i style="background:#FF6955"></i>SELL READY</span></div>` +
-      `<div class="rtabs" role="tablist">${[['ready', 'Ready to trade'], ['building', 'Building'], ['quiet', 'Quiet']].map(([k, t]) => `<button role="tab" class="${radarTab === k ? 'on' : ''}" data-rt="${k}">${t} <span>${G[k].length}</span></button>`).join('')}</div>` +
+      `<div class="rtabs" role="tablist">${[['ready', 'Ready to trade'], ['building', 'Building'], ['quiet', 'Quiet']].map(([k, t]) => `<button role="tab" class="${radarTab === k ? 'on' : ''}" data-rt="${k}"><svg viewBox="0 0 24 24" aria-hidden="true">${RT_ICON[k]}</svg><em>${t} <span>${G[k].length}</span></em></button>`).join('')}</div>` +
       (G[radarTab].length ? G[radarTab].map(row).join('') : `<p class="mut">${{ ready: 'No symbols are ready to trade.', building: 'Nothing is building right now.', quiet: 'No quiet symbols.' }[radarTab]}</p>`) +
       (last ? `<div class="latest"><span>LATEST</span><span style="flex:1">${esc(last.title)}</span><span class="mut">${T(last.ts)}</span></div>` : '') +
       '<p class="small">Only symbols that are ready to trade appear on the scope. Bearing is fixed per symbol. Tap a target to open it.</p>';
