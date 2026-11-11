@@ -255,19 +255,19 @@ async function renderRank() {
   const m = (t, d, p, btn, id) => `<div class="card"><h4>${t} <span class="px">${p}</span></h4><p class="small">${d}</p>${btn ? `<button class="btn" id="${id}">${btn}</button>` : ''}</div>`;
   const examsPassed = CHAPTERS.filter((_, k) => (s.qz[k] || 0) >= 2).length;
   const pages = {
-    rank: `<h3 style="margin-top:0">Service record</h3>
+    rank: `<h3 class="ctr" style="margin-top:0">Service record</h3>
       <div class="card prof">${insignia(i, 56)}<div style="flex:1"><div class="small">RANK AND CALLSIGN</div><div class="rname">${RANKS[i][0]}</div><div class="callsign">${esc(name)}</div></div></div>
-      <div class="xpbar" aria-label="XP progress"><div style="width:${pct}%"></div></div>
-      <div class="small xpl"><span>${s.xp} XP</span><span>${nx ? `next: ${nx[0]} at ${nx[1]} XP` : 'highest rank'}</span></div>
-      <div class="plan"><div><small>ROLL CALL STREAK</small><span class="px">${s.streak} d</span></div><div><small>CHAPTERS</small><span class="px">${s.ch.length}/${CHAPTERS.length}</span></div><div><small>EXAMS</small><span class="px">${examsPassed}/${CHAPTERS.length}</span></div></div>`,
-    missions: `<h3 style="margin-top:0">Missions</h3>
+      <div class="xpbar big" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct}" aria-label="XP progress"><div style="width:${pct}%"></div><span class="xl">${RANKS[i][0]}</span><span class="xc">${pct}%</span><span class="xr">${s.xp} XP</span></div>
+      <div class="small xpl">${nx ? `next: ${nx[0]} at ${nx[1]} XP` : 'highest rank'}</div>`,
+    missions: `<h3 class="ctr" style="margin-top:0">Missions</h3>
+      <div class="plan"><div><small>ROLL CALL STREAK</small><span class="px">${s.streak} d</span></div><div><small>CHAPTERS</small><span class="px">${s.ch.length}/${CHAPTERS.length}</span></div><div><small>EXAMS</small><span class="px">${examsPassed}/${CHAPTERS.length}</span></div></div>
       ${m('Roll Call', 'Report in once a day. 7, 30 and 90 days earn a medal and bonus XP.', `best ${s.best} d`, null)}
       ${m('Intercept Analysis', 'Open a new alert from its Telegram button, then check it against the SORK steps on the chart. Tap to see how it works.', `${s.anTotal || 0} done`, 'Analyse an alert', 'g5')}
       ${m('Chart reading drill', 'Tap where the inducement or key level is on a chart with the zones hidden.', `${s.d.drill}/${DAILY_CAP.drill} today`, 'Start a drill', 'g3')}
       ${m('Field guide', 'Finish a chapter (scroll to its end) for a stripe and XP. Finishing all of them is a promotion.', `${s.ch.length}/${CHAPTERS.length}`, 'Open the guide', 'g1')}
       ${m('Proficiency Exam', 'Three questions per chapter. Pass with 2 right for XP.', `${examsPassed}/${CHAPTERS.length}`, 'Sit the exam', 'g2')}`,
-    medals: `<h3 style="margin-top:0">Medals</h3><div class="medals">${Object.entries(MEDALS).map(([k, [t, d]]) => `<div class="medal ${s.medals.includes(k) ? 'on' : ''}"><b>${t}</b><span>${d}</span></div>`).join('')}</div>`,
-    ladder: `<h3 style="margin-top:0">Rank ladder</h3>${RANKS.map((r, k) => `<div class="rl ${k <= i ? 'on' : ''}">${insignia(k, 26)}<b>${r[0]}</b><span class="px">${r[1]} XP</span></div>`).join('')}<p class="small">Progress is saved in your Telegram account on this app. It is for practice and fun: there is no leaderboard and it does not rate your trading.</p>`,
+    medals: `<h3 class="ctr" style="margin-top:0">Medals</h3><div class="medals">${Object.entries(MEDALS).map(([k, [t, d]]) => `<div class="medal ${s.medals.includes(k) ? 'on' : ''}"><b>${t}</b><span>${d}</span></div>`).join('')}</div>`,
+    ladder: `<h3 class="ctr" style="margin-top:0">Rank ladder</h3>${RANKS.map((r, k) => `<div class="rl ${k <= i ? 'on' : ''}">${insignia(k, 26)}<b>${r[0]}</b><span class="px">${r[1]} XP</span></div>`).join('')}<p class="small">Progress is saved in your Telegram account on this app. It is for practice and fun: there is no leaderboard and it does not rate your trading.</p>`,
   };
   view.innerHTML = `<div class="subtabs" role="tablist">${SUBTABS.map(([k, t, ic]) => `<button role="tab" data-sub="${k}" class="${k === rkSub ? 'on' : ''}" aria-selected="${k === rkSub}"><svg viewBox="0 0 24 24" aria-hidden="true">${ic}</svg>${t}</button>`).join('')}</div>` + pages[rkSub];
   view.querySelectorAll('[data-sub]').forEach(b => b.onclick = () => { rkSub = b.dataset.sub; renderRank(); });

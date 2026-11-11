@@ -200,3 +200,11 @@ main > .xpl{width:auto;padding:4px 8px}
 .subtabs button:last-child{border-right:0}
 .subtabs svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:square;stroke-linejoin:miter}
 .subtabs button.on{background:var(--chipbg);color:var(--gold);box-shadow:inset 0 -2px 0 var(--gold)}
+
+/* Rank page: centred headings, white XP bar with the rank, percentage and XP written inside it */
+main > h3.ctr{margin-left:auto;margin-right:auto;text-align:center}
+.xpbar.big{position:relative;height:38px;margin-top:10px;background:#F7F6EC;border:1px solid #fff;box-shadow:0 0 0 1px var(--edge),0 0 10px rgba(255,255,255,.18);overflow:hidden}
+.xpbar.big div{position:absolute;left:0;top:0;bottom:0;height:auto;background:var(--up);box-shadow:none}
+.xpbar.big span{position:absolute;top:0;bottom:0;display:flex;align-items:center;color:#10150C;font:700 14px var(--head);letter-spacing:1.5px;text-transform:uppercase}
+.xpbar.big .xl{left:10px}.xpbar.big .xc{left:50%;transform:translateX(-50%);font-family:var(--mono);letter-spacing:0}.xpbar.big .xr{right:10px;font-family:var(--mono);letter-spacing:0;font-size:12px}
+main > .xpl{display:block;text-align:center;font-size:12px;margin:6px 0 10px}
