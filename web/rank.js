@@ -65,12 +65,14 @@ const kvSet = (k, v) => { lsSet(k, v); const c = cloud(); if (c) try { c.setItem
 const today = () => new Date().toLocaleDateString('en-CA');
 const dayBefore = () => new Date(Date.now() - 864e5).toLocaleDateString('en-CA');
 let RKS = null;
-const fresh = () => ({ v: 1, xp: 0, ch: [], qz: {}, streak: 0, best: 0, last: '', drillOk: 0, anTotal: 0, medals: [], promo: 0, rank: null, d: { date: '', drill: 0 } });
+const fresh = () => ({ v: 1, xp: 0, ch: [], qz: {}, streak: 0, best: 0, last: '', drillOk: 0, drillMiss: 0, anTotal: 0, medals: [], promo: 0, rank: null, d: { date: '', drill: 0 } });
 async function rk() {
   if (RKS) return RKS;
   let s; try { s = JSON.parse(await kvGet('sork_rank') || 'null'); } catch { s = null; }
   RKS = Object.assign(fresh(), s || {});
-  if (RKS.rank == null) RKS.rank = rankOf(RKS);          // first load after the requirements were introduced: no retroactive promotion toast
+  // Saved before the 30% rule: anyone already at Sergeant or above keeps their old passes (2 of 3) so the new rule never demotes them.
+  if (RKS.rank != null && RKS.rank >= SERGEANT) for (const k of Object.keys(RKS.qz)) if (RKS.qz[k] >= 2) RKS.qz[k] = Math.max(RKS.qz[k], EXAM_PASS);
+  if (RKS.rank == null) RKS.rank = rankOf(RKS);        // first load after the requirements were introduced: no retroactive promotion toast
   if (RKS.d.date !== today()) RKS.d = { date: today(), drill: 0 };
   return RKS;
 }
@@ -78,14 +80,20 @@ const rkSave = () => { kvSet('sork_rank', JSON.stringify(RKS)); rkHeader(); };
 const rankIdx = xp => { let i = 0; RANKS.forEach((r, k) => { if (xp >= r[1]) i = k; }); return i; };   // the rank XP alone would give
 // Mandatory requirements: XP can be earned any way, but each rank below Lieutenant also needs one mission completed before the next rank is granted.
 const DRILLS_REQ = 33, ANALYSES_REQ = 99;
+// Promotional exam rule: failing MORE than EXAM_FAIL_MAX of a promotional exam fails the person and restarts the whole promotional mission.
+// Each chapter exam has EXAM_Q questions, so with 30% a single wrong answer (33%) already fails it: EXAM_PASS = 3 of 3.
+const EXAM_Q = 3, EXAM_FAIL_MAX = 0.30;
+const EXAM_PASS = EXAM_Q - Math.floor(EXAM_Q * EXAM_FAIL_MAX + 1e-9);
+// The same rule for the Corporal drill mission: a Private may miss at most 30% of the required drills (9 of 33). The 10th miss fails them
+// and restarts the drill mission from 0 passed.
+const DRILL_MISS_MAX = Math.floor(DRILLS_REQ * EXAM_FAIL_MAX + 1e-9), PRIVATE = 1;
+const SERGEANT = 3;  // index of the rank the Proficiency Exam leads to; from here on the exam is no longer promotional
 const GATES = [
-  { to: 'Private', short: 'Complete the Field guide (all chapters)', go: () => setTab('guide'), ok: s => s.ch.length >= CHAPTERS.length, text: s => `Complete the Field guide: ${s.ch.length}/${CHAPTERS.length} chapters finished` },
-  { to: 'Corporal', short: `Pass ${DRILLS_REQ} chart reading drills`, go: () => renderDrill(), ok: s => (s.drillOk || 0) >= DRILLS_REQ, text: s => `Pass ${DRILLS_REQ} chart reading drills: ${Math.min(s.drillOk || 0, DRILLS_REQ)}/${DRILLS_REQ} passed` },
-  { to: 'Sergeant', short: 'Pass the Proficiency Exam (every chapter)', go: () => renderQuizMenu(), ok: s => CHAPTERS.every((_, k) => (s.qz[k] || 0) >= 2), text: s => `Pass the Proficiency Exam: ${CHAPTERS.filter((_, k) => (s.qz[k] || 0) >= 2).length}/${CHAPTERS.length} chapters passed` },
-  { to: 'Lieutenant', short: `Complete ${ANALYSES_REQ} Intercept Analyses`, go: () => renderAnalysis(), ok: s => (s.anTotal || 0) >= ANALYSES_REQ, text: s => `Complete ${ANALYSES_REQ} Intercept Analyses: ${Math.min(s.anTotal || 0, ANALYSES_REQ)}/${ANALYSES_REQ} done` },
+  { to: 'Private', short: 'Complete the Field guide (all chapters)', ok: s => s.ch.length >= CHAPTERS.length, text: s => `Complete the Field guide: ${s.ch.length}/${CHAPTERS.length} chapters finished` },
+  { to: 'Corporal', short: `Pass ${DRILLS_REQ} chart reading drills`, ok: s => (s.drillOk || 0) >= DRILLS_REQ, text: s => `Pass ${DRILLS_REQ} chart reading drills: ${Math.min(s.drillOk || 0, DRILLS_REQ)}/${DRILLS_REQ} passed. Misses ${s.drillMiss || 0}/${DRILL_MISS_MAX} allowed; going over 30% restarts the drills from 0` },
+  { to: 'Sergeant', short: 'Pass the Proficiency Exam (every chapter, no more than 30% wrong)', ok: s => CHAPTERS.every((_, k) => (s.qz[k] || 0) >= EXAM_PASS), text: s => `Pass the Proficiency Exam: ${CHAPTERS.filter((_, k) => (s.qz[k] || 0) >= EXAM_PASS).length}/${CHAPTERS.length} chapters passed. Failing more than 30% of a chapter exam restarts the exam from chapter 1` },
+  { to: 'Lieutenant', short: `Complete ${ANALYSES_REQ} Intercept Analyses`, ok: s => (s.anTotal || 0) >= ANALYSES_REQ, text: s => `Complete ${ANALYSES_REQ} Intercept Analyses: ${Math.min(s.anTotal || 0, ANALYSES_REQ)}/${ANALYSES_REQ} done` },
 ];
-// Captain and above unlock Copy Trading. It is not available yet, so for now this is only shown as a coming-soon perk.
-const COPY_RANK = RANKS.findIndex(r => r[0] === 'Captain');
 // The rank the person actually holds: the XP rank, held back at the first rank whose requirement is not met yet.
 function rankOf(s) {
   const xpRank = rankIdx(s.xp); let i = 0;
@@ -114,7 +122,7 @@ async function award(xp, why, medal) {
     if (!s.medals.includes('scholar')) s.medals.push('scholar');
     msg += '<br>Guide complete: <b>Scholar</b>';
   }
-  if (CHAPTERS.every((_, i) => (s.qz[i] || 0) >= 2) && !s.medals.includes('honors')) { s.medals.push('honors'); msg += '<br>Medal: <b>Top of Class</b>'; }
+  if (CHAPTERS.every((_, i) => (s.qz[i] || 0) >= EXAM_PASS) && !s.medals.includes('honors')) { s.medals.push('honors'); msg += '<br>Medal: <b>Top of Class</b>'; }
   if (s.drillOk >= 5 && !s.medals.includes('eye')) { s.medals.push('eye'); msg += '<br>Medal: <b>Sharp Eye</b>'; }
   const pm = promoMsg(s); if (pm) msg += '<br>' + pm;
   rkSave(); toast(msg, !!pm);
@@ -210,11 +218,12 @@ async function rkGuideBar() {
 }
 
 // ---- quiz
+const promoExam = s => rankOf(s) < SERGEANT;   // the exam is promotional until the person holds Sergeant
 function shuffle(a) { a = a.slice(); for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; }
 async function renderQuizMenu() {
   const s = await rk();
-  view.innerHTML = `<div class="row"><button class="back" id="qb">&#8249; Proficiency Exam</button></div><p class="small">Three short questions per chapter. Get 2 right to pass and earn XP.</p>` +
-    CHAPTERS.map((c, i) => `<button class="rrow ${(s.qz[i] || 0) >= 2 ? 'buy' : ''}" data-q="${i}"><span class="mid"><b>${i + 1}</b>${esc(c)}<br><span class="small">${s.qz[i] == null ? 'Not taken' : `Best ${s.qz[i]}/3` + (s.qz[i] >= 2 ? ' &middot; passed' : '')}</span></span><span class="st">${(s.qz[i] || 0) >= 2 ? '&#10003;' : '&#9656;'}</span></button>`).join('');
+  view.innerHTML = `<div class="row"><button class="back" id="qb">&#8249; Proficiency Exam</button></div><p class="small">Three short questions per chapter. Get ${EXAM_PASS} right to pass and earn XP. ${promoExam(s) ? 'This is a promotion exam: failing more than 30% of any chapter exam fails you and restarts the whole Proficiency Exam from chapter 1.' : ''}</p>` +
+    CHAPTERS.map((c, i) => `<button class="rrow ${(s.qz[i] || 0) >= EXAM_PASS ? 'buy' : ''}" data-q="${i}"><span class="mid"><b>${i + 1}</b>${esc(c)}<br><span class="small">${s.qz[i] == null ? 'Not taken' : `Best ${s.qz[i]}/${EXAM_Q}` + (s.qz[i] >= EXAM_PASS ? ' &middot; passed' : '')}</span></span><span class="st">${(s.qz[i] || 0) >= EXAM_PASS ? '&#10003;' : '&#9656;'}</span></button>`).join('');
   document.getElementById('qb').onclick = renderRank;
   view.querySelectorAll('[data-q]').forEach(b => b.onclick = () => runQuiz(Number(b.dataset.q)));
 }
@@ -234,10 +243,18 @@ function runQuiz(ch) {
     });
   };
   const done = async () => {
-    const s = await rk(), first = (s.qz[ch] || 0) < 2 && right >= 2;
+    const s = await rk(), passed = right >= EXAM_PASS, failedHard = (EXAM_Q - right) / EXAM_Q > EXAM_FAIL_MAX;   // more than 30% wrong
+    if (failedHard && promoExam(s)) {
+      // Promotional exam failed: the person fails and the whole promotional mission restarts from the beginning (chapter 1).
+      s.qz = {}; rkSave();
+      view.innerHTML = `<div class="card"><h4 class="down">Failed &middot; ${right}/${EXAM_Q}</h4><p>You got more than 30% of this promotional exam wrong. The Proficiency Exam restarts from the beginning: all chapter passes are cleared. Read the guide again, then start over at chapter 1.</p><div class="row"><button class="btn" id="again">Restart from chapter 1</button><button class="btn" id="menu">All chapters</button></div></div>`;
+      document.getElementById('again').onclick = () => runQuiz(0); document.getElementById('menu').onclick = renderQuizMenu;
+      return;
+    }
+    const first = (s.qz[ch] || 0) < EXAM_PASS && passed;
     s.qz[ch] = Math.max(s.qz[ch] || 0, right); rkSave();
     if (first) await award(20, `exam passed: ${CHAPTERS[ch]}`);
-    view.innerHTML = `<div class="card"><h4>${right >= 2 ? 'Passed' : 'Not passed yet'} &middot; ${right}/3</h4><p>${right >= 2 ? (first ? '+20 XP earned.' : 'Already passed before, no extra XP.') : 'Read the chapter again and retry. No penalty.'}</p><div class="row"><button class="btn" id="again">Try again</button><button class="btn" id="menu">All chapters</button></div></div>`;
+    view.innerHTML = `<div class="card"><h4>${passed ? 'Passed' : 'Not passed yet'} &middot; ${right}/${EXAM_Q}</h4><p>${passed ? (first ? '+20 XP earned.' : 'Already passed before, no extra XP.') : 'Read the chapter again and retry. No penalty.'}</p><div class="row"><button class="btn" id="again">Try again</button><button class="btn" id="menu">All chapters</button></div></div>`;
     document.getElementById('again').onclick = () => runQuiz(ch); document.getElementById('menu').onclick = renderQuizMenu;
   };
   ask();
@@ -266,7 +283,14 @@ async function renderDrill() {
       const price = map.toPrice(y), tol = (map.hi - map.lo) * .03, ok = price >= box.lo - tol && price <= box.hi + tol && x >= map.xOf(box.t0) - 2 * map.step;
       chart(cv, { ...st, overlays: [box] }, 'h1');
       const left = s.d.drill < DAILY_CAP.drill;
-      document.getElementById('dr').innerHTML = `<div class="card"><h4 class="${ok ? 'up' : 'down'}">${ok ? 'On target' : 'Missed'}</h4><p class="small">${ok ? (left ? '+10 XP.' : 'Daily drill XP limit reached, keep practising.') : 'The zone is now shown on the chart. Study where it formed.'}</p><button class="btn" id="nd">Next drill</button></div>`;
+      let note = '', restarted = false;
+      if (!ok && rankOf(s) === PRIVATE) {   // promotional drill mission: more than 30% missed fails the person and restarts it
+        s.drillMiss = (s.drillMiss || 0) + 1;
+        if (s.drillMiss > DRILL_MISS_MAX) { s.drillOk = 0; s.drillMiss = 0; restarted = true; note = ` You have missed more than 30% of the drills: you fail and the chart reading drills restart from 0/${DRILLS_REQ}.`; }
+        else note = ` Misses ${s.drillMiss}/${DRILL_MISS_MAX} allowed.`;
+        rkSave();
+      }
+      document.getElementById('dr').innerHTML = `<div class="card"><h4 class="${ok ? 'up' : 'down'}">${restarted ? 'Failed' : ok ? 'On target' : 'Missed'}</h4><p class="small">${ok ? (left ? '+10 XP.' : 'Daily drill XP limit reached, keep practising.') : 'The zone is now shown on the chart. Study where it formed.' + note}</p><button class="btn" id="nd">Next drill</button></div>`;
       document.getElementById('nd').onclick = renderDrill;
       if (ok) { s.drillOk++; if (left) { s.d.drill++; await award(10, 'chart drill: zone found'); } else { const pm = promoMsg(s); rkSave(); if (pm) toast(pm, true); } }
     };
@@ -303,24 +327,24 @@ async function renderRank() {
   const pct = nx && !held ? Math.min(100, Math.round((s.xp - cur) / (nx[1] - cur) * 100)) : 100;
   const name = rkName();
   const m = (t, d, p, btn, id, ic) => `<div class="card"><h4>${ic ? ico(ic) : ''}${t} <span class="px">${p}</span></h4><p class="small">${d}</p>${btn ? `<button class="btn" id="${id}">${btn}</button>` : ''}</div>`;
-  const examsPassed = CHAPTERS.filter((_, k) => (s.qz[k] || 0) >= 2).length;
+  const examsPassed = CHAPTERS.filter((_, k) => (s.qz[k] || 0) >= EXAM_PASS).length;
   const pages = {
     rank: `<h3 class="ctr" style="margin-top:0">Service record</h3>
       <div class="card prof">${insignia(i, 56)}<div style="flex:1"><div class="small">RANK AND CALLSIGN</div><div class="rname">${RANKS[i][0]}</div><div class="callsign">${esc(name)}</div></div></div>
       <div class="xpbar big" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct}" aria-label="XP progress"><div style="width:${pct}%"></div><span class="xl">${RANKS[i][0]}</span><span class="xc">${pct}%</span><span class="xr">${s.xp} XP</span></div>
-      <div class="small xpl">${nx ? `next: ${nx[0]} at ${nx[1]} XP` : 'highest rank'}</div>${gate ? `<button class="rrow req" id="rqgo"><span class="mid"><small>PROMOTION REQUIREMENT${held ? ' &middot; XP TARGET REACHED' : ''}</small>${esc(gate.text(s))}<br><span class="small">Tap to start</span></span><span class="px">&#8250;</span></button>` : ''}`,
+      <div class="small xpl">${nx ? `next: ${nx[0]} at ${nx[1]} XP` : 'highest rank'}</div>${gate ? `<div class="card req"><small>PROMOTION REQUIREMENT${held ? ' &middot; XP TARGET REACHED' : ''}</small>${esc(gate.text(s))}</div>` : ''}`,
     missions: `<h3 class="ctr" style="margin-top:0">Missions</h3>
       <div class="plan"><div><small>ROLL CALL STREAK</small><span class="px">${s.streak} d</span></div><div><small>CHAPTERS</small><span class="px">${s.ch.length}/${CHAPTERS.length}</span></div><div><small>EXAMS</small><span class="px">${examsPassed}/${CHAPTERS.length}</span></div></div>
       ${m('Roll Call', 'Report in once a day. 7, 30 and 90 days earn a medal and bonus XP.', `best ${s.best} d`, null, null, 'roll')}
       ${m('Intercept Analysis', 'Open a new alert from its Telegram button, then check it against the SORK steps on the chart. Required to become Lieutenant: complete ${ANALYSES_REQ}.', `${Math.min(s.anTotal || 0, ANALYSES_REQ)}/${ANALYSES_REQ}`, 'Analyse an alert', 'g5', 'intercept')}
-      ${m('Chart reading drill', `Tap where the inducement or key level is on a chart with the zones hidden. Required to become Corporal: pass ${DRILLS_REQ} drills (daily XP limit ${DAILY_CAP.drill}, but every pass counts).`, `${Math.min(s.drillOk || 0, DRILLS_REQ)}/${DRILLS_REQ}`, 'Start a drill', 'g3', 'drill')}
+      ${m('Chart reading drill', `Tap where the inducement or key level is on a chart with the zones hidden. Required to become Corporal: pass ${DRILLS_REQ} drills (daily XP limit ${DAILY_CAP.drill}, but every pass counts). As a Private you may miss at most ${DRILL_MISS_MAX}: missing more than 30% fails you and restarts the drills from 0.`, `${Math.min(s.drillOk || 0, DRILLS_REQ)}/${DRILLS_REQ}`, 'Start a drill', 'g3', 'drill')}
       ${m('Field guide', 'Finish a chapter (scroll to its end) for a stripe and XP. Required to become Private: finish all chapters.', `${s.ch.length}/${CHAPTERS.length}`, 'Open the guide', 'g1', 'guide')}
-      ${m('Proficiency Exam', 'Three questions per chapter. Pass with 2 right for XP. Required to become Sergeant: pass every chapter.', `${examsPassed}/${CHAPTERS.length}`, 'Sit the exam', 'g2', 'exam')}`,
+      ${m('Proficiency Exam', 'Three questions per chapter. Pass with all 3 right for XP. Required to become Sergeant: pass every chapter. Failing more than 30% of any chapter exam fails you and restarts the exam from chapter 1.', `${examsPassed}/${CHAPTERS.length}`, 'Sit the exam', 'g2', 'exam')}`,
     medals: `<h3 class="ctr" style="margin-top:0">Medals</h3><div class="medals">${Object.entries(MEDALS).map(([k, [t, d]]) => `<div class="medal ${s.medals.includes(k) ? 'on' : ''}">${ico(k)}<b>${t}</b><span>${d}</span></div>`).join('')}</div>`,
-    ladder: `<h3 class="ctr" style="margin-top:0">Rank ladder</h3>${RANKS.map((r, k) => `<div class="rl ${k <= i ? 'on' : ''}">${insignia(k, 26)}<b>${r[0]}</b><span class="px">${r[1]} XP</span>${k && GATES[k - 1] ? `<span class="rq">${GATES[k - 1].short}</span>` : ''}${k >= COPY_RANK ? `<span class="rq">Unlocks Copy Trading (coming soon)</span>` : ''}</div>`).join('')}<p class="small">XP can be earned any way, but each rank up to Lieutenant also needs its requirement completed. Until it is, you keep your rank and the XP keeps adding up. Progress is saved in your Telegram account on this app. It is for practice and fun: there is no leaderboard and it does not rate your trading.</p>`,
+    ladder: `<h3 class="ctr" style="margin-top:0">Rank ladder</h3>${RANKS.map((r, k) => `<div class="rl ${k <= i ? 'on' : ''}">${insignia(k, 26)}<b>${r[0]}</b><span class="px">${r[1]} XP</span>${k && GATES[k - 1] ? `<span class="rq">${GATES[k - 1].short}</span>` : ''}</div>`).join('')}<p class="small">XP can be earned any way, but each rank up to Lieutenant also needs its requirement completed. Until it is, you keep your rank and the XP keeps adding up. Progress is saved in your Telegram account on this app. It is for practice and fun: there is no leaderboard and it does not rate your trading.</p>`,
   };
   view.innerHTML = `<div class="subtabs" role="tablist">${SUBTABS.map(([k, t, ic]) => `<button role="tab" data-sub="${k}" class="${k === rkSub ? 'on' : ''}" aria-selected="${k === rkSub}"><svg viewBox="0 0 24 24" aria-hidden="true">${ic}</svg>${t}</button>`).join('')}</div>` + pages[rkSub];
   view.querySelectorAll('[data-sub]').forEach(b => b.onclick = () => { rkSub = b.dataset.sub; renderRank(); });
   const on = (id, f) => { const e = document.getElementById(id); if (e) e.onclick = f; };
-  on('g1', () => setTab('guide')); on('rqgo', () => gate && gate.go()); on('g2', renderQuizMenu); on('g3', renderDrill); on('g5', renderAnalysis);
+  on('g1', () => setTab('guide')); on('g2', renderQuizMenu); on('g3', renderDrill); on('g5', renderAnalysis);
 }
