@@ -16,6 +16,8 @@ export function loadConfig() {
     // Channels and groups that receive every alert: @channelname or numeric ids (-100...). The bot must be added there (admin in a channel).
     // Several are allowed, comma separated. ALERT_CHANNEL is the older name and still works.
     alertChats: (e.ALERT_CHATS || e.ALERT_CHANNEL || '').split(',').map((x) => x.trim()).filter(Boolean),
+    // Which alerts groups and channels receive. Market structure (S) and order flow (O) are left out on purpose.
+    chatConcepts: (e.ALERT_CHAT_CONCEPTS || 'R,K,QML,ADV').split(',').map((x) => x.trim().toUpperCase()).filter(Boolean),
     // ALERT_DMS=0: never send alerts as private messages from the bot. Only ALERT_CHATS get them.
     dmAlerts: e.ALERT_DMS !== '0',
     // Direct link of the mini app (from BotFather /newapp), e.g. https://t.me/your_bot/app. Makes the alert button open the

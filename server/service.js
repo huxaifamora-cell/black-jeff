@@ -18,9 +18,35 @@ export function digitsFor(candles) {
   return Math.min(d, 5);
 }
 
+const TF_NAME = { [H4]: 'H4', [H1]: 'H1', [M5]: 'M5' };
+const TYPE_NAME = { S: 'Market structure', O: 'Order flow', R: 'Reclamation', K: 'Key level', QML: 'QML', ADV: 'Advanced key level' };
+const BIAS_NAME = { 1: 'Bullish', '-1': 'Bearish' };
+
+// Status on the timeframe that fired the alert, e.g. "Valid RBS (buy setup)" or "Entry confirmation: bearish breakout (sell)".
+export function statusOf(a) {
+  const p = a.payload || {}, buy = a.dir === 1, sd = buy ? 'buy' : 'sell', sub = p.sub || 'key level';
+  switch (a.kind) {
+    case 'reclamation': return `Valid ${buy ? 'bullish' : 'bearish'} reclamation`;
+    case 'kl_valid': return `Valid ${sub} (${sd} setup)`;
+    case 'kl_invalid': return `${sub} invalidated`;
+    case 'qml_valid': return `Valid QML (${sd} setup)`;
+    case 'bjeff_valid': return `Bjeff zone active (${sd} setup)`;
+    case 'kl_entry': case 'qml_entry': case 'adv_entry': return `Entry confirmation${p.conf ? ': ' + p.conf : ''} (${sd})`;
+    default: return String(a.title || '').replace(/^[A-Z]+:\s*/, '');
+  }
+}
+
+// Telegram text: alert type, symbol, H4 bias, status, timeframe. Nothing else.
 export const formatAlert = (a) => {
   const esc = (t) => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  return `<b>${esc(a.title)}</b>\n${esc(a.symbol_name)}\n${esc(a.body)}`;
+  const p = a.payload || {};
+  return [
+    `<b>Alert type:</b> ${esc(TYPE_NAME[a.concept] || a.concept)}`,
+    `<b>Symbol:</b> ${esc(a.symbol_name)}`,
+    `<b>H4 bias:</b> ${BIAS_NAME[p.bias] || 'None yet'}`,
+    `<b>Status:</b> ${esc(statusOf(a))}`,
+    `<b>Timeframe:</b> ${TF_NAME[p.tf] || '-'}`,
+  ].join('\n');
 };
 
 // The SORK checklist for one symbol: S structure, O order flow, R reclamation, K key level.
@@ -76,7 +102,8 @@ export class Service {
       if (now - ev.t > 3 * ev.tf) continue;                    // stale events are not alerted
       const a = {
         key: `${sid}|${ev.concept}|${ev.kind}|${ev.uid}`, ts: Math.min(ev.t, Math.floor(now)), symbol: sid, symbol_name: s.name, concept: ev.concept,
-        kind: ev.kind, dir: ev.dir, title: ev.title, body: ev.body, payload: ev.extra,
+        kind: ev.kind, dir: ev.dir, title: ev.title, body: ev.body,
+        payload: { ...ev.extra, tf: ev.tf, bias: res.state.s ? res.state.s.bias : 0 },
       };
       a.id = this.store.addAlert(a);
       if (a.id) fresh.push(a);

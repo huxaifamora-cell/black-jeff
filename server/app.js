@@ -11,6 +11,7 @@ import { Deriv } from './deriv.js';
 import { Bot } from './telegram.js';
 import { TelegramBackup } from './backup.js';
 import { Service, formatAlert } from './service.js';
+import { alertParam, checkParam } from './alertlink.js';
 import { ALL_CONCEPTS, Store } from './store.js';
 
 const WEB = resolve(dirname(fileURLToPath(import.meta.url)), '..', 'web');
@@ -101,6 +102,10 @@ export function createApp({ cfg = loadConfig(), store, svc, deriv, bot, log = co
       return json(res, 200, { alerts: store.recentAlerts({ symbol: q.get('symbol') || undefined, concept: q.get('concept') || undefined,
         limit: q.get('limit') || 50, before: q.get('before') || undefined }) });
     }
+    if (path === '/api/alert-open' && req.method === 'POST') {       // the app asks whether a button link is a real, recent alert
+      const b = await readJson(req);
+      return json(res, 200, checkParam(b.p, cfg.botToken));
+    }
     if (path === '/api/me' && req.method === 'GET') return json(res, 200, { me: store.upsertUser(user.id, user.first_name || ''), concepts: ALL_CONCEPTS });
     if (path === '/api/me/settings' && req.method === 'POST') {
       store.upsertUser(user.id, user.first_name || '');
@@ -120,17 +125,25 @@ export function createApp({ cfg = loadConfig(), store, svc, deriv, bot, log = co
   // ------------------------------------------------------------ background work
   async function notify(alert, force) {
     if (!bot || (!warm && !force)) return;
-    const label = `Open ${alert.symbol_name.replace('Volatility ', 'V').replace(' Index', '')}`;
-    const direct = cfg.miniAppLink ? `${cfg.miniAppLink}?startapp=${alert.symbol}` : null;     // t.me link: works in groups and channels
-    const button = direct || cfg.webappUrl ? { text: label, url: direct || `${cfg.webappUrl}/?sym=${alert.symbol}` } : null;
-    for (const chat of cfg.alertChats || []) {        // groups and channels get every alert; nothing to restore after a restart
-      try { await bot.send(chat, formatAlert(alert), button && { ...button, plain: true }); }
-      catch (e) { log.warn('could not post to', chat + ':', e.message); }
-      await sleep(50);
+    const short = alert.symbol_name.replace('Volatility ', 'V').replace(' Index', '');
+    const label = `Open ${short} chart`;
+    // The button opens the symbol on the main bot, straight on the SORK page (concept) that fired. Channels and groups get a
+    // signed link: the first open of each alert earns 3 points. Private messages get a plain page link (no points).
+    const btn = (signed) => {
+      const param = alertParam(alert, cfg.botToken, signed);
+      if (cfg.miniAppLink) return { text: label, url: `${cfg.miniAppLink}?startapp=${param}`, plain: true };   // t.me link: works in groups and channels
+      return cfg.webappUrl ? { text: label, url: `${cfg.webappUrl}/?p=${param}`, plain: signed } : null;
+    };
+    if ((cfg.chatConcepts || ['R', 'K', 'QML', 'ADV']).includes(alert.concept)) {
+      for (const chat of cfg.alertChats || []) {      // groups and channels: reclamation, key level, QML, advanced key level only
+        try { await bot.send(chat, formatAlert(alert), btn(true)); }
+        catch (e) { log.warn('could not post to', chat + ':', e.message); }
+        await sleep(50);
+      }
     }
     if (cfg.dmAlerts === false) return;               // channel-only mode: no private alert messages
     for (const chatId of store.recipients(alert.symbol, alert.concept)) {
-      try { await bot.send(chatId, formatAlert(alert), button && { ...button, plain: !!direct }); } catch (e) { log.warn('could not message', chatId, e.message); }
+      try { await bot.send(chatId, formatAlert(alert), btn(false)); } catch (e) { log.warn('could not message', chatId, e.message); }
       await sleep(50);
     }
   }
