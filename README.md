@@ -45,10 +45,14 @@ XP can be earned in any way, but a rank is only granted once its mission is done
 |---|---|
 | Private | Complete the Field guide (finish all chapters) |
 | Corporal | Pass 33 chart reading drills (every correct drill counts, even past the daily XP limit) |
-| Sergeant | Pass the Proficiency Exam (every chapter, 2 of 3 right) |
+| Sergeant | Pass the Proficiency Exam (every chapter, all 3 right) |
 | Lieutenant | Complete 99 Intercept Analyses |
 
-Captain and Major follow XP alone. Captain and above will unlock Copy Trading; it is not available yet, so the app only shows it as coming soon. The rules live in `GATES` in `web/rank.js`.
+Captain and Major follow XP alone. The rules live in `GATES` in `web/rank.js`.
+
+**Promotional exam fail rule.** If a person gets more than 30% of any promotional exam wrong, they fail it and the whole promotional mission restarts from the beginning: every chapter pass of the Proficiency Exam is cleared and they start again at chapter 1. Each chapter exam has 3 questions, so one wrong answer (33%) is already a fail. XP and medals already earned are kept. Once a person holds Sergeant the exam is no longer promotional: a low score costs nothing and clears nothing. People who were already Sergeant or higher when the rule arrived keep their earlier passes. The limit is `EXAM_FAIL_MAX` in `web/rank.js`.
+
+**The same rule for the Corporal drills.** While a person is a Private, the chart reading drills are their promotional mission. They may miss at most 30% of the 33 required drills (9 misses, `DRILL_MISS_MAX`). The 10th miss fails them and the drills restart from 0/33 (passes and the miss count are cleared; XP and medals are kept). Misses made at other ranks are not counted.
 
 ### What groups and channels receive
 
