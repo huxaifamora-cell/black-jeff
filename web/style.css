@@ -234,3 +234,4 @@ main > .xpl{display:block;text-align:center;font-size:12px;margin:6px 0 10px}
 .rl{flex-wrap:wrap}.rl .rq{flex-basis:100%;padding-left:36px;font:500 11px var(--mono);color:var(--hint);margin-top:-2px}
 .req{margin:0 0 10px;border-left:3px solid var(--gold);font-size:13px}.req small{display:block;font:700 10px var(--head);letter-spacing:1.2px;color:var(--gold);margin-bottom:3px}
 .req.soon{border-left-color:var(--hint)}.req.soon small{color:var(--hint)}
+.rrow.req{width:100%;text-align:left;margin:0 0 10px;border-left:3px solid var(--gold)}.rrow.req .mid{font-size:13px}.rrow.req .px{font-size:22px;color:var(--gold)}
