@@ -6,9 +6,9 @@ const CHAPTERS = ['The SORK framework', 'S: Market Structure', 'O: Order Flow', 
 const MEDALS = {
   first: ['First Light', 'First daily check-in'], wk7: ['Week Guard', '7 day check-in streak'], wk30: ['Month Veteran', '30 day check-in streak'], wk90: ['Old Guard', '90 day check-in streak'],
   scholar: ['Scholar', 'Read every guide chapter'], honors: ['Top of Class', 'Pass every chapter quiz'], eye: ['Sharp Eye', '5 chart drills right'],
-  steady: ['Steady Hand', '3 day waiting streak'], recon: ['Recon complete', 'Read all four steps of a route before its alert'],
+  steady: ['Steady Hand', '3 day waiting streak'], recon: ['Recon complete', 'Read all four steps of a route before its alert'], analyst: ['Alert Analyst', 'Analyse 5 Telegram alerts'],
 };
-const DAILY_CAP = { drill: 3, pat: 3, rev: 3 };
+const DAILY_CAP = { drill: 3, pat: 3, rev: 3, an: 3 };
 const QUIZ = [
   [['Which pillar is read on M5?', ['S: Market Structure', 'O: Order Flow', 'R: Reclamation', 'K: Key Level'], 3, 'Key level entries are on M5. Structure is H4, order flow and reclamation are H1.'],
    ['Which timeframe gives the trend direction?', ['M5', 'H1', 'H4', 'Daily'], 2, 'The trend direction comes from H4 only.'],
@@ -47,12 +47,12 @@ const kvSet = (k, v) => { lsSet(k, v); const c = cloud(); if (c) try { c.setItem
 const today = () => new Date().toLocaleDateString('en-CA');
 const dayBefore = () => new Date(Date.now() - 864e5).toLocaleDateString('en-CA');
 let RKS = null;
-const fresh = () => ({ v: 1, xp: 0, ch: [], qz: {}, streak: 0, best: 0, last: '', patDays: 0, patLast: '', drillOk: 0, medals: [], deb: [], promo: 0, d: { date: '', drill: 0, pat: [], rev: [] } });
+const fresh = () => ({ v: 1, xp: 0, ch: [], qz: {}, streak: 0, best: 0, last: '', patDays: 0, patLast: '', drillOk: 0, anTotal: 0, medals: [], deb: [], promo: 0, d: { date: '', drill: 0, pat: [], rev: [], an: 0 } });
 async function rk() {
   if (RKS) return RKS;
   let s; try { s = JSON.parse(await kvGet('sork_rank') || 'null'); } catch { s = null; }
   RKS = Object.assign(fresh(), s || {});
-  if (RKS.d.date !== today()) RKS.d = { date: today(), drill: 0, pat: [], rev: [] };
+  if (RKS.d.date !== today()) RKS.d = { date: today(), drill: 0, pat: [], rev: [], an: 0 };
   return RKS;
 }
 const rkSave = () => kvSet('sork_rank', JSON.stringify(RKS));
@@ -103,7 +103,55 @@ async function rkAlertOpen(link) {
   seen = seen.filter(x => parseInt(String(x).split('_')[0], 36) > cutoff);
   if (seen.includes(r.id)) return;
   seen.push(r.id); kvSet('sork_alert_opens', JSON.stringify(seen.slice(-200)));
+  const q = await anQueue(); q.push({ id: r.id, sym: r.symbol, c: r.concept, ts: r.ts }); kvSet('sork_alert_queue', JSON.stringify(q.slice(-20)));   // waits for its analysis mission
   await award(ALERT_XP, 'new alert opened');
+}
+
+// ---- Telegram alert analysis mission
+// A new alert opened from a Telegram button is saved here for 24 hours. In the Rank tab the person opens its chart and ticks each
+// check once they have confirmed it themselves. Finishing earns XP once per alert (3 a day). It trains reading an alert; it is not a signal.
+const ANALYSIS_XP = 10;
+const CONCEPT_NAME = { S: 'Market structure', O: 'Order flow', R: 'Reclamation', K: 'Key level', QML: 'QML (inverse key level)', ADV: 'Advanced key level' };
+const ANALYSIS = {
+  S: ['H4 shows a valid trend: liquidity (LQ) and a break of structure (BOS)', 'The trend direction is read from H4 only and matches the alert\'s H4 bias', 'You can point to the most valid BOS that set the trend', 'No H4 body has closed past the disruption POI (trend not invalidated)'],
+  O: ['The inducement is the latest BOS in the H4 trend', 'The disruption is the BOS immediately before the inducement', 'Both POIs are drawn on the order block (body to body, 50% if the body is long)', 'No H1 body has closed beyond the disruption POI'],
+  R: ['Price came to the POI of an inducement, disruption or liquidity zone', 'You can name every step of the reclamation, and none is missing', 'The last step goes out of the POI in the trend direction', 'You remember a reclamation is a confirmation, never an entry on its own'],
+  K: ['The H1 key level is valid (it became RBS or SBR) and matches the H4 bias', 'No more than 2 wicks sit inside its POI between the key level and its BOS', 'Price pulled back into the POI on M5 without a body closing outside it', 'An M5 confirmation (engulf or harami) is inside the POI, and you know where the SL goes (slightly outside the POI)'],
+  QML: ['The directional key level was invalidated by its POI', 'The QML POI is drawn from the old POI edge to the extreme before the reversal', 'The reversal is at or close to a point of liquidity', 'Entry waits for M5 confirmation inside the POI; SL and TP rules are the same as a key level'],
+  ADV: ['The H1 key level is valid and its full POI box (100%) is marked', 'Price has come back into the 50% of that box', 'An M5 reversal pattern (engulf, harami or similar) is your entry confirmation', 'SL and TP are the same as the standard key level'],
+};
+async function anQueue() {
+  let q; try { q = JSON.parse(await kvGet('sork_alert_queue') || '[]'); } catch { q = []; }
+  const cutoff = Date.now() / 1000 - 24 * 3600;
+  return Array.isArray(q) ? q.filter(x => x && x.id && x.ts > cutoff) : [];
+}
+async function renderAnalysis() {
+  rkLeave(); const s = await rk(), q = await anQueue(), a = q[q.length - 1], left = (s.d.an || 0) < DAILY_CAP.an;
+  const how = `<div class="card"><h4>How it works</h4><p class="small">1. A new alert arrives in Telegram.<br>2. Tap its <b>Open chart</b> button. The app opens on that symbol and SORK page (first open +${ALERT_XP} XP) and saves the alert here for 24 hours.<br>3. Come back to this mission, open the chart and tick each check only after you have confirmed it yourself on the chart.<br>4. Complete the analysis for +${ANALYSIS_XP} XP (${DAILY_CAP.an} a day). Five analyses earn the Alert Analyst medal.<br>It trains reading an alert the SORK way. It is not a trade signal.</p></div>`;
+  const back = '<div class="row"><button class="back" id="ab">&#8249; Rank</button><span class="small">Telegram alert analysis</span></div>';
+  if (!a) {
+    view.innerHTML = back + how + '<div class="card"><p class="small">No new alert is waiting. The next alert you open from a Telegram button will appear here.</p></div>';
+    document.getElementById('ab').onclick = renderRank; return;
+  }
+  const mins = Math.max(0, Math.round((Date.now() / 1000 - a.ts) / 60)), age = mins < 60 ? `${mins} min ago` : `${Math.round(mins / 60)} h ago`;
+  const steps = ANALYSIS[a.c] || ANALYSIS.K, name = CONCEPT_NAME[a.c] || a.c;
+  view.innerHTML = back + how + `<div class="card"><h4>${esc(a.sym)} &middot; ${esc(name)}</h4><p class="small">Alert ${age}. ${q.length > 1 ? `${q.length} alerts are waiting; this is the newest.` : ''}</p><button class="btn" id="ao">Open ${esc(a.sym)} chart</button>
+    <div id="al">${steps.map(t => `<label class="dl"><input type="checkbox" class="ak"> ${esc(t)}</label>`).join('')}</div>
+    <button class="btn" id="ad" disabled>Complete analysis</button>${left ? '' : '<p class="small">Daily analysis XP limit reached. You can still practise.</p>'}</div>`;
+  document.getElementById('ab').onclick = renderRank;
+  document.getElementById('ao').onclick = () => {
+    if (a.c === 'QML' || a.c === 'ADV') { symConcept = 'K'; kSub = a.c; } else if (['S', 'O', 'R', 'K'].includes(a.c)) symConcept = a.c;
+    openSymbol(a.sym);
+  };
+  const ad = document.getElementById('ad'), upd = () => { ad.disabled = [...view.querySelectorAll('.ak')].some(x => !x.checked); };
+  view.querySelectorAll('.ak').forEach(x => x.onchange = upd);
+  ad.onclick = async () => {
+    ad.disabled = true;
+    kvSet('sork_alert_queue', JSON.stringify(q.filter(x => x.id !== a.id)));
+    if (left) { s.d.an = (s.d.an || 0) + 1; s.anTotal = (s.anTotal || 0) + 1; await award(ANALYSIS_XP, `${a.sym} alert analysed`, s.anTotal >= 5 ? 'analyst' : undefined); }
+    else toast('Analysis complete. Daily XP limit reached.');
+    renderRank();
+  };
 }
 
 // ---- hooks used by the symbol page
@@ -241,13 +289,14 @@ async function renderRank() {
     ${m('SORK quiz', 'Three questions per chapter. Pass with 2 right for XP.', `${CHAPTERS.filter((_, k) => (s.qz[k] || 0) >= 2).length}/${CHAPTERS.length}`, 'Start a quiz', 'g2')}
     ${m('Chart reading drill', 'Tap where the inducement or key level is on a chart with the zones hidden.', `${s.d.drill}/${DAILY_CAP.drill} today`, 'Start a drill', 'g3')}
     ${m('Waiting streak', 'Open a symbol that is not ready and watch its checklist for 10 seconds, then leave it alone.', `${s.patDays} d`, 'Open the radar', 'g4')}
+    ${m('Telegram alert analysis', 'Open a new alert from its Telegram button, then check it against the SORK steps on the chart. Tap to see how it works.', `${s.d.an || 0}/${DAILY_CAP.an} today`, 'Analyse an alert', 'g5')}
     ${m('Full checklist review', 'On a symbol\'s route, tap all four steps before its alert fires.', `${s.d.rev.length}/${DAILY_CAP.rev} today`, null)}
     ${m('Daily check-in', 'One visit a day. 7, 30 and 90 days earn a medal and bonus XP.', `best ${s.best} d`, null)}
     <div class="card"><h4>Weekly debrief</h4><div id="deb"><p class="small">Loading...</p></div></div>
     <h3>Medals &middot; ribbons ${s.deb.length}</h3><div class="medals">${Object.entries(MEDALS).map(([k, [t, d]]) => `<div class="medal ${s.medals.includes(k) ? 'on' : ''}"><b>${t}</b><span>${d}</span></div>`).join('')}</div>
     <details class="more"><summary>Rank ladder</summary>${RANKS.map((r, k) => `<div class="rl ${k <= i ? 'on' : ''}">${insignia(k, 26)}<b>${r[0]}</b><span class="px">${r[1]} XP</span></div>`).join('')}<p class="small">Progress is saved in your Telegram account on this app. It is for practice and fun: there is no leaderboard and it does not rate your trading.</p></details>`;
   document.getElementById('g1').onclick = () => setTab('guide'); document.getElementById('g2').onclick = renderQuizMenu;
-  document.getElementById('g3').onclick = renderDrill; document.getElementById('g4').onclick = () => setTab('symbols');
+  document.getElementById('g3').onclick = renderDrill; document.getElementById('g4').onclick = () => setTab('symbols'); document.getElementById('g5').onclick = renderAnalysis;
   try {
     document.getElementById('deb').innerHTML = await debriefHtml(s);
     const dd = document.getElementById('dd');
