@@ -232,7 +232,7 @@ async function renderRank() {
   const name = (tgs && tgs.initDataUnsafe && tgs.initDataUnsafe.user && tgs.initDataUnsafe.user.first_name) || 'Operator';
   const m = (t, d, p, btn, id) => `<div class="card"><h4>${t} <span class="px">${p}</span></h4><p class="small">${d}</p>${btn ? `<button class="btn" id="${id}">${btn}</button>` : ''}</div>`;
   view.innerHTML = `<h3 style="margin-top:0">Service record</h3>
-    <div class="card prof">${insignia(i, 56)}<div style="flex:1"><div class="small">CALLSIGN</div><div class="callsign">${esc(name)}</div><div class="rname">${RANKS[i][0]}</div></div></div>
+    <div class="card prof">${insignia(i, 56)}<div style="flex:1"><div class="small">RANK AND CALLSIGN</div><div class="rname">${RANKS[i][0]}</div><div class="callsign">${esc(name)}</div></div></div>
     <div class="xpbar" aria-label="XP progress"><div style="width:${pct}%"></div></div>
     <div class="small xpl"><span>${s.xp} XP</span><span>${nx ? `next: ${nx[0]} at ${nx[1]} XP` : 'highest rank'}</span></div>
     <div class="plan"><div><small>CHECK-IN STREAK</small><span class="px">${s.streak} d</span></div><div><small>CHAPTERS</small><span class="px">${s.ch.length}/${CHAPTERS.length}</span></div><div><small>QUIZZES</small><span class="px">${CHAPTERS.filter((_, k) => (s.qz[k] || 0) >= 2).length}/${CHAPTERS.length}</span></div></div>
