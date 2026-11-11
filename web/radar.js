@@ -38,7 +38,7 @@ const Radar = (() => {
       const tt = (now - t0) / 1000, beam = reduce ? 0 : ((tt % SWEEP) / SWEEP) * Math.PI * 2;   // beam bearing, clockwise from up
       g.clearRect(0, 0, W, W);
       // scope face
-      g.fillStyle = '#000'; g.beginPath(); g.arc(cx, cy, R, 0, 7); g.fill();
+      // transparent scope face: the panel behind it shows through
       g.save(); g.beginPath(); g.arc(cx, cy, R, 0, 7); g.clip();
       // range rings and spokes
       g.lineWidth = 1; g.strokeStyle = `rgba(${SCOPE},.28)`;

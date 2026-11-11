@@ -28,7 +28,7 @@ function setTab(t) {
 }
 
 // ------------------------------------------------------------ symbols
-// ---- tactical radar: a live sweeping scope (web/radar.js); only ready symbols are shown as contacts
+// ---- tactical radar: a live sweeping scope (web/radar.js); only ready symbols are shown as targets
 let radarTab = 'ready';
 async function renderSymbols() {
   view.innerHTML = '<p class="mut">Loading...</p>';
@@ -44,14 +44,14 @@ async function renderSymbols() {
         <span><span class="px">${s.price != null ? N(s.price, s.digits) : ''}</span>${arrow(s.trend)}</span></button>`;
     };
     const map = `<div class="scope"><canvas id="radar" tabindex="0" role="img" aria-label="Live radar: ${ready.length} symbol(s) ready to trade"></canvas>
-      <div class="scopeinfo"><span id="rdBrg">BRG 000&deg;</span><span>CONTACTS <b id="rdN">${ready.length}</b></span><span id="rdClk"></span></div></div>`;
+      <div class="scopeinfo"><span id="rdBrg">BRG 000&deg;</span><span>TARGETS <b id="rdN">${ready.length}</b></span><span id="rdClk"></span></div></div>`;
     const last = al.alerts && al.alerts[0];
-    view.innerHTML = `<h3 style="margin-top:0">Tactical radar</h3>${map}
+    view.innerHTML = `<h3 style="margin-top:0;text-align:center">Tactical radar</h3>${map}
       <div class="legend"><span><i style="background:#5AFF64"></i>BUY READY</span><span><i style="background:#FF6955"></i>SELL READY</span></div>` +
       `<div class="rtabs" role="tablist">${[['ready', 'Ready to trade'], ['building', 'Building'], ['quiet', 'Quiet']].map(([k, t]) => `<button role="tab" class="${radarTab === k ? 'on' : ''}" data-rt="${k}">${t} <span>${G[k].length}</span></button>`).join('')}</div>` +
       (G[radarTab].length ? G[radarTab].map(row).join('') : `<p class="mut">${{ ready: 'No symbols are ready to trade.', building: 'Nothing is building right now.', quiet: 'No quiet symbols.' }[radarTab]}</p>`) +
       (last ? `<div class="latest"><span>LATEST</span><span style="flex:1">${esc(last.title)}</span><span class="mut">${T(last.ts)}</span></div>` : '') +
-      '<p class="small">Only symbols that are ready to trade appear on the scope. Bearing is fixed per symbol. Tap a contact to open it.</p>';
+      '<p class="small">Only symbols that are ready to trade appear on the scope. Bearing is fixed per symbol. Tap a target to open it.</p>';
     view.querySelectorAll('.rtabs button').forEach(b => b.onclick = () => { radarTab = b.dataset.rt; renderSymbols(); });
     view.querySelectorAll('.rrow').forEach(b => b.onclick = () => openSymbol(b.dataset.id));
     const brg = document.getElementById('rdBrg'), clk = document.getElementById('rdClk');

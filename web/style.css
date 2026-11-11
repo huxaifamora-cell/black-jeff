@@ -13,7 +13,7 @@ html,body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.45 var(--bod
 /* header band: camo, 150px, with a dark plate behind the text and a solid strip behind the tabs */
 header{height:96px;padding:0;display:flex;flex-direction:column;justify-content:flex-start;
   background:var(--camo) 0 0/200px 160px repeat;border-bottom:1px solid var(--tan);border-radius:0}
-#title{align-self:flex-start;margin:12px 0 0 12px;padding:8px 14px;background:rgba(12,17,9,.82);border:1px solid var(--edge);
+#title{align-self:center;align-items:center;text-align:center;margin:12px 0 0;padding:8px 14px;background:rgba(12,17,9,.82);border:1px solid var(--edge);
   font:700 24px/1 var(--head);letter-spacing:4px;text-transform:uppercase;color:var(--fg);display:flex;flex-direction:column;gap:5px}
 #title small{font:500 10px/1 var(--mono);letter-spacing:1.5px;color:var(--hint);display:flex;align-items:center;gap:7px}
 #title small i{margin-left:6px;font-style:normal;color:var(--up);display:inline-flex;align-items:center;gap:5px}
@@ -171,7 +171,7 @@ main{max-width:760px;margin:0 auto}
 .rt{cursor:pointer}.rt.rd{color:var(--fg)}.rt.rd:after{content:" \2713";color:var(--up)}
 
 /* live radar scope */
-.scope{position:relative;background:#000;border:1px solid var(--edge);padding:8px 8px 0}
+.scope{position:relative;background:var(--plate);border:1px solid var(--edge);padding:8px 8px 0}
 .scope canvas{display:block;margin:0 auto;width:auto;max-width:100%;border:0;background:none;cursor:crosshair}
 .scopeinfo{display:flex;justify-content:space-between;gap:8px;padding:6px 2px 8px;font:500 10px var(--mono);color:#fff;letter-spacing:.5px}
 .scopeinfo b{color:#fff}
