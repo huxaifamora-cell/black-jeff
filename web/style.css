@@ -229,3 +229,7 @@ main > .xpl{display:block;text-align:center;font-size:12px;margin:6px 0 10px}
 .rtabs button svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
 .rtabs button em{font-style:normal}
 .rtabs button.on svg{color:var(--gold)}
+
+/* promotion requirements */
+.rl{flex-wrap:wrap}.rl .rq{flex-basis:100%;padding-left:36px;font:500 11px var(--mono);color:var(--hint);margin-top:-2px}
+.req{margin:0 0 10px;border-left:3px solid var(--gold);font-size:13px}.req small{display:block;font:700 10px var(--head);letter-spacing:1.2px;color:var(--gold);margin-bottom:3px}

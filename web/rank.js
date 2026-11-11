@@ -65,16 +65,37 @@ const kvSet = (k, v) => { lsSet(k, v); const c = cloud(); if (c) try { c.setItem
 const today = () => new Date().toLocaleDateString('en-CA');
 const dayBefore = () => new Date(Date.now() - 864e5).toLocaleDateString('en-CA');
 let RKS = null;
-const fresh = () => ({ v: 1, xp: 0, ch: [], qz: {}, streak: 0, best: 0, last: '', drillOk: 0, anTotal: 0, medals: [], promo: 0, d: { date: '', drill: 0 } });
+const fresh = () => ({ v: 1, xp: 0, ch: [], qz: {}, streak: 0, best: 0, last: '', drillOk: 0, anTotal: 0, medals: [], promo: 0, rank: null, d: { date: '', drill: 0 } });
 async function rk() {
   if (RKS) return RKS;
   let s; try { s = JSON.parse(await kvGet('sork_rank') || 'null'); } catch { s = null; }
   RKS = Object.assign(fresh(), s || {});
+  if (RKS.rank == null) RKS.rank = rankOf(RKS);          // first load after the requirements were introduced: no retroactive promotion toast
   if (RKS.d.date !== today()) RKS.d = { date: today(), drill: 0 };
   return RKS;
 }
 const rkSave = () => { kvSet('sork_rank', JSON.stringify(RKS)); rkHeader(); };
-const rankIdx = xp => { let i = 0; RANKS.forEach((r, k) => { if (xp >= r[1]) i = k; }); return i; };
+const rankIdx = xp => { let i = 0; RANKS.forEach((r, k) => { if (xp >= r[1]) i = k; }); return i; };   // the rank XP alone would give
+// Mandatory requirements: XP can be earned any way, but each rank below Lieutenant also needs one mission completed before the next rank is granted.
+const DRILLS_REQ = 33, ANALYSES_REQ = 99;
+const GATES = [
+  { to: 'Private', short: 'Complete the Field guide (all chapters)', ok: s => s.ch.length >= CHAPTERS.length, text: s => `Complete the Field guide: ${s.ch.length}/${CHAPTERS.length} chapters finished` },
+  { to: 'Corporal', short: `Pass ${DRILLS_REQ} chart reading drills`, ok: s => (s.drillOk || 0) >= DRILLS_REQ, text: s => `Pass ${DRILLS_REQ} chart reading drills: ${Math.min(s.drillOk || 0, DRILLS_REQ)}/${DRILLS_REQ} passed` },
+  { to: 'Sergeant', short: 'Pass the Proficiency Exam (every chapter)', ok: s => CHAPTERS.every((_, k) => (s.qz[k] || 0) >= 2), text: s => `Pass the Proficiency Exam: ${CHAPTERS.filter((_, k) => (s.qz[k] || 0) >= 2).length}/${CHAPTERS.length} chapters passed` },
+  { to: 'Lieutenant', short: `Complete ${ANALYSES_REQ} Intercept Analyses`, ok: s => (s.anTotal || 0) >= ANALYSES_REQ, text: s => `Complete ${ANALYSES_REQ} Intercept Analyses: ${Math.min(s.anTotal || 0, ANALYSES_REQ)}/${ANALYSES_REQ} done` },
+];
+// The rank the person actually holds: the XP rank, held back at the first rank whose requirement is not met yet.
+function rankOf(s) {
+  const xpRank = rankIdx(s.xp); let i = 0;
+  while (i < xpRank && (!GATES[i] || GATES[i].ok(s))) i++;
+  return i;
+}
+// Returns a PROMOTED line when the held rank has gone up since the last time it was saved (a requirement was just met, or XP just arrived).
+function promoMsg(s) {
+  const now = rankOf(s), was = s.rank == null ? now : s.rank;
+  s.rank = now;
+  return now > was ? `<b>PROMOTED to ${RANKS[now][0]}</b>` : '';
+}
 
 function toast(html, long) {
   let t = document.getElementById('toast');
@@ -82,7 +103,7 @@ function toast(html, long) {
   t.innerHTML = html; t.className = 'on'; clearTimeout(t._h); t._h = setTimeout(() => { t.className = ''; }, long ? 5200 : 3200);
 }
 async function award(xp, why, medal) {
-  const s = await rk(), before = rankIdx(s.xp);
+  const s = await rk();
   s.xp += xp;
   let msg = xp ? `<b>+${xp} XP</b> ${esc(why)}` : esc(why);
   if (medal && !s.medals.includes(medal)) { s.medals.push(medal); msg += `<br>Medal: <b>${MEDALS[medal][0]}</b>`; }
@@ -93,9 +114,8 @@ async function award(xp, why, medal) {
   }
   if (CHAPTERS.every((_, i) => (s.qz[i] || 0) >= 2) && !s.medals.includes('honors')) { s.medals.push('honors'); msg += '<br>Medal: <b>Top of Class</b>'; }
   if (s.drillOk >= 5 && !s.medals.includes('eye')) { s.medals.push('eye'); msg += '<br>Medal: <b>Sharp Eye</b>'; }
-  const after = rankIdx(s.xp);
-  if (after > before) msg += `<br><b>PROMOTED to ${RANKS[after][0]}</b>`;
-  rkSave(); toast(msg, after > before);
+  const pm = promoMsg(s); if (pm) msg += '<br>' + pm;
+  rkSave(); toast(msg, !!pm);
 }
 
 // ---- Roll Call: daily check-in streak
@@ -246,7 +266,7 @@ async function renderDrill() {
       const left = s.d.drill < DAILY_CAP.drill;
       document.getElementById('dr').innerHTML = `<div class="card"><h4 class="${ok ? 'up' : 'down'}">${ok ? 'On target' : 'Missed'}</h4><p class="small">${ok ? (left ? '+10 XP.' : 'Daily drill XP limit reached, keep practising.') : 'The zone is now shown on the chart. Study where it formed.'}</p><button class="btn" id="nd">Next drill</button></div>`;
       document.getElementById('nd').onclick = renderDrill;
-      if (ok) { s.drillOk++; if (left) { s.d.drill++; await award(10, 'chart drill: zone found'); } else rkSave(); }
+      if (ok) { s.drillOk++; if (left) { s.d.drill++; await award(10, 'chart drill: zone found'); } else { const pm = promoMsg(s); rkSave(); if (pm) toast(pm, true); } }
     };
   } catch (e) { view.innerHTML = `<p class="down">${esc(e.message)}</p>`; }
 }
@@ -255,7 +275,7 @@ async function renderDrill() {
 const rkName = () => (tgs && tgs.initDataUnsafe && tgs.initDataUnsafe.user && tgs.initDataUnsafe.user.first_name) || 'Operator';
 function rkHeader() {
   const el = document.getElementById('hrank'); if (!el || !RKS) return;
-  const i = rankIdx(RKS.xp);
+  const i = rankOf(RKS);
   el.innerHTML = `${insignia(i, 24)}<b class="hr">${RANKS[i][0]}</b><span class="hn">${esc(rkName())}</span>`;
 }
 window.addEventListener('load', () => { rk().then(rkHeader); });
@@ -276,8 +296,9 @@ const SUBTABS = [
 ];
 let rkSub = 'rank';
 async function renderRank() {
-  const s = await rk(), i = rankIdx(s.xp), nx = RANKS[i + 1], cur = RANKS[i][1];
-  const pct = nx ? Math.min(100, Math.round((s.xp - cur) / (nx[1] - cur) * 100)) : 100;
+  const s = await rk(), i = rankOf(s), nx = RANKS[i + 1], cur = RANKS[i][1];
+  const held = i < rankIdx(s.xp), gate = GATES[i] && !GATES[i].ok(s) ? GATES[i] : null;      // held: enough XP, but the requirement is still open
+  const pct = nx && !held ? Math.min(100, Math.round((s.xp - cur) / (nx[1] - cur) * 100)) : 100;
   const name = rkName();
   const m = (t, d, p, btn, id, ic) => `<div class="card"><h4>${ic ? ico(ic) : ''}${t} <span class="px">${p}</span></h4><p class="small">${d}</p>${btn ? `<button class="btn" id="${id}">${btn}</button>` : ''}</div>`;
   const examsPassed = CHAPTERS.filter((_, k) => (s.qz[k] || 0) >= 2).length;
@@ -285,16 +306,16 @@ async function renderRank() {
     rank: `<h3 class="ctr" style="margin-top:0">Service record</h3>
       <div class="card prof">${insignia(i, 56)}<div style="flex:1"><div class="small">RANK AND CALLSIGN</div><div class="rname">${RANKS[i][0]}</div><div class="callsign">${esc(name)}</div></div></div>
       <div class="xpbar big" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct}" aria-label="XP progress"><div style="width:${pct}%"></div><span class="xl">${RANKS[i][0]}</span><span class="xc">${pct}%</span><span class="xr">${s.xp} XP</span></div>
-      <div class="small xpl">${nx ? `next: ${nx[0]} at ${nx[1]} XP` : 'highest rank'}</div>`,
+      <div class="small xpl">${nx ? `next: ${nx[0]} at ${nx[1]} XP` : 'highest rank'}</div>${gate ? `<div class="card req"><small>PROMOTION REQUIREMENT${held ? ' &middot; XP TARGET REACHED' : ''}</small>${esc(gate.text(s))}</div>` : ''}`,
     missions: `<h3 class="ctr" style="margin-top:0">Missions</h3>
       <div class="plan"><div><small>ROLL CALL STREAK</small><span class="px">${s.streak} d</span></div><div><small>CHAPTERS</small><span class="px">${s.ch.length}/${CHAPTERS.length}</span></div><div><small>EXAMS</small><span class="px">${examsPassed}/${CHAPTERS.length}</span></div></div>
       ${m('Roll Call', 'Report in once a day. 7, 30 and 90 days earn a medal and bonus XP.', `best ${s.best} d`, null, null, 'roll')}
-      ${m('Intercept Analysis', 'Open a new alert from its Telegram button, then check it against the SORK steps on the chart. Tap to see how it works.', `${s.anTotal || 0} done`, 'Analyse an alert', 'g5', 'intercept')}
-      ${m('Chart reading drill', 'Tap where the inducement or key level is on a chart with the zones hidden.', `${s.d.drill}/${DAILY_CAP.drill} today`, 'Start a drill', 'g3', 'drill')}
-      ${m('Field guide', 'Finish a chapter (scroll to its end) for a stripe and XP. Finishing all of them is a promotion.', `${s.ch.length}/${CHAPTERS.length}`, 'Open the guide', 'g1', 'guide')}
-      ${m('Proficiency Exam', 'Three questions per chapter. Pass with 2 right for XP.', `${examsPassed}/${CHAPTERS.length}`, 'Sit the exam', 'g2', 'exam')}`,
+      ${m('Intercept Analysis', 'Open a new alert from its Telegram button, then check it against the SORK steps on the chart. Required to become Lieutenant: complete ${ANALYSES_REQ}.', `${Math.min(s.anTotal || 0, ANALYSES_REQ)}/${ANALYSES_REQ}`, 'Analyse an alert', 'g5', 'intercept')}
+      ${m('Chart reading drill', `Tap where the inducement or key level is on a chart with the zones hidden. Required to become Corporal: pass ${DRILLS_REQ} drills (daily XP limit ${DAILY_CAP.drill}, but every pass counts).`, `${Math.min(s.drillOk || 0, DRILLS_REQ)}/${DRILLS_REQ}`, 'Start a drill', 'g3', 'drill')}
+      ${m('Field guide', 'Finish a chapter (scroll to its end) for a stripe and XP. Required to become Private: finish all chapters.', `${s.ch.length}/${CHAPTERS.length}`, 'Open the guide', 'g1', 'guide')}
+      ${m('Proficiency Exam', 'Three questions per chapter. Pass with 2 right for XP. Required to become Sergeant: pass every chapter.', `${examsPassed}/${CHAPTERS.length}`, 'Sit the exam', 'g2', 'exam')}`,
     medals: `<h3 class="ctr" style="margin-top:0">Medals</h3><div class="medals">${Object.entries(MEDALS).map(([k, [t, d]]) => `<div class="medal ${s.medals.includes(k) ? 'on' : ''}">${ico(k)}<b>${t}</b><span>${d}</span></div>`).join('')}</div>`,
-    ladder: `<h3 class="ctr" style="margin-top:0">Rank ladder</h3>${RANKS.map((r, k) => `<div class="rl ${k <= i ? 'on' : ''}">${insignia(k, 26)}<b>${r[0]}</b><span class="px">${r[1]} XP</span></div>`).join('')}<p class="small">Progress is saved in your Telegram account on this app. It is for practice and fun: there is no leaderboard and it does not rate your trading.</p>`,
+    ladder: `<h3 class="ctr" style="margin-top:0">Rank ladder</h3>${RANKS.map((r, k) => `<div class="rl ${k <= i ? 'on' : ''}">${insignia(k, 26)}<b>${r[0]}</b><span class="px">${r[1]} XP</span>${k && GATES[k - 1] ? `<span class="rq">${GATES[k - 1].short}</span>` : ''}</div>`).join('')}<p class="small">XP can be earned any way, but each rank up to Lieutenant also needs its requirement completed. Until it is, you keep your rank and the XP keeps adding up. Progress is saved in your Telegram account on this app. It is for practice and fun: there is no leaderboard and it does not rate your trading.</p>`,
   };
   view.innerHTML = `<div class="subtabs" role="tablist">${SUBTABS.map(([k, t, ic]) => `<button role="tab" data-sub="${k}" class="${k === rkSub ? 'on' : ''}" aria-selected="${k === rkSub}"><svg viewBox="0 0 24 24" aria-hidden="true">${ic}</svg>${t}</button>`).join('')}</div>` + pages[rkSub];
   view.querySelectorAll('[data-sub]').forEach(b => b.onclick = () => { rkSub = b.dataset.sub; renderRank(); });
