@@ -48,7 +48,7 @@ XP can be earned in any way, but a rank is only granted once its mission is done
 | Sergeant | Pass the Proficiency Exam (every chapter, 2 of 3 right) |
 | Lieutenant | Complete 99 Intercept Analyses |
 
-Captain and Major follow XP alone. The rules live in `GATES` in `web/rank.js`.
+Captain and Major follow XP alone. Captain and above will unlock Copy Trading; it is not available yet, so the app only shows it as coming soon. The rules live in `GATES` in `web/rank.js`.
 
 ### What groups and channels receive
 
