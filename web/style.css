@@ -208,3 +208,10 @@ main > h3.ctr{margin-left:auto;margin-right:auto;text-align:center}
 .xpbar.big span{position:absolute;top:0;bottom:0;display:flex;align-items:center;color:#10150C;font:700 14px var(--head);letter-spacing:1.5px;text-transform:uppercase}
 .xpbar.big .xl{left:10px}.xpbar.big .xc{left:50%;transform:translateX(-50%);font-family:var(--mono);letter-spacing:0}.xpbar.big .xr{right:10px;font-family:var(--mono);letter-spacing:0;font-size:12px}
 main > .xpl{display:block;text-align:center;font-size:12px;margin:6px 0 10px}
+
+/* mission and medal icons */
+.ico{width:24px;height:24px;flex:none;fill:none;stroke:var(--gold);stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.card h4 .ico{vertical-align:-6px;margin-right:9px}
+.medal{display:grid;grid-template-columns:30px 1fr;column-gap:8px;align-items:center}
+.medal .ico{grid-row:1/3;width:28px;height:28px;stroke:var(--hint)}.medal.on .ico{stroke:var(--gold)}
+.medal b,.medal span{grid-column:2}
