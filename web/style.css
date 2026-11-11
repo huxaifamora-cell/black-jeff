@@ -192,3 +192,11 @@ main > details.more>summary{margin:0}
 .alist,.latest{background:var(--plate)}
 #toast{background:#1A2214}
 main > .xpl{width:auto;padding:4px 8px}
+
+/* Rank page sub-navigation */
+.subtabs{display:flex;margin:0 0 10px;background:var(--inner);border:1px solid var(--edge)}
+.subtabs button{flex:1 1 0;min-width:0;display:flex;flex-direction:column;align-items:center;gap:3px;border:0;border-right:1px solid var(--edge);background:none;color:var(--hint);padding:8px 2px 7px;
+  font:700 10.5px var(--head);letter-spacing:.4px;text-transform:uppercase;white-space:nowrap;border-radius:0}
+.subtabs button:last-child{border-right:0}
+.subtabs svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:square;stroke-linejoin:miter}
+.subtabs button.on{background:var(--chipbg);color:var(--gold);box-shadow:inset 0 -2px 0 var(--gold)}

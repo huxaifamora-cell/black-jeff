@@ -240,24 +240,37 @@ function insignia(i, size = 44) {
     : Array.from({ length: i - 3 }, (_, k) => `<path transform="translate(${13 + (k - (i - 4) / 2) * 7} 13) scale(.5)" d="M0 -9l2.6 5.4 5.9.8-4.3 4 1 5.8L0 3.4l-5.2 2.6 1-5.8-4.3-4 5.9-.8z" fill="${c}"/>`).join('');
   return `<svg width="${size}" height="${size}" viewBox="0 0 26 26" role="img" aria-label="Rank ${RANKS[i][0]}"><rect x="1" y="1" width="24" height="24" rx="3" fill="#0C1109" stroke="${i ? c : '#3A4A2A'}" stroke-width="1.5"/>${g}</svg>`;
 }
+// Sub-navigation under the Rank tab: rank, missions, medals, rank ladder. The chosen page is remembered, so the back button of a mission returns to Missions.
+const SUBTABS = [
+  ['rank', 'Rank', '<path d="M12 2.5l8 3v6c0 5-3.4 8.4-8 10.5-4.6-2.1-8-5.5-8-10.5v-6z"/><path d="M8.5 10.5l3.5 3 3.5-3M8.5 14l3.5 3 3.5-3"/>'],            // shield with sergeant chevrons
+  ['missions', 'Missions', '<circle cx="12" cy="12" r="6.5"/><circle cx="12" cy="12" r="1.6"/><path d="M12 2v5M12 17v5M2 12h5M17 12h5"/>'],                        // rifle scope crosshair
+  ['medals', 'Medals', '<path d="M7.5 2l4.5 7 4.5-7M9 8.5L6.5 2M15 8.5L17.5 2"/><circle cx="12" cy="15.5" r="5.5"/><path d="M12 12.6l1 2 2.2.3-1.6 1.5.4 2.2-2-1.1-2 1.1.4-2.2-1.6-1.5 2.2-.3z"/>'],   // ribbon and star medal
+  ['ladder', 'Rank ladder', '<path d="M5 10.5l7-5 7 5M5 15.5l7-5 7 5M5 20.5l7-5 7 5M12 1.5v2"/>'],                                                              // ascending chevrons
+];
+let rkSub = 'rank';
 async function renderRank() {
   const s = await rk(), i = rankIdx(s.xp), nx = RANKS[i + 1], cur = RANKS[i][1];
   const pct = nx ? Math.min(100, Math.round((s.xp - cur) / (nx[1] - cur) * 100)) : 100;
   const name = (tgs && tgs.initDataUnsafe && tgs.initDataUnsafe.user && tgs.initDataUnsafe.user.first_name) || 'Operator';
   const m = (t, d, p, btn, id) => `<div class="card"><h4>${t} <span class="px">${p}</span></h4><p class="small">${d}</p>${btn ? `<button class="btn" id="${id}">${btn}</button>` : ''}</div>`;
-  view.innerHTML = `<h3 style="margin-top:0">Service record</h3>
-    <div class="card prof">${insignia(i, 56)}<div style="flex:1"><div class="small">RANK AND CALLSIGN</div><div class="rname">${RANKS[i][0]}</div><div class="callsign">${esc(name)}</div></div></div>
-    <div class="xpbar" aria-label="XP progress"><div style="width:${pct}%"></div></div>
-    <div class="small xpl"><span>${s.xp} XP</span><span>${nx ? `next: ${nx[0]} at ${nx[1]} XP` : 'highest rank'}</span></div>
-    <div class="plan"><div><small>ROLL CALL STREAK</small><span class="px">${s.streak} d</span></div><div><small>CHAPTERS</small><span class="px">${s.ch.length}/${CHAPTERS.length}</span></div><div><small>EXAMS</small><span class="px">${CHAPTERS.filter((_, k) => (s.qz[k] || 0) >= 2).length}/${CHAPTERS.length}</span></div></div>
-    <h3>Missions</h3>
-    ${m('Roll Call', 'Report in once a day. 7, 30 and 90 days earn a medal and bonus XP.', `best ${s.best} d`, null)}
-    ${m('Intercept Analysis', 'Open a new alert from its Telegram button, then check it against the SORK steps on the chart. Tap to see how it works.', `${s.anTotal || 0} done`, 'Analyse an alert', 'g5')}
-    ${m('Chart reading drill', 'Tap where the inducement or key level is on a chart with the zones hidden.', `${s.d.drill}/${DAILY_CAP.drill} today`, 'Start a drill', 'g3')}
-    ${m('Field guide', 'Finish a chapter (scroll to its end) for a stripe and XP. Finishing all of them is a promotion.', `${s.ch.length}/${CHAPTERS.length}`, 'Open the guide', 'g1')}
-    ${m('Proficiency Exam', 'Three questions per chapter. Pass with 2 right for XP.', `${CHAPTERS.filter((_, k) => (s.qz[k] || 0) >= 2).length}/${CHAPTERS.length}`, 'Sit the exam', 'g2')}
-    <h3>Medals</h3><div class="medals">${Object.entries(MEDALS).map(([k, [t, d]]) => `<div class="medal ${s.medals.includes(k) ? 'on' : ''}"><b>${t}</b><span>${d}</span></div>`).join('')}</div>
-    <details class="more"><summary>Rank ladder</summary>${RANKS.map((r, k) => `<div class="rl ${k <= i ? 'on' : ''}">${insignia(k, 26)}<b>${r[0]}</b><span class="px">${r[1]} XP</span></div>`).join('')}<p class="small">Progress is saved in your Telegram account on this app. It is for practice and fun: there is no leaderboard and it does not rate your trading.</p></details>`;
-  document.getElementById('g1').onclick = () => setTab('guide'); document.getElementById('g2').onclick = renderQuizMenu;
-  document.getElementById('g3').onclick = renderDrill; document.getElementById('g5').onclick = renderAnalysis;
+  const examsPassed = CHAPTERS.filter((_, k) => (s.qz[k] || 0) >= 2).length;
+  const pages = {
+    rank: `<h3 style="margin-top:0">Service record</h3>
+      <div class="card prof">${insignia(i, 56)}<div style="flex:1"><div class="small">RANK AND CALLSIGN</div><div class="rname">${RANKS[i][0]}</div><div class="callsign">${esc(name)}</div></div></div>
+      <div class="xpbar" aria-label="XP progress"><div style="width:${pct}%"></div></div>
+      <div class="small xpl"><span>${s.xp} XP</span><span>${nx ? `next: ${nx[0]} at ${nx[1]} XP` : 'highest rank'}</span></div>
+      <div class="plan"><div><small>ROLL CALL STREAK</small><span class="px">${s.streak} d</span></div><div><small>CHAPTERS</small><span class="px">${s.ch.length}/${CHAPTERS.length}</span></div><div><small>EXAMS</small><span class="px">${examsPassed}/${CHAPTERS.length}</span></div></div>`,
+    missions: `<h3 style="margin-top:0">Missions</h3>
+      ${m('Roll Call', 'Report in once a day. 7, 30 and 90 days earn a medal and bonus XP.', `best ${s.best} d`, null)}
+      ${m('Intercept Analysis', 'Open a new alert from its Telegram button, then check it against the SORK steps on the chart. Tap to see how it works.', `${s.anTotal || 0} done`, 'Analyse an alert', 'g5')}
+      ${m('Chart reading drill', 'Tap where the inducement or key level is on a chart with the zones hidden.', `${s.d.drill}/${DAILY_CAP.drill} today`, 'Start a drill', 'g3')}
+      ${m('Field guide', 'Finish a chapter (scroll to its end) for a stripe and XP. Finishing all of them is a promotion.', `${s.ch.length}/${CHAPTERS.length}`, 'Open the guide', 'g1')}
+      ${m('Proficiency Exam', 'Three questions per chapter. Pass with 2 right for XP.', `${examsPassed}/${CHAPTERS.length}`, 'Sit the exam', 'g2')}`,
+    medals: `<h3 style="margin-top:0">Medals</h3><div class="medals">${Object.entries(MEDALS).map(([k, [t, d]]) => `<div class="medal ${s.medals.includes(k) ? 'on' : ''}"><b>${t}</b><span>${d}</span></div>`).join('')}</div>`,
+    ladder: `<h3 style="margin-top:0">Rank ladder</h3>${RANKS.map((r, k) => `<div class="rl ${k <= i ? 'on' : ''}">${insignia(k, 26)}<b>${r[0]}</b><span class="px">${r[1]} XP</span></div>`).join('')}<p class="small">Progress is saved in your Telegram account on this app. It is for practice and fun: there is no leaderboard and it does not rate your trading.</p>`,
+  };
+  view.innerHTML = `<div class="subtabs" role="tablist">${SUBTABS.map(([k, t, ic]) => `<button role="tab" data-sub="${k}" class="${k === rkSub ? 'on' : ''}" aria-selected="${k === rkSub}"><svg viewBox="0 0 24 24" aria-hidden="true">${ic}</svg>${t}</button>`).join('')}</div>` + pages[rkSub];
+  view.querySelectorAll('[data-sub]').forEach(b => b.onclick = () => { rkSub = b.dataset.sub; renderRank(); });
+  const on = (id, f) => { const e = document.getElementById(id); if (e) e.onclick = f; };
+  on('g1', () => setTab('guide')); on('g2', renderQuizMenu); on('g3', renderDrill); on('g5', renderAnalysis);
 }
