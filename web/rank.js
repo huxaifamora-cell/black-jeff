@@ -84,6 +84,8 @@ const GATES = [
   { to: 'Sergeant', short: 'Pass the Proficiency Exam (every chapter)', ok: s => CHAPTERS.every((_, k) => (s.qz[k] || 0) >= 2), text: s => `Pass the Proficiency Exam: ${CHAPTERS.filter((_, k) => (s.qz[k] || 0) >= 2).length}/${CHAPTERS.length} chapters passed` },
   { to: 'Lieutenant', short: `Complete ${ANALYSES_REQ} Intercept Analyses`, ok: s => (s.anTotal || 0) >= ANALYSES_REQ, text: s => `Complete ${ANALYSES_REQ} Intercept Analyses: ${Math.min(s.anTotal || 0, ANALYSES_REQ)}/${ANALYSES_REQ} done` },
 ];
+// Captain and above unlock Copy Trading. It is not available yet, so for now this is only shown as a coming-soon perk.
+const COPY_RANK = RANKS.findIndex(r => r[0] === 'Captain');
 // The rank the person actually holds: the XP rank, held back at the first rank whose requirement is not met yet.
 function rankOf(s) {
   const xpRank = rankIdx(s.xp); let i = 0;
@@ -306,7 +308,7 @@ async function renderRank() {
     rank: `<h3 class="ctr" style="margin-top:0">Service record</h3>
       <div class="card prof">${insignia(i, 56)}<div style="flex:1"><div class="small">RANK AND CALLSIGN</div><div class="rname">${RANKS[i][0]}</div><div class="callsign">${esc(name)}</div></div></div>
       <div class="xpbar big" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct}" aria-label="XP progress"><div style="width:${pct}%"></div><span class="xl">${RANKS[i][0]}</span><span class="xc">${pct}%</span><span class="xr">${s.xp} XP</span></div>
-      <div class="small xpl">${nx ? `next: ${nx[0]} at ${nx[1]} XP` : 'highest rank'}</div>${gate ? `<div class="card req"><small>PROMOTION REQUIREMENT${held ? ' &middot; XP TARGET REACHED' : ''}</small>${esc(gate.text(s))}</div>` : ''}`,
+      <div class="small xpl">${nx ? `next: ${nx[0]} at ${nx[1]} XP` : 'highest rank'}</div>${`<div class="card req soon"><small>COPY TRADING &middot; COMING SOON</small>${i >= COPY_RANK ? 'Unlocked at your rank. It is not available yet, you will be told when it opens.' : `Unlocks at ${RANKS[COPY_RANK][0]} and above. It is not available yet.`}</div>`}${gate ? `<div class="card req"><small>PROMOTION REQUIREMENT${held ? ' &middot; XP TARGET REACHED' : ''}</small>${esc(gate.text(s))}</div>` : ''}`,
     missions: `<h3 class="ctr" style="margin-top:0">Missions</h3>
       <div class="plan"><div><small>ROLL CALL STREAK</small><span class="px">${s.streak} d</span></div><div><small>CHAPTERS</small><span class="px">${s.ch.length}/${CHAPTERS.length}</span></div><div><small>EXAMS</small><span class="px">${examsPassed}/${CHAPTERS.length}</span></div></div>
       ${m('Roll Call', 'Report in once a day. 7, 30 and 90 days earn a medal and bonus XP.', `best ${s.best} d`, null, null, 'roll')}
@@ -315,7 +317,7 @@ async function renderRank() {
       ${m('Field guide', 'Finish a chapter (scroll to its end) for a stripe and XP. Required to become Private: finish all chapters.', `${s.ch.length}/${CHAPTERS.length}`, 'Open the guide', 'g1', 'guide')}
       ${m('Proficiency Exam', 'Three questions per chapter. Pass with 2 right for XP. Required to become Sergeant: pass every chapter.', `${examsPassed}/${CHAPTERS.length}`, 'Sit the exam', 'g2', 'exam')}`,
     medals: `<h3 class="ctr" style="margin-top:0">Medals</h3><div class="medals">${Object.entries(MEDALS).map(([k, [t, d]]) => `<div class="medal ${s.medals.includes(k) ? 'on' : ''}">${ico(k)}<b>${t}</b><span>${d}</span></div>`).join('')}</div>`,
-    ladder: `<h3 class="ctr" style="margin-top:0">Rank ladder</h3>${RANKS.map((r, k) => `<div class="rl ${k <= i ? 'on' : ''}">${insignia(k, 26)}<b>${r[0]}</b><span class="px">${r[1]} XP</span>${k && GATES[k - 1] ? `<span class="rq">${GATES[k - 1].short}</span>` : ''}</div>`).join('')}<p class="small">XP can be earned any way, but each rank up to Lieutenant also needs its requirement completed. Until it is, you keep your rank and the XP keeps adding up. Progress is saved in your Telegram account on this app. It is for practice and fun: there is no leaderboard and it does not rate your trading.</p>`,
+    ladder: `<h3 class="ctr" style="margin-top:0">Rank ladder</h3>${RANKS.map((r, k) => `<div class="rl ${k <= i ? 'on' : ''}">${insignia(k, 26)}<b>${r[0]}</b><span class="px">${r[1]} XP</span>${k && GATES[k - 1] ? `<span class="rq">${GATES[k - 1].short}</span>` : ''}${k >= COPY_RANK ? `<span class="rq">Unlocks Copy Trading (coming soon)</span>` : ''}</div>`).join('')}<p class="small">XP can be earned any way, but each rank up to Lieutenant also needs its requirement completed. Until it is, you keep your rank and the XP keeps adding up. Progress is saved in your Telegram account on this app. It is for practice and fun: there is no leaderboard and it does not rate your trading.</p>`,
   };
   view.innerHTML = `<div class="subtabs" role="tablist">${SUBTABS.map(([k, t, ic]) => `<button role="tab" data-sub="${k}" class="${k === rkSub ? 'on' : ''}" aria-selected="${k === rkSub}"><svg viewBox="0 0 24 24" aria-hidden="true">${ic}</svg>${t}</button>`).join('')}</div>` + pages[rkSub];
   view.querySelectorAll('[data-sub]').forEach(b => b.onclick = () => { rkSub = b.dataset.sub; renderRank(); });
