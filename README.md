@@ -62,6 +62,8 @@ alerts stay in the app (and in private messages for people who turned them on). 
 Each message has five lines: alert type, symbol, H4 bias, status, and the timeframe that fired it. The button reads
 **Open (symbol) chart** and opens the symbol in the mini app on the SORK page (S, O, R or K; QML and ADV sit under Key level) that fired the alert.
 
+**Button colour.** The button is green for a buy setup and red for a sell setup (Telegram's button `style`: `success` / `danger`). Invalidation alerts and alerts without a direction keep Telegram's default colour. It is set in `notify` in `server/app.js` and passed on by `Bot.send` in `server/telegram.js`. Telegram clients that are too old to know button colours show the default button instead.
+
 **3 points for the first open.** The first time a person opens a given alert from a group or channel button they earn 3 XP; opening the same alert
 again earns nothing. Telegram does not tell a bot when a link button is tapped, so the open of the mini app is what counts. This needs `MINIAPP_LINK`
 (a plain web link has no Telegram identity). The link is signed with the bot token, so hand-made links earn nothing, and it pays for 24 hours.
