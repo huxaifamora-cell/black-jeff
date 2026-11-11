@@ -15,7 +15,12 @@ export class Bot {
   // button.plain = ordinary link button (channels do not allow mini app buttons)
   send(chatId, text, button) {
     const params = { chat_id: chatId, text, parse_mode: 'HTML', disable_web_page_preview: true };
-    if (button) params.reply_markup = { inline_keyboard: [[button.plain ? { text: button.text, url: button.url } : { text: button.text, web_app: { url: button.url } }]] };
+    // button.style: 'success' (green), 'danger' (red) or 'primary' (blue). Left out when not set, so the app's default colour is used.
+    if (button) {
+      const b = button.plain ? { text: button.text, url: button.url } : { text: button.text, web_app: { url: button.url } };
+      if (button.style) b.style = button.style;
+      params.reply_markup = { inline_keyboard: [[b]] };
+    }
     return this.call('sendMessage', params);
   }
 

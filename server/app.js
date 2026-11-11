@@ -130,10 +130,12 @@ export function createApp({ cfg = loadConfig(), store, svc, deriv, bot, log = co
     const label = `Open ${short} chart`;
     // The button opens the symbol on the main bot, straight on the SORK page (concept) that fired. Channels and groups get a
     // signed link: the first open of each alert earns 3 points. Private messages get a plain page link (no points).
+    // Button colour (Telegram `style`): green for a buy setup, red for a sell setup. Invalidations and alerts without a direction keep the default colour.
+    const style = alert.dir === 1 && !CHAT_SKIP_KINDS.has(alert.kind) ? 'success' : alert.dir === -1 && !CHAT_SKIP_KINDS.has(alert.kind) ? 'danger' : undefined;
     const btn = (signed) => {
       const param = alertParam(alert, cfg.botToken, signed);
-      if (cfg.miniAppLink) return { text: label, url: `${cfg.miniAppLink}?startapp=${param}`, plain: true };   // t.me link: works in groups and channels
-      return cfg.webappUrl ? { text: label, url: `${cfg.webappUrl}/?p=${param}`, plain: signed } : null;
+      if (cfg.miniAppLink) return { text: label, url: `${cfg.miniAppLink}?startapp=${param}`, plain: true, style };   // t.me link: works in groups and channels
+      return cfg.webappUrl ? { text: label, url: `${cfg.webappUrl}/?p=${param}`, plain: signed, style } : null;
     };
     // Groups and channels: reclamation, key level, QML and bjeff zone only, and never an invalidation (those stay in the app's Alerts tab and in private messages).
     if ((cfg.chatConcepts || ['R', 'K', 'QML', 'ADV']).includes(alert.concept) && !CHAT_SKIP_KINDS.has(alert.kind)) {
