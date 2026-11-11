@@ -8,7 +8,7 @@ const MEDALS = {
   scholar: ['Scholar', 'Read every guide chapter'], honors: ['Top of Class', 'Pass every chapter quiz'], eye: ['Sharp Eye', '5 chart drills right'],
   steady: ['Steady Hand', '3 day waiting streak'], recon: ['Recon complete', 'Read all four steps of a route before its alert'], analyst: ['Alert Analyst', 'Analyse 5 Telegram alerts'],
 };
-const DAILY_CAP = { drill: 3, pat: 3, rev: 3, an: 3 };
+const DAILY_CAP = { drill: 3, pat: 3, rev: 3 };
 const QUIZ = [
   [['Which pillar is read on M5?', ['S: Market Structure', 'O: Order Flow', 'R: Reclamation', 'K: Key Level'], 3, 'Key level entries are on M5. Structure is H4, order flow and reclamation are H1.'],
    ['Which timeframe gives the trend direction?', ['M5', 'H1', 'H4', 'Daily'], 2, 'The trend direction comes from H4 only.'],
@@ -47,12 +47,12 @@ const kvSet = (k, v) => { lsSet(k, v); const c = cloud(); if (c) try { c.setItem
 const today = () => new Date().toLocaleDateString('en-CA');
 const dayBefore = () => new Date(Date.now() - 864e5).toLocaleDateString('en-CA');
 let RKS = null;
-const fresh = () => ({ v: 1, xp: 0, ch: [], qz: {}, streak: 0, best: 0, last: '', patDays: 0, patLast: '', drillOk: 0, anTotal: 0, medals: [], deb: [], promo: 0, d: { date: '', drill: 0, pat: [], rev: [], an: 0 } });
+const fresh = () => ({ v: 1, xp: 0, ch: [], qz: {}, streak: 0, best: 0, last: '', patDays: 0, patLast: '', drillOk: 0, anTotal: 0, medals: [], deb: [], promo: 0, d: { date: '', drill: 0, pat: [], rev: [] } });
 async function rk() {
   if (RKS) return RKS;
   let s; try { s = JSON.parse(await kvGet('sork_rank') || 'null'); } catch { s = null; }
   RKS = Object.assign(fresh(), s || {});
-  if (RKS.d.date !== today()) RKS.d = { date: today(), drill: 0, pat: [], rev: [], an: 0 };
+  if (RKS.d.date !== today()) RKS.d = { date: today(), drill: 0, pat: [], rev: [] };
   return RKS;
 }
 const rkSave = () => kvSet('sork_rank', JSON.stringify(RKS));
@@ -109,7 +109,7 @@ async function rkAlertOpen(link) {
 
 // ---- Telegram alert analysis mission
 // A new alert opened from a Telegram button is saved here for 24 hours. In the Rank tab the person opens its chart and ticks each
-// check once they have confirmed it themselves. Finishing earns XP once per alert (3 a day). It trains reading an alert; it is not a signal.
+// check once they have confirmed it themselves. Finishing earns XP once per alert, with no daily limit. It trains reading an alert; it is not a signal.
 const ANALYSIS_XP = 10;
 const CONCEPT_NAME = { S: 'Market structure', O: 'Order flow', R: 'Reclamation', K: 'Key level', QML: 'QML (inverse key level)', ADV: 'Advanced key level' };
 const ANALYSIS = {
@@ -126,8 +126,8 @@ async function anQueue() {
   return Array.isArray(q) ? q.filter(x => x && x.id && x.ts > cutoff) : [];
 }
 async function renderAnalysis() {
-  rkLeave(); const s = await rk(), q = await anQueue(), a = q[q.length - 1], left = (s.d.an || 0) < DAILY_CAP.an;
-  const how = `<div class="card"><h4>How it works</h4><p class="small">1. A new alert arrives in Telegram.<br>2. Tap its <b>Open chart</b> button. The app opens on that symbol and SORK page (first open +${ALERT_XP} XP) and saves the alert here for 24 hours.<br>3. Come back to this mission, open the chart and tick each check only after you have confirmed it yourself on the chart.<br>4. Complete the analysis for +${ANALYSIS_XP} XP (${DAILY_CAP.an} a day). Five analyses earn the Alert Analyst medal.<br>It trains reading an alert the SORK way. It is not a trade signal.</p></div>`;
+  rkLeave(); const s = await rk(), q = await anQueue(), a = q[q.length - 1];
+  const how = `<div class="card"><h4>How it works</h4><p class="small">1. A new alert arrives in Telegram.<br>2. Tap its <b>Open chart</b> button. The app opens on that symbol and SORK page (first open +${ALERT_XP} XP) and saves the alert here for 24 hours.<br>3. Come back to this mission, open the chart and tick each check only after you have confirmed it yourself on the chart.<br>4. Complete the analysis for +${ANALYSIS_XP} XP for every alert, with no daily limit. Five analyses earn the Alert Analyst medal.<br>It trains reading an alert the SORK way. It is not a trade signal.</p></div>`;
   const back = '<div class="row"><button class="back" id="ab">&#8249; Rank</button><span class="small">Telegram alert analysis</span></div>';
   if (!a) {
     view.innerHTML = back + how + '<div class="card"><p class="small">No new alert is waiting. The next alert you open from a Telegram button will appear here.</p></div>';
@@ -137,7 +137,7 @@ async function renderAnalysis() {
   const steps = ANALYSIS[a.c] || ANALYSIS.K, name = CONCEPT_NAME[a.c] || a.c;
   view.innerHTML = back + how + `<div class="card"><h4>${esc(a.sym)} &middot; ${esc(name)}</h4><p class="small">Alert ${age}. ${q.length > 1 ? `${q.length} alerts are waiting; this is the newest.` : ''}</p><button class="btn" id="ao">Open ${esc(a.sym)} chart</button>
     <div id="al">${steps.map(t => `<label class="dl"><input type="checkbox" class="ak"> ${esc(t)}</label>`).join('')}</div>
-    <button class="btn" id="ad" disabled>Complete analysis</button>${left ? '' : '<p class="small">Daily analysis XP limit reached. You can still practise.</p>'}</div>`;
+    <button class="btn" id="ad" disabled>Complete analysis</button></div>`;
   document.getElementById('ab').onclick = renderRank;
   document.getElementById('ao').onclick = () => {
     if (a.c === 'QML' || a.c === 'ADV') { symConcept = 'K'; kSub = a.c; } else if (['S', 'O', 'R', 'K'].includes(a.c)) symConcept = a.c;
@@ -148,8 +148,7 @@ async function renderAnalysis() {
   ad.onclick = async () => {
     ad.disabled = true;
     kvSet('sork_alert_queue', JSON.stringify(q.filter(x => x.id !== a.id)));
-    if (left) { s.d.an = (s.d.an || 0) + 1; s.anTotal = (s.anTotal || 0) + 1; await award(ANALYSIS_XP, `${a.sym} alert analysed`, s.anTotal >= 5 ? 'analyst' : undefined); }
-    else toast('Analysis complete. Daily XP limit reached.');
+    s.anTotal = (s.anTotal || 0) + 1; await award(ANALYSIS_XP, `${a.sym} alert analysed`, s.anTotal >= 5 ? 'analyst' : undefined);
     renderRank();
   };
 }
@@ -289,7 +288,7 @@ async function renderRank() {
     ${m('SORK quiz', 'Three questions per chapter. Pass with 2 right for XP.', `${CHAPTERS.filter((_, k) => (s.qz[k] || 0) >= 2).length}/${CHAPTERS.length}`, 'Start a quiz', 'g2')}
     ${m('Chart reading drill', 'Tap where the inducement or key level is on a chart with the zones hidden.', `${s.d.drill}/${DAILY_CAP.drill} today`, 'Start a drill', 'g3')}
     ${m('Waiting streak', 'Open a symbol that is not ready and watch its checklist for 10 seconds, then leave it alone.', `${s.patDays} d`, 'Open the radar', 'g4')}
-    ${m('Telegram alert analysis', 'Open a new alert from its Telegram button, then check it against the SORK steps on the chart. Tap to see how it works.', `${s.d.an || 0}/${DAILY_CAP.an} today`, 'Analyse an alert', 'g5')}
+    ${m('Telegram alert analysis', 'Open a new alert from its Telegram button, then check it against the SORK steps on the chart. Tap to see how it works.', `${s.anTotal || 0} done`, 'Analyse an alert', 'g5')}
     ${m('Full checklist review', 'On a symbol\'s route, tap all four steps before its alert fires.', `${s.d.rev.length}/${DAILY_CAP.rev} today`, null)}
     ${m('Daily check-in', 'One visit a day. 7, 30 and 90 days earn a medal and bonus XP.', `best ${s.best} d`, null)}
     <div class="card"><h4>Weekly debrief</h4><div id="deb"><p class="small">Loading...</p></div></div>
