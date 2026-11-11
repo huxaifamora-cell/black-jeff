@@ -35,9 +35,14 @@ const RT_ICON = {
   quiet: '<path d="M2 20.5L12 4l10 16.5z"/><path d="M12 20.5l-3-6.5h6z"/><path d="M12 4V2"/>',
 };
 // ---- tactical radar: a live sweeping scope (web/radar.js); only ready symbols are shown as targets
-let radarTab = 'ready';
+let radarTab = 'ready', radarSub = 'radar';
+// Sub-menu under the Radar tab: the live scope, and the Watchlist (ready to trade / building / quiet)
+const RADAR_SUBS = [
+  ['radar', 'Radar', '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4.5"/><path d="M12 12l6-6"/><circle cx="16" cy="15.5" r="1"/>'],                                                                        // radar sweep
+  ['watchlist', 'Watchlist', '<path d="M3 6.5h6.5l2 2.5H21v11H3z"/><path d="M12 12.2l1 2 2.2.3-1.6 1.5.4 2.2-2-1.1-2 1.1.4-2.2-1.6-1.5 2.2-.3z"/>'],                                                              // dossier folder with star
+];
 async function renderSymbols() {
-  view.innerHTML = '<p class="mut">Loading...</p>';
+  Radar.unmount(); view.innerHTML = '<p class="mut">Loading...</p>';
   try {
     const [{ symbols }, al] = await Promise.all([api('/api/symbols'), api('/api/alerts?limit=1').catch(() => ({ alerts: [] }))]);
     const G = { ready: symbols.filter(s => s.status === 'ready'), building: symbols.filter(s => s.status === 'building'), quiet: symbols.filter(s => s.status === 'quiet') }, ready = G.ready;
@@ -52,14 +57,21 @@ async function renderSymbols() {
     const map = `<div class="scope"><canvas id="radar" tabindex="0" role="img" aria-label="Live radar: ${ready.length} symbol(s) ready to trade"></canvas>
       <div class="scopeinfo"><span id="rdBrg">BRG 000&deg;</span><span>TARGETS <b id="rdN">${ready.length}</b></span><span id="rdClk"></span></div></div>`;
     const last = al.alerts && al.alerts[0];
-    view.innerHTML = `<h3 class="ctr" style="margin-top:0">Tactical radar</h3>${map}
-      <div class="legend"><span><i style="background:#5AFF64"></i>BUY READY</span><span><i style="background:#FF6955"></i>SELL READY</span></div>` +
-      `<div class="rtabs" role="tablist">${[['ready', 'Ready to trade'], ['building', 'Building'], ['quiet', 'Quiet']].map(([k, t]) => `<button role="tab" class="${radarTab === k ? 'on' : ''}" data-rt="${k}"><svg viewBox="0 0 24 24" aria-hidden="true">${RT_ICON[k]}</svg><em>${t} <span>${G[k].length}</span></em></button>`).join('')}</div>` +
-      (G[radarTab].length ? G[radarTab].map(row).join('') : `<p class="mut">${{ ready: 'No symbols are ready to trade.', building: 'Nothing is building right now.', quiet: 'No quiet symbols.' }[radarTab]}</p>`) +
-      (last ? `<div class="latest"><span>LATEST</span><span style="flex:1">${esc(last.title)}</span><span class="mut">${T(last.ts)}</span></div>` : '') +
-      '<p class="small">Only symbols that are ready to trade appear on the scope. Bearing is fixed per symbol. Tap a target to open it.</p>';
+    const subs = `<div class="subtabs" role="tablist">${RADAR_SUBS.map(([k, t, ic]) => `<button role="tab" data-rs="${k}" class="${k === radarSub ? 'on' : ''}" aria-selected="${k === radarSub}"><svg viewBox="0 0 24 24" aria-hidden="true">${ic}</svg>${t}</button>`).join('')}</div>`;
+    const lastHtml = last ? `<div class="latest"><span>LATEST</span><span style="flex:1">${esc(last.title)}</span><span class="mut">${T(last.ts)}</span></div>` : '';
+    if (radarSub === 'radar') {
+      view.innerHTML = subs + `<h3 class="ctr" style="margin-top:0">Tactical radar</h3>${map}
+        <div class="legend"><span><i style="background:#5AFF64"></i>BUY READY</span><span><i style="background:#FF6955"></i>SELL READY</span></div>` + lastHtml +
+        '<p class="small">Only symbols that are ready to trade appear on the scope. Bearing is fixed per symbol. Tap a target to open it. The full list is under Watchlist.</p>';
+    } else {
+      view.innerHTML = subs + `<h3 class="ctr" style="margin-top:0">Watchlist</h3>` +
+        `<div class="rtabs" role="tablist">${[['ready', 'Ready to trade'], ['building', 'Building'], ['quiet', 'Quiet']].map(([k, t]) => `<button role="tab" class="${radarTab === k ? 'on' : ''}" data-rt="${k}"><svg viewBox="0 0 24 24" aria-hidden="true">${RT_ICON[k]}</svg><em>${t} <span>${G[k].length}</span></em></button>`).join('')}</div>` +
+        (G[radarTab].length ? G[radarTab].map(row).join('') : `<p class="mut">${{ ready: 'No symbols are ready to trade.', building: 'Nothing is building right now.', quiet: 'No quiet symbols.' }[radarTab]}</p>`) + lastHtml;
+    }
+    view.querySelectorAll('[data-rs]').forEach(b => b.onclick = () => { radarSub = b.dataset.rs; renderSymbols(); });
     view.querySelectorAll('.rtabs button').forEach(b => b.onclick = () => { radarTab = b.dataset.rt; renderSymbols(); });
     view.querySelectorAll('.rrow').forEach(b => b.onclick = () => openSymbol(b.dataset.id));
+    if (radarSub !== 'radar') return;
     const brg = document.getElementById('rdBrg'), clk = document.getElementById('rdClk');
     Radar.mount(document.getElementById('radar'), b => { brg.textContent = 'BRG ' + String(Math.round(b * 180 / Math.PI) % 360).padStart(3, '0') + '\u00B0'; clk.textContent = new Date().toISOString().slice(11, 19) + 'Z'; }, symbols, openSymbol);
   } catch (e) { view.innerHTML = `<p class="down">${esc(e.message)}</p>`; }
