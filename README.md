@@ -32,10 +32,23 @@ Every alert is posted to each one. The chats are the recipient list, so nothing 
 To get a group's numeric id, add @RawDataBot or @getidsbot to it briefly (private chats and groups have ids like `-100...`).
 
 Telegram only allows real mini app buttons in private chats, so the alert button is a link. Two choices:
-- Default: the button opens the app's web address in the browser (needs `WEBAPP_URL` or Render's automatic URL).
+- Default: the button uses the bot's own link (`https://t.me/<your_bot>?startapp=...`, found automatically) and opens the mini app inside Telegram, straight on the symbol. This needs the bot's main mini app set in @BotFather (`/mybots` > your bot > Bot Settings > Configure Mini App).
 - Better: in @BotFather send `/newapp`, pick your bot, and point it at your Render address. BotFather gives a direct link
-  like `https://t.me/your_bot/app`. Set `MINIAPP_LINK` to it and the button opens the mini app inside Telegram,
+  like `https://t.me/your_bot/app`. Set `MINIAPP_LINK` to it to use that named mini app instead; the button then opens the mini app inside Telegram,
   straight on the symbol that fired.
+
+### What groups and channels receive
+
+Groups and channels get only **reclamation, key level, QML and advanced key level** alerts. Market structure (S) and order flow (O)
+alerts stay in the app (and in private messages for people who turned them on). `ALERT_CHAT_CONCEPTS=R,K,QML,ADV` is the default; change it to widen or narrow the list.
+
+Each message has five lines: alert type, symbol, H4 bias, status, and the timeframe that fired it. The button reads
+**Open (symbol) chart** and opens the symbol in the mini app on the SORK page (S, O, R or K; QML and ADV sit under Key level) that fired the alert.
+
+**3 points for the first open.** The first time a person opens a given alert from a group or channel button they earn 3 XP; opening the same alert
+again earns nothing. Telegram does not tell a bot when a link button is tapped, so the open of the mini app is what counts. This needs `MINIAPP_LINK`
+(a plain web link has no Telegram identity). The link is signed with the bot token, so hand-made links earn nothing, and it pays for 24 hours.
+Which alerts a person has opened is kept in their own Telegram CloudStorage next to the rest of their rank progress.
 
 ### Channel only (no alerts in the bot chat)
 
