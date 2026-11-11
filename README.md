@@ -37,10 +37,23 @@ Telegram only allows real mini app buttons in private chats, so the alert button
   like `https://t.me/your_bot/app`. Set `MINIAPP_LINK` to it to use that named mini app instead; the button then opens the mini app inside Telegram,
   straight on the symbol that fired.
 
+### Rank requirements (mandatory promotions)
+
+XP can be earned in any way, but a rank is only granted once its mission is done. Until then the person keeps their rank, XP keeps adding up, and the Rank page shows the open requirement.
+
+| To become | Requirement |
+|---|---|
+| Private | Complete the Field guide (finish all chapters) |
+| Corporal | Pass 33 chart reading drills (every correct drill counts, even past the daily XP limit) |
+| Sergeant | Pass the Proficiency Exam (every chapter, 2 of 3 right) |
+| Lieutenant | Complete 99 Intercept Analyses |
+
+Captain and Major follow XP alone. The rules live in `GATES` in `web/rank.js`.
+
 ### What groups and channels receive
 
 Groups and channels get only **reclamation, key level, QML and advanced key level** alerts. Market structure (S) and order flow (O)
-alerts stay in the app (and in private messages for people who turned them on). `ALERT_CHAT_CONCEPTS=R,K,QML,ADV` is the default; change it to widen or narrow the list.
+alerts stay in the app (and in private messages for people who turned them on). Invalidation alerts (for example "K: RBS invalidated") are never posted to groups or channels; they only appear in the app's Alerts tab and in private messages. `ALERT_CHAT_CONCEPTS=R,K,QML,ADV` is the default; change it to widen or narrow the list.
 
 Each message has five lines: alert type, symbol, H4 bias, status, and the timeframe that fired it. The button reads
 **Open (symbol) chart** and opens the symbol in the mini app on the SORK page (S, O, R or K; QML and ADV sit under Key level) that fired the alert.
