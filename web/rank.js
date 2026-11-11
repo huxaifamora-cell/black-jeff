@@ -4,11 +4,11 @@
 const RANKS = [['Recruit', 0], ['Private', 40], ['Corporal', 120], ['Sergeant', 250], ['Lieutenant', 450], ['Captain', 700], ['Major', 1000]];
 const CHAPTERS = ['The SORK framework', 'S: Market Structure', 'O: Order Flow', 'R: Reclamation', 'K: Key Level', 'QML: the inverse key level', 'Advanced key level and bjeff zone', 'Trade checklist'];
 const MEDALS = {
-  first: ['First Light', 'First daily check-in'], wk7: ['Week Guard', '7 day check-in streak'], wk30: ['Month Veteran', '30 day check-in streak'], wk90: ['Old Guard', '90 day check-in streak'],
-  scholar: ['Scholar', 'Read every guide chapter'], honors: ['Top of Class', 'Pass every chapter quiz'], eye: ['Sharp Eye', '5 chart drills right'],
-  steady: ['Steady Hand', '3 day waiting streak'], recon: ['Recon complete', 'Read all four steps of a route before its alert'], analyst: ['Alert Analyst', 'Analyse 5 Telegram alerts'],
+  first: ['First Light', 'First roll call'], wk7: ['Week Guard', '7 day roll call streak'], wk30: ['Month Veteran', '30 day roll call streak'], wk90: ['Old Guard', '90 day roll call streak'],
+  scholar: ['Scholar', 'Read every guide chapter'], honors: ['Top of Class', 'Pass every chapter exam'], eye: ['Sharp Eye', '5 chart drills right'],
+  analyst: ['Alert Analyst', 'Analyse 5 Telegram alerts'],
 };
-const DAILY_CAP = { drill: 3, pat: 3, rev: 3 };
+const DAILY_CAP = { drill: 3 };
 const QUIZ = [
   [['Which pillar is read on M5?', ['S: Market Structure', 'O: Order Flow', 'R: Reclamation', 'K: Key Level'], 3, 'Key level entries are on M5. Structure is H4, order flow and reclamation are H1.'],
    ['Which timeframe gives the trend direction?', ['M5', 'H1', 'H4', 'Daily'], 2, 'The trend direction comes from H4 only.'],
@@ -47,12 +47,12 @@ const kvSet = (k, v) => { lsSet(k, v); const c = cloud(); if (c) try { c.setItem
 const today = () => new Date().toLocaleDateString('en-CA');
 const dayBefore = () => new Date(Date.now() - 864e5).toLocaleDateString('en-CA');
 let RKS = null;
-const fresh = () => ({ v: 1, xp: 0, ch: [], qz: {}, streak: 0, best: 0, last: '', patDays: 0, patLast: '', drillOk: 0, anTotal: 0, medals: [], deb: [], promo: 0, d: { date: '', drill: 0, pat: [], rev: [] } });
+const fresh = () => ({ v: 1, xp: 0, ch: [], qz: {}, streak: 0, best: 0, last: '', drillOk: 0, anTotal: 0, medals: [], promo: 0, d: { date: '', drill: 0 } });
 async function rk() {
   if (RKS) return RKS;
   let s; try { s = JSON.parse(await kvGet('sork_rank') || 'null'); } catch { s = null; }
   RKS = Object.assign(fresh(), s || {});
-  if (RKS.d.date !== today()) RKS.d = { date: today(), drill: 0, pat: [], rev: [] };
+  if (RKS.d.date !== today()) RKS.d = { date: today(), drill: 0 };
   return RKS;
 }
 const rkSave = () => kvSet('sork_rank', JSON.stringify(RKS));
@@ -75,18 +75,17 @@ async function award(xp, why, medal) {
   }
   if (CHAPTERS.every((_, i) => (s.qz[i] || 0) >= 2) && !s.medals.includes('honors')) { s.medals.push('honors'); msg += '<br>Medal: <b>Top of Class</b>'; }
   if (s.drillOk >= 5 && !s.medals.includes('eye')) { s.medals.push('eye'); msg += '<br>Medal: <b>Sharp Eye</b>'; }
-  if (s.patDays >= 3 && !s.medals.includes('steady')) { s.medals.push('steady'); msg += '<br>Medal: <b>Steady Hand</b>'; }
   const after = rankIdx(s.xp);
   if (after > before) msg += `<br><b>PROMOTED to ${RANKS[after][0]}</b>`;
   rkSave(); toast(msg, after > before);
 }
 
-// ---- daily check-in streak
+// ---- Roll Call: daily check-in streak
 async function rkCheckIn() {
   const s = await rk(), t = today();
   if (s.last === t) return;
   s.streak = s.last === dayBefore() ? s.streak + 1 : 1; s.last = t; s.best = Math.max(s.best, s.streak);
-  let bonus = 5, medal = s.medals.includes('first') ? null : 'first', why = `daily check-in, day ${s.streak}`;
+  let bonus = 5, medal = s.medals.includes('first') ? null : 'first', why = `roll call, day ${s.streak}`;
   for (const [n, m, x] of [[7, 'wk7', 50], [30, 'wk30', 150], [90, 'wk90', 300]]) if (s.streak === n && !s.medals.includes(m)) { medal = m; bonus += x; why = `${n} day streak`; }
   await award(bonus, why, medal);
 }
@@ -107,7 +106,7 @@ async function rkAlertOpen(link) {
   await award(ALERT_XP, 'new alert opened');
 }
 
-// ---- Telegram alert analysis mission
+// ---- Intercept Analysis mission (Telegram alert analysis)
 // A new alert opened from a Telegram button is saved here for 24 hours. In the Rank tab the person opens its chart and ticks each
 // check once they have confirmed it themselves. Finishing earns XP once per alert, with no daily limit. It trains reading an alert; it is not a signal.
 const ANALYSIS_XP = 10;
@@ -126,9 +125,9 @@ async function anQueue() {
   return Array.isArray(q) ? q.filter(x => x && x.id && x.ts > cutoff) : [];
 }
 async function renderAnalysis() {
-  rkLeave(); const s = await rk(), q = await anQueue(), a = q[q.length - 1];
-  const how = `<div class="card"><h4>How it works</h4><p class="small">1. A new alert arrives in Telegram.<br>2. Tap its <b>Open chart</b> button. The app opens on that symbol and SORK page (first open +${ALERT_XP} XP) and saves the alert here for 24 hours.<br>3. Come back to this mission, open the chart and tick each check only after you have confirmed it yourself on the chart.<br>4. Complete the analysis for +${ANALYSIS_XP} XP for every alert, with no daily limit. Five analyses earn the Alert Analyst medal.<br>It trains reading an alert the SORK way. It is not a trade signal.</p></div>`;
-  const back = '<div class="row"><button class="back" id="ab">&#8249; Rank</button><span class="small">Telegram alert analysis</span></div>';
+  const s = await rk(), q = await anQueue(), a = q[q.length - 1];
+  const how = `<div class="card"><h4>How it works</h4><p class="small">1. A new alert arrives in Telegram.<br>2. Tap its <b>Open chart</b> button. The app opens on that symbol and SORK page (first open +${ALERT_XP} XP) and saves the alert here for 24 hours.<br>3. Come back to this mission (Intercept Analysis), open the chart and tick each check only after you have confirmed it yourself on the chart.<br>4. Complete the analysis for +${ANALYSIS_XP} XP for every alert, with no daily limit. Five analyses earn the Alert Analyst medal.<br>It trains reading an alert the SORK way. It is not a trade signal.</p></div>`;
+  const back = '<div class="row"><button class="back" id="ab">&#8249; Rank</button><span class="small">Intercept Analysis</span></div>';
   if (!a) {
     view.innerHTML = back + how + '<div class="card"><p class="small">No new alert is waiting. The next alert you open from a Telegram button will appear here.</p></div>';
     document.getElementById('ab').onclick = renderRank; return;
@@ -153,29 +152,6 @@ async function renderAnalysis() {
   };
 }
 
-// ---- hooks used by the symbol page
-let patTimer = null;
-function rkLeave() { clearTimeout(patTimer); patTimer = null; }
-async function rkSymbolSeen(v) {                       // waiting streak: watching a symbol that is not ready
-  if (v.status === 'ready' || patTimer) return;
-  patTimer = setTimeout(async () => {
-    patTimer = null; if (current !== v.id) return;
-    const s = await rk(); if (s.d.pat.includes(v.id) || s.d.pat.length >= DAILY_CAP.pat) return;
-    s.d.pat.push(v.id);
-    if (s.patLast !== today()) { s.patDays = s.patLast === dayBefore() ? s.patDays + 1 : 1; s.patLast = today(); }
-    await award(5, `${v.short} is not ready: standing by (waiting streak ${s.patDays})`);
-  }, 10000);
-}
-function rkRouteReview(v) {                            // tap all four steps of the route
-  const rows = [...view.querySelectorAll('.rt')]; if (rows.length !== 4) return;
-  rows.forEach(r => r.onclick = async () => {
-    r.classList.add('rd');
-    if (!rows.every(x => x.classList.contains('rd')) || v.status === 'ready') return;
-    const s = await rk(); if (s.d.rev.includes(v.id) || s.d.rev.length >= DAILY_CAP.rev) return;
-    s.d.rev.push(v.id); await award(10, `${v.short} checklist reviewed before its alert`, 'recon');
-  });
-}
-
 // ---- guide progress
 async function rkGuideHook(frame) {
   const doc = frame.contentDocument, win = frame.contentWindow; if (!doc || !win || !win.IntersectionObserver) return;
@@ -197,7 +173,7 @@ async function rkGuideBar() {
 function shuffle(a) { a = a.slice(); for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; }
 async function renderQuizMenu() {
   const s = await rk();
-  view.innerHTML = `<div class="row"><button class="back" id="qb">&#8249; Quiz</button></div><p class="small">Three short questions per chapter. Get 2 right to pass and earn XP.</p>` +
+  view.innerHTML = `<div class="row"><button class="back" id="qb">&#8249; Proficiency Exam</button></div><p class="small">Three short questions per chapter. Get 2 right to pass and earn XP.</p>` +
     CHAPTERS.map((c, i) => `<button class="rrow ${(s.qz[i] || 0) >= 2 ? 'buy' : ''}" data-q="${i}"><span class="mid"><b>${i + 1}</b>${esc(c)}<br><span class="small">${s.qz[i] == null ? 'Not taken' : `Best ${s.qz[i]}/3` + (s.qz[i] >= 2 ? ' &middot; passed' : '')}</span></span><span class="st">${(s.qz[i] || 0) >= 2 ? '&#10003;' : '&#9656;'}</span></button>`).join('');
   document.getElementById('qb').onclick = renderRank;
   view.querySelectorAll('[data-q]').forEach(b => b.onclick = () => runQuiz(Number(b.dataset.q)));
@@ -220,7 +196,7 @@ function runQuiz(ch) {
   const done = async () => {
     const s = await rk(), first = (s.qz[ch] || 0) < 2 && right >= 2;
     s.qz[ch] = Math.max(s.qz[ch] || 0, right); rkSave();
-    if (first) await award(20, `quiz passed: ${CHAPTERS[ch]}`);
+    if (first) await award(20, `exam passed: ${CHAPTERS[ch]}`);
     view.innerHTML = `<div class="card"><h4>${right >= 2 ? 'Passed' : 'Not passed yet'} &middot; ${right}/3</h4><p>${right >= 2 ? (first ? '+20 XP earned.' : 'Already passed before, no extra XP.') : 'Read the chapter again and retry. No penalty.'}</p><div class="row"><button class="btn" id="again">Try again</button><button class="btn" id="menu">All chapters</button></div></div>`;
     document.getElementById('again').onclick = () => runQuiz(ch); document.getElementById('menu').onclick = renderQuizMenu;
   };
@@ -257,15 +233,6 @@ async function renderDrill() {
   } catch (e) { view.innerHTML = `<p class="down">${esc(e.message)}</p>`; }
 }
 
-// ---- weekly debrief (Sundays)
-async function debriefHtml(s) {
-  const t = today(), sunday = new Date().getDay() === 0;
-  if (s.deb.includes(t)) return '<p class="small up">&#10003; Debrief done for this week.</p>';
-  if (!sunday) return '<p class="small">Opens on Sunday. Review the week\'s alerts and earn the Debrief ribbon.</p>';
-  const { alerts } = await api('/api/alerts?limit=100'), from = Date.now() / 1000 - 7 * 86400, wk = alerts.filter(a => a.ts >= from);
-  return `<p class="small">Tick each alert from the last 7 days once you have reviewed it.</p><div id="dl">${wk.map((a, i) => `<label class="dl"><input type="checkbox" class="dk"> ${esc(a.symbol_name.replace('Volatility ', 'V').replace(' Index', ''))} &middot; ${esc(a.title)}</label>`).join('') || '<p class="small">No alerts this week.</p>'}</div><button class="btn" id="dd" ${wk.length ? 'disabled' : ''}>Complete debrief</button>`;
-}
-
 // ---- rank page
 function insignia(i, size = 44) {
   const c = '#E3C16A';
@@ -274,7 +241,7 @@ function insignia(i, size = 44) {
   return `<svg width="${size}" height="${size}" viewBox="0 0 26 26" role="img" aria-label="Rank ${RANKS[i][0]}"><rect x="1" y="1" width="24" height="24" rx="3" fill="#0C1109" stroke="${i ? c : '#3A4A2A'}" stroke-width="1.5"/>${g}</svg>`;
 }
 async function renderRank() {
-  rkLeave(); const s = await rk(), i = rankIdx(s.xp), nx = RANKS[i + 1], cur = RANKS[i][1];
+  const s = await rk(), i = rankIdx(s.xp), nx = RANKS[i + 1], cur = RANKS[i][1];
   const pct = nx ? Math.min(100, Math.round((s.xp - cur) / (nx[1] - cur) * 100)) : 100;
   const name = (tgs && tgs.initDataUnsafe && tgs.initDataUnsafe.user && tgs.initDataUnsafe.user.first_name) || 'Operator';
   const m = (t, d, p, btn, id) => `<div class="card"><h4>${t} <span class="px">${p}</span></h4><p class="small">${d}</p>${btn ? `<button class="btn" id="${id}">${btn}</button>` : ''}</div>`;
@@ -282,27 +249,15 @@ async function renderRank() {
     <div class="card prof">${insignia(i, 56)}<div style="flex:1"><div class="small">RANK AND CALLSIGN</div><div class="rname">${RANKS[i][0]}</div><div class="callsign">${esc(name)}</div></div></div>
     <div class="xpbar" aria-label="XP progress"><div style="width:${pct}%"></div></div>
     <div class="small xpl"><span>${s.xp} XP</span><span>${nx ? `next: ${nx[0]} at ${nx[1]} XP` : 'highest rank'}</span></div>
-    <div class="plan"><div><small>CHECK-IN STREAK</small><span class="px">${s.streak} d</span></div><div><small>CHAPTERS</small><span class="px">${s.ch.length}/${CHAPTERS.length}</span></div><div><small>QUIZZES</small><span class="px">${CHAPTERS.filter((_, k) => (s.qz[k] || 0) >= 2).length}/${CHAPTERS.length}</span></div></div>
+    <div class="plan"><div><small>ROLL CALL STREAK</small><span class="px">${s.streak} d</span></div><div><small>CHAPTERS</small><span class="px">${s.ch.length}/${CHAPTERS.length}</span></div><div><small>EXAMS</small><span class="px">${CHAPTERS.filter((_, k) => (s.qz[k] || 0) >= 2).length}/${CHAPTERS.length}</span></div></div>
     <h3>Missions</h3>
     ${m('Field guide', 'Finish a chapter (scroll to its end) for a stripe and XP. Finishing all of them is a promotion.', `${s.ch.length}/${CHAPTERS.length}`, 'Open the guide', 'g1')}
-    ${m('SORK quiz', 'Three questions per chapter. Pass with 2 right for XP.', `${CHAPTERS.filter((_, k) => (s.qz[k] || 0) >= 2).length}/${CHAPTERS.length}`, 'Start a quiz', 'g2')}
+    ${m('Proficiency Exam', 'Three questions per chapter. Pass with 2 right for XP.', `${CHAPTERS.filter((_, k) => (s.qz[k] || 0) >= 2).length}/${CHAPTERS.length}`, 'Sit the exam', 'g2')}
     ${m('Chart reading drill', 'Tap where the inducement or key level is on a chart with the zones hidden.', `${s.d.drill}/${DAILY_CAP.drill} today`, 'Start a drill', 'g3')}
-    ${m('Waiting streak', 'Open a symbol that is not ready and watch its checklist for 10 seconds, then leave it alone.', `${s.patDays} d`, 'Open the radar', 'g4')}
-    ${m('Telegram alert analysis', 'Open a new alert from its Telegram button, then check it against the SORK steps on the chart. Tap to see how it works.', `${s.anTotal || 0} done`, 'Analyse an alert', 'g5')}
-    ${m('Full checklist review', 'On a symbol\'s route, tap all four steps before its alert fires.', `${s.d.rev.length}/${DAILY_CAP.rev} today`, null)}
-    ${m('Daily check-in', 'One visit a day. 7, 30 and 90 days earn a medal and bonus XP.', `best ${s.best} d`, null)}
-    <div class="card"><h4>Weekly debrief</h4><div id="deb"><p class="small">Loading...</p></div></div>
-    <h3>Medals &middot; ribbons ${s.deb.length}</h3><div class="medals">${Object.entries(MEDALS).map(([k, [t, d]]) => `<div class="medal ${s.medals.includes(k) ? 'on' : ''}"><b>${t}</b><span>${d}</span></div>`).join('')}</div>
+    ${m('Intercept Analysis', 'Open a new alert from its Telegram button, then check it against the SORK steps on the chart. Tap to see how it works.', `${s.anTotal || 0} done`, 'Analyse an alert', 'g5')}
+    ${m('Roll Call', 'Report in once a day. 7, 30 and 90 days earn a medal and bonus XP.', `best ${s.best} d`, null)}
+    <h3>Medals</h3><div class="medals">${Object.entries(MEDALS).map(([k, [t, d]]) => `<div class="medal ${s.medals.includes(k) ? 'on' : ''}"><b>${t}</b><span>${d}</span></div>`).join('')}</div>
     <details class="more"><summary>Rank ladder</summary>${RANKS.map((r, k) => `<div class="rl ${k <= i ? 'on' : ''}">${insignia(k, 26)}<b>${r[0]}</b><span class="px">${r[1]} XP</span></div>`).join('')}<p class="small">Progress is saved in your Telegram account on this app. It is for practice and fun: there is no leaderboard and it does not rate your trading.</p></details>`;
   document.getElementById('g1').onclick = () => setTab('guide'); document.getElementById('g2').onclick = renderQuizMenu;
-  document.getElementById('g3').onclick = renderDrill; document.getElementById('g4').onclick = () => setTab('symbols'); document.getElementById('g5').onclick = renderAnalysis;
-  try {
-    document.getElementById('deb').innerHTML = await debriefHtml(s);
-    const dd = document.getElementById('dd');
-    if (dd) {
-      const upd = () => { dd.disabled = [...view.querySelectorAll('.dk')].some(x => !x.checked); };
-      view.querySelectorAll('.dk').forEach(x => x.onchange = upd); upd();
-      dd.onclick = async () => { s.deb.push(today()); await award(30, 'weekly debrief complete'); renderRank(); };
-    }
-  } catch { document.getElementById('deb').innerHTML = '<p class="small">Could not load alerts.</p>'; }
+  document.getElementById('g3').onclick = renderDrill; document.getElementById('g5').onclick = renderAnalysis;
 }

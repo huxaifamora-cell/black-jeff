@@ -23,7 +23,7 @@ function setTab(t) {
   tab = t; current = null; liveCtx = null; clearInterval(timer);
   document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === t));
   if (tg) tg.BackButton.hide();
-  rkLeave(); Radar.unmount();
+  Radar.unmount();
   ({ symbols: renderSymbols, alerts: renderAlerts, guide: renderGuide, rank: renderRank })[t]();
 }
 
@@ -61,7 +61,7 @@ async function renderSymbols() {
 
 // ------------------------------------------------------------ symbol page
 function openSymbol(id) {
-  rkLeave(); Radar.unmount(); current = id; tf = 'm5'; liveCtx = null; clearInterval(timer);
+  Radar.unmount(); current = id; tf = 'm5'; liveCtx = null; clearInterval(timer);
   if (tg) { tg.BackButton.show(); tg.BackButton.onClick(() => setTab(tab === 'alerts' ? 'alerts' : 'symbols')); }
   loadSymbol(); timer = setInterval(loadSymbol, 3000);          // live: the chart refreshes every 3 s
 }
@@ -74,7 +74,7 @@ async function loadSymbol() {
     const v = await api('/api/symbol/' + current + '?live=1');
     if (live && v.state && liveUpdate(v)) return;                  // nothing but price and candles changed
     const al = await api('/api/alerts?symbol=' + current + '&limit=40').catch(() => ({ alerts: [] }));
-    drawSymbol(v, al.alerts); rkSymbolSeen(v);
+    drawSymbol(v, al.alerts);
   } catch (e) { if (!live) view.innerHTML = `<p class="down">${esc(e.message)}</p>`; }
   finally { loadSymbol.busy = false; }
 }
@@ -121,7 +121,7 @@ function drawSymbol(v, alerts) {
     `<h3>Alerts for this symbol</h3>` + symAlerts(alerts) +
     `<div class="row"><button class="btn" id="mute">Mute alerts for this symbol</button></div>`;
   view.innerHTML = h;
-  document.getElementById('back').onclick = goBack; rkRouteReview(v);
+  document.getElementById('back').onclick = goBack;
   const redraw = () => chart(document.getElementById('chart'), s, tf, v.short);
   view.querySelectorAll('.pills button').forEach(b => b.onclick = () => { tf = b.dataset.tf; drawSymbol(v, alerts); });
   view.querySelectorAll('.snav button').forEach(b => b.onclick = () => { symConcept = b.dataset.sc; drawSymbol(v, alerts); });
@@ -317,7 +317,7 @@ async function renderAlerts() {
 
 // ------------------------------------------------------------ study guide
 function renderGuide() {
-  view.innerHTML = `<div class="row"><button class="btn" id="pdf">Download the PDF</button><button class="btn" id="qz">SORK quiz</button></div><div id="gprog" class="gprog"></div><iframe src="/static/guide.html" title="SORK study guide"></iframe>`;
+  view.innerHTML = `<div class="row"><button class="btn" id="pdf">Download the PDF</button><button class="btn" id="qz">Proficiency Exam</button></div><div id="gprog" class="gprog"></div><iframe src="/static/guide.html" title="SORK study guide"></iframe>`;
   document.getElementById('pdf').onclick = () => {
     const u = location.origin + '/static/SORK_Trading_Concept_Study_Guide.pdf';
     tg ? tg.openLink(u) : window.open(u, '_blank');
