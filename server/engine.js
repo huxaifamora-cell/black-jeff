@@ -426,7 +426,8 @@ const ev = (concept, kind, dir, t, tf, title, body, uid, extra = {}) =>
   ({ concept, kind, dir, t: Math.trunc(t), tf, title, body, uid: String(uid), extra });
 const side = (d) => (d === 1 ? 'buy' : 'sell');
 const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
-const nice = (s) => s.replace('_', ' ');
+// A move out of the box is named after the H4 market bias (bias = 1 bullish, -1 bearish, 0 none yet).
+export const nice = (s, bias = 0) => s === 'move_out' ? (bias === 1 ? 'bullish breakout' : bias === -1 ? 'bearish breakout' : 'breakout') : s.replace('_', ' ');
 const tail = (cs, n) => cs.slice(-n).map((c) => [c.t, c.o, c.h, c.l, c.c]);
 
 export function evaluate(h4, h1All, m5, p = defaultParams, digits = 3) {
@@ -521,8 +522,8 @@ export function evaluate(h4, h1All, m5, p = defaultParams, digits = 3) {
           events.push(ev('QML', 'qml_valid', q.dir, q.t, M5, `QML: ${side(q.dir)} Quasimodo level formed ${q.plq.inside ? 'at' : 'close to'} a point of liquidity`,
             `Reversal at ${f(q.extreme)}, ${q.plq.inside ? 'inside' : 'close to'} an H1 point of liquidity (POI ${f(q.plq.lo)} to ${f(q.plq.hi)}). QML POI ${f(q.lo)} to ${f(q.hi)}. ${cap(side(q.dir))} limit ${f(qp.entry)}, SL ${f(qp.sl)}, TP (1:${p.rr}) ${f(qp.tp)}.`, `qml-${q.t}`, { lo: q.lo, hi: q.hi, ...qp }));
           for (const cf of confirmations(m5c, q.lo, q.hi, q.dir, q.t).slice(-3)) {
-            events.push(ev('QML', 'qml_entry', q.dir, cf.t + M5, M5, `QML: ${side(q.dir)} confirmation (${nice(cf.type)})`,
-              `${cap(nice(cf.type))} inside the QML POI. ${cap(side(q.dir))} limit ${f(qp.entry)}, SL ${f(qp.sl)}, TP ${f(qp.tp)}.`, `qml-${q.t}-${cf.t}-${cf.type}`));
+            events.push(ev('QML', 'qml_entry', q.dir, cf.t + M5, M5, `QML: ${side(q.dir)} confirmation (${nice(cf.type, q.dir)})`,
+              `${cap(nice(cf.type, q.dir))} inside the QML POI. ${cap(side(q.dir))} limit ${f(qp.entry)}, SL ${f(qp.sl)}, TP ${f(qp.tp)}.`, `qml-${q.t}-${cf.t}-${cf.type}`));
           }
         }
       }
@@ -533,8 +534,8 @@ export function evaluate(h4, h1All, m5, p = defaultParams, digits = 3) {
       const cfs = confirmations(m5c, act.lo, act.hi, act.dir, act.t_valid + H1).slice(-3);
       state.signals = cfs;
       for (const cf of cfs) {
-        events.push(ev('K', 'kl_entry', act.dir, cf.t + M5, M5, `K: ${side(act.dir)} confirmation on ${act.type} (${nice(cf.type)})`,
-          `${cap(nice(cf.type))} inside the POI. ${cap(side(act.dir))} limit ${f(plan.entry)}, SL ${f(plan.sl)}, TP ${f(plan.tp)}.`,
+        events.push(ev('K', 'kl_entry', act.dir, cf.t + M5, M5, `K: ${side(act.dir)} confirmation on ${act.type} (${nice(cf.type, act.dir)})`,
+          `${cap(nice(cf.type, act.dir))} inside the POI. ${cap(side(act.dir))} limit ${f(plan.entry)}, SL ${f(plan.sl)}, TP ${f(plan.tp)}.`,
           `${uid}-${cf.t}-${cf.type}`, { lo: act.lo, hi: act.hi, ...plan }));
       }
       const adv = advanced(act, m5, p, null);
@@ -548,8 +549,8 @@ export function evaluate(h4, h1All, m5, p = defaultParams, digits = 3) {
         }
       }
       for (const sg of adv.signals) {
-        events.push(ev('ADV', 'adv_entry', act.dir, sg.t + M5, M5, `ADV: ${side(act.dir)} confirmation in the bjeff zone (${nice(sg.type)})`,
-          `${cap(nice(sg.type))} after a body closed inside the bjeff zone. SL slightly outside the POI, TP by your risk reward ratio.`, `bj-${act.t_valid}-${sg.t}-${sg.type}`));
+        events.push(ev('ADV', 'adv_entry', act.dir, sg.t + M5, M5, `ADV: ${side(act.dir)} confirmation in the bjeff zone (${nice(sg.type, act.dir)})`,
+          `${cap(nice(sg.type, act.dir))} after a body closed inside the bjeff zone. SL slightly outside the POI, TP by your risk reward ratio.`, `bj-${act.t_valid}-${sg.t}-${sg.type}`));
       }
     }
   }
