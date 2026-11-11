@@ -55,7 +55,7 @@ Which alerts a person has opened is kept in their own Telegram CloudStorage next
 A new alert is also a small mission. When someone opens an alert from its Telegram button (the signed link from a group or channel), the app saves that alert
 in their Telegram CloudStorage for 24 hours, next to the +3 XP for the first open. In the Rank tab, under Missions, **Telegram alert analysis** shows the newest
 saved alert: open its chart, then tick four checks written for that SORK concept (S, O, R, K, QML or advanced key level) once you have confirmed each one yourself.
-Completing it gives 10 XP, once per alert, up to 3 a day; five analyses earn the Alert Analyst medal. Alerts opened from a private-message button use a plain link with no
+Completing it gives 10 XP once per alert, with no daily limit; five analyses earn the Alert Analyst medal. Alerts opened from a private-message button use a plain link with no
 signature, so they are not saved for this mission. It trains reading an alert the SORK way and is not a trade signal.
 
 ### Channel only (no alerts in the bot chat)
