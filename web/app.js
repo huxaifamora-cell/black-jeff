@@ -1,7 +1,7 @@
 const tg = window.Telegram && Telegram.WebApp;
 if (tg) { tg.ready(); tg.expand(); }
 const view = document.getElementById('view');
-let tab = 'symbols', current = null, timer = null, tf = 'm5', concept = '', symConcept = '';
+let tab = 'symbols', current = null, timer = null, tf = 'm5', concept = '', symConcept = '', kSub = 'K';
 
 async function api(path, opts = {}) {
   const r = await fetch(path, { ...opts, headers: { 'Content-Type': 'application/json',
@@ -93,12 +93,16 @@ const SNAV = [
   ['R', 'Reclamation', 'M6 21V3M6 4h12l-3 4 3 4H6M3 21h6'],                                           // flag planted on retaken ground
   ['K', 'Key level', 'M12 2v5M12 17v5M2 12h5M17 12h5M12 8.5a3.5 3.5 0 100 7 3.5 3.5 0 000-7z'],    // crosshair
 ];
+const KSUB = [['K', 'Key level'], ['QML', 'QML'], ['ADV', 'ADV']];             // QML and ADV live under the Key level menu
+const inMenu = (a, c) => c === 'K' ? KSUB.some(x => x[0] === a.concept) : a.concept === c;
+const inView = (a, c) => c === 'K' ? a.concept === kSub : a.concept === c;
+const snavHtml = (list, cur) => `<div class="snav">${SNAV.map(([c, name, ic]) => `<button data-sc="${c}" class="${c === cur ? 'on' : ''}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="${ic}"/></svg><span>${name}</span><em>${list.filter(a => inMenu(a, c)).length}</em></button>`).join('')}</div>`
+  + (cur === 'K' ? `<div class="pills ksub">${KSUB.map(([c, name]) => `<button data-ks="${c}" class="${c === kSub ? 'on' : ''}">${name} <span>${list.filter(a => a.concept === c).length}</span></button>`).join('')}</div>` : '');
 function symAlerts(alerts) {
-  const n = c => alerts.filter(a => a.concept === c).length;
-  const cur = symConcept || (SNAV.find(x => n(x[0]))?.[0]) || 'S';
-  const nav = `<div class="snav">${SNAV.map(([c, name, ic]) => `<button data-sc="${c}" class="${c === cur ? 'on' : ''}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="${ic}"/></svg><span>${name}</span><em>${n(c)}</em></button>`).join('')}</div>`;
-  const list = alerts.filter(a => a.concept === cur);
-  return nav + (list.length ? list.map(a => alertHtml(a)).join('') : `<p class="mut">No ${SNAV.find(x => x[0] === cur)[1].toLowerCase()} alerts yet.</p>`);
+  const cur = symConcept || (SNAV.find(x => alerts.some(a => inMenu(a, x[0])))?.[0]) || 'S';
+  const list = alerts.filter(a => inView(a, cur));
+  const name = cur === 'K' ? KSUB.find(x => x[0] === kSub)[1] : SNAV.find(x => x[0] === cur)[1];
+  return snavHtml(alerts, cur) + (list.length ? list.map(a => alertHtml(a)).join('') : `<p class="mut">No ${name.toLowerCase()} alerts yet.</p>`);
 }
 function drawSymbol(v, alerts) {
   const s = v.state, d = s ? s.digits : 3;
@@ -121,6 +125,7 @@ function drawSymbol(v, alerts) {
   const redraw = () => chart(document.getElementById('chart'), s, tf, v.short);
   view.querySelectorAll('.pills button').forEach(b => b.onclick = () => { tf = b.dataset.tf; drawSymbol(v, alerts); });
   view.querySelectorAll('.snav button').forEach(b => b.onclick = () => { symConcept = b.dataset.sc; drawSymbol(v, alerts); });
+  view.querySelectorAll('.ksub button').forEach(b => b.onclick = () => { kSub = b.dataset.ks; drawSymbol(v, alerts); });
   document.getElementById('mute').onclick = async () => {
     const { me } = await api('/api/me'); const m = new Set(me.muted); m.add(current);
     await api('/api/me/settings', { method: 'POST', body: JSON.stringify({ muted: [...m] }) });
@@ -285,19 +290,21 @@ const clock = ts => new Date(ts * 1000).toLocaleTimeString([], { hour: '2-digit'
 const alertHtml = (a, withOpen) => `<details class="arow"><summary><span class="bdg">${esc(a.concept || '')}</span><span class="at"><b>${esc(a.title.replace(/^[A-Z]+: /, ''))}</b><span class="m">${esc(a.symbol_name.replace('Volatility ', 'V').replace(' Index', ''))}</span></span><span class="tm">${clock(a.ts)}</span></summary>
   <div class="ab">${esc(a.body)}${withOpen ? `<div><button class="btn" data-open="${esc(a.symbol)}">Open chart</button></div>` : ''}</div></details>`;
 async function renderAlerts() {
+  const SHOWN = 40;
   view.innerHTML = '<p class="mut">Loading...</p>';
   try {
-    const [{ alerts }, { me, concepts }] = await Promise.all([api('/api/alerts?limit=40' + (concept ? '&concept=' + concept : '')), api('/api/me')]);
-    const chips = ['', ...concepts].map(c => `<button class="chip ${c === concept ? 'on' : ''}" data-c="${c}">${c || 'All'}</button>`).join('');
+    const [{ alerts }, { me, concepts }] = await Promise.all([api('/api/alerts?limit=100'), api('/api/me')]);
+    const alerts2 = (concept ? alerts.filter(a => inView(a, concept)) : alerts).slice(0, SHOWN);
     let list = '', day = '';
-    alerts.forEach(a => { const d = dayLabel(a.ts); if (d !== day) { day = d; list += `<div class="grp">${d}</div>`; } list += alertHtml(a, true); });
-    view.innerHTML = `<h3 style="margin-top:0">Alerts${alerts.length ? ` &middot; ${alerts.length}` : ''}</h3><div class="chips">${chips}</div>` +
-      (alerts.length ? `<div class="alist">${list}</div>` : '<p class="mut">No alerts yet. They appear when a SORK concept becomes valid.</p>') +
+    alerts2.forEach(a => { const d = dayLabel(a.ts); if (d !== day) { day = d; list += `<div class="grp">${d}</div>`; } list += alertHtml(a, true); });
+    view.innerHTML = `<h3 style="margin-top:0">Alerts${alerts2.length ? ` &middot; ${alerts2.length}` : ''}</h3>${snavHtml(alerts, concept)}` +
+      (alerts2.length ? `<div class="alist">${list}</div>` : '<p class="mut">No alerts yet. They appear when a SORK concept becomes valid.</p>') +
       `<details class="more"><summary>Alert settings</summary><div class="card"><h4>Alert messages in Telegram</h4>
       <div class="row"><button class="btn" id="sub">${me.subscribed ? 'On: tap to pause' : 'Paused: tap to turn on'}</button></div>
       <p class="small">Send me alerts for:</p><div class="row">${concepts.map(c => `<label><input type="checkbox" class="cc" value="${c}" ${me.concepts.includes(c) ? 'checked' : ''}> ${c}</label>`).join(' ')}</div>
       ${me.muted.length ? `<p class="small">Muted: ${me.muted.join(', ')} <button class="chip" id="unmute">Unmute all</button></p>` : ''}</div></details>`;
-    view.querySelectorAll('.chip[data-c]').forEach(b => b.onclick = () => { concept = b.dataset.c; renderAlerts(); });
+    view.querySelectorAll('.snav button').forEach(b => b.onclick = () => { concept = concept === b.dataset.sc ? '' : b.dataset.sc; renderAlerts(); });
+    view.querySelectorAll('.ksub button').forEach(b => b.onclick = () => { kSub = b.dataset.ks; renderAlerts(); });   // tap the active menu again to see every alert
     view.querySelectorAll('[data-open]').forEach(b => b.onclick = () => openSymbol(b.dataset.open));
     document.getElementById('sub').onclick = async () => { await api('/api/me/settings', { method: 'POST', body: JSON.stringify({ subscribed: !me.subscribed }) }); renderAlerts(); };
     view.querySelectorAll('.cc').forEach(cb => cb.onchange = async () => {
