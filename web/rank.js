@@ -91,6 +91,21 @@ async function rkCheckIn() {
   await award(bonus, why, medal);
 }
 
+// ---- alert button from a group or channel: the FIRST open of each alert earns 3 XP, later opens earn nothing.
+// The server only confirms the link is a real, recent alert; the opened alerts are remembered in Telegram's CloudStorage.
+const ALERT_XP = 3;
+async function rkAlertOpen(link) {
+  let r; try { r = await api('/api/alert-open', { method: 'POST', body: JSON.stringify({ p: link }) }); } catch { return; }
+  if (!r || !r.ok) return;
+  let seen; try { seen = JSON.parse(await kvGet('sork_alert_opens') || '[]'); } catch { seen = []; }
+  if (!Array.isArray(seen)) seen = [];
+  const cutoff = Date.now() / 1000 - 48 * 3600;                      // links older than 24 h pay nothing, so older ids can be forgotten
+  seen = seen.filter(x => parseInt(String(x).split('_')[0], 36) > cutoff);
+  if (seen.includes(r.id)) return;
+  seen.push(r.id); kvSet('sork_alert_opens', JSON.stringify(seen.slice(-200)));
+  await award(ALERT_XP, 'new alert opened');
+}
+
 // ---- hooks used by the symbol page
 let patTimer = null;
 function rkLeave() { clearTimeout(patTimer); patTimer = null; }

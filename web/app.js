@@ -327,6 +327,12 @@ function renderGuide() {
   const fr = view.querySelector('iframe'); fr.addEventListener('load', () => rkGuideHook(fr));
 }
 
-const q = new URLSearchParams(location.search).get('sym') || (tg && tg.initDataUnsafe && tg.initDataUnsafe.start_param) || '';
-if (q) openSymbol(q); else renderSymbols();
-rkCheckIn();
+// Start link: ?p= / start_param is "<symbol>_<concept>" (page link) or "<symbol>_<concept>_<ts>_<id>_<sig>" (alert button from a
+// group or channel); the old forms "?sym=V10" and a bare "V10" still work.
+const link = new URLSearchParams(location.search).get('p') || new URLSearchParams(location.search).get('sym') || (tg && tg.initDataUnsafe && tg.initDataUnsafe.start_param) || '';
+const [q, lc] = link.split('_');
+if (q) {
+  if (lc === 'QML' || lc === 'ADV') { symConcept = 'K'; kSub = lc; } else if (['S', 'O', 'R', 'K'].includes(lc)) symConcept = lc;
+  openSymbol(q);
+} else renderSymbols();
+rkCheckIn().then(() => { if (link.split('_').length === 5) rkAlertOpen(link); });
