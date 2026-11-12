@@ -250,4 +250,4 @@ main > .xpl{display:block;text-align:center;font-size:12px;margin:6px 0 10px}
 .svch{display:flex;align-items:center;gap:8px;margin:18px 0 4px;font:700 15px var(--head);letter-spacing:2px;text-transform:uppercase;color:var(--gold)}
 .svch .ico{width:20px;height:20px}.svch .you{margin-left:auto;font:500 10px var(--mono);letter-spacing:1px;color:var(--bg);background:var(--gold);padding:2px 7px}
 .rl.st{opacity:.9}
-.subtabs.ld{margin-top:4px}.subtabs.ld button{font-size:10px;letter-spacing:0;padding-left:1px;padding-right:1px;white-space:nowrap}
+.subtabs.ld{margin-top:4px}.subtabs.ld button{font-size:10px;letter-spacing:0;padding-left:1px;padding-right:1px;line-height:1.15;text-align:center;white-space:normal}
