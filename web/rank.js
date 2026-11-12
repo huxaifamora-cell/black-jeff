@@ -349,9 +349,12 @@ async function renderDrill() {
 
 // ---- header: the person's rank insignia, rank name and name, under the B-JEFF logo
 const rkName = () => (tgs && tgs.initDataUnsafe && tgs.initDataUnsafe.user && tgs.initDataUnsafe.user.first_name) || 'Operator';
+let rkSent = '';
 function rkHeader() {
   const el = document.getElementById('hrank'); if (!el || !RKS) return;
   const i = rankOf(RKS);
+  const sync = `${RKS.branch || ''}:${i}`;   // tell the server the rank (once per change) so the Telegram group can show it as a tag next to the person's name
+  if (sync !== rkSent) { rkSent = sync; api('/api/rank', { method: 'POST', body: JSON.stringify({ r: i, b: RKS.branch || null }) }).catch(() => { rkSent = ''; }); }
   const sv = document.getElementById('tsvc'); if (sv) sv.textContent = RKS.branch && BRANCHES[RKS.branch] ? ` (${BRANCHES[RKS.branch].name})` : '';   // B-JEFF (ARMY) FIELD TERMINAL once a service is chosen
   el.innerHTML = `${insignia(i, 24, RKS.branch)}<b class="hr">${rankName(i)}</b><span class="hn">${esc(rkName())}</span>`;
 }
