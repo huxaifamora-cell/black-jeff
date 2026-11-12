@@ -1,7 +1,8 @@
 // Service record: ranks earned by learning and discipline. Progress is saved per person in Telegram's own storage
 // (CloudStorage), with the browser's localStorage as a fallback, so no database is needed on the server.
 // There is no leaderboard and nothing here rates trades or gives advice.
-const RANKS = [['Recruit', 0], ['Private', 40], ['Corporal', 120], ['Sergeant', 250], ['Lieutenant', 450], ['Captain', 700], ['Major', 1000]];
+// The ranks every person shares, up to Lieutenant: [name, XP]. Above Lieutenant the ladder is the chosen service's own (BRANCHES below).
+const BASE_RANKS = [['Recruit', 0], ['Private', 40], ['Corporal', 120], ['Sergeant', 250], ['Lieutenant', 450]];
 const CHAPTERS = ['The SORK framework', 'S: Market Structure', 'O: Order Flow', 'R: Reclamation', 'K: Key Level', 'QML: the inverse key level', 'Advanced key level and bjeff zone', 'Trade checklist'];
 // Military line icons for the missions and medals (24x24, stroke only)
 const STAR = '<path d="M12 8l1.2 2.5 2.8.4-2 2 .5 2.8-2.5-1.3-2.5 1.3.5-2.8-2-2 2.8-.4z"/>';
@@ -83,7 +84,7 @@ async function rk() {
   return RKS;
 }
 const rkSave = () => { kvSet('sork_rank', JSON.stringify(RKS)); rkHeader(); };
-const rankIdx = xp => { let i = 0; RANKS.forEach((r, k) => { if (xp >= r[1]) i = k; }); return i; };   // the rank XP alone would give
+const rankIdx = (xp, s = RKS) => { let i = 0; ladder(s).forEach((r, k) => { if (xp >= r[1]) i = k; }); return i; };   // the rank XP alone would give
 // Mandatory requirements: XP can be earned any way, but each rank below Lieutenant also needs one mission completed before the next rank is granted.
 const DRILLS_REQ = 33, ANALYSES_REQ = 99;
 // Promotional exam rule: failing MORE than EXAM_FAIL_MAX of a promotional exam fails the person and restarts the whole promotional mission.
@@ -95,15 +96,18 @@ const EXAM_PASS = EXAM_Q - Math.floor(EXAM_Q * EXAM_FAIL_MAX + 1e-9);
 const DRILL_MISS_MAX = Math.floor(DRILLS_REQ * EXAM_FAIL_MAX + 1e-9), PRIVATE = 1;
 const SERGEANT = 3;  // index of the rank the Proficiency Exam leads to; from here on the exam is no longer promotional
 // At Lieutenant the person chooses a service. Every rank above Lieutenant then uses that service's own rank names and insignia.
-// RANKS above only fixes the XP steps (and the Army names); the names of the two ranks above Lieutenant come from here.
+// Each service has its own ranks above Lieutenant, with the XP for each: [name, XP]. They all end at 6000 XP: Field Marshal, Admiral of the Fleet,
+// Marshal of the Air Force. (The Navy has one rank fewer in between, as in the real navy.)
 const LIEUTENANT = 4;
 const BRANCHES = {
-  army: { name: 'Army', ico: 'army', ranks: ['Captain', 'Major'], blurb: 'Land forces' },
-  navy: { name: 'Navy', ico: 'navy', ranks: ['Lieutenant Commander', 'Commander'], blurb: 'Sea forces' },
-  air: { name: 'Air Force', ico: 'air', ranks: ['Flight Lieutenant', 'Squadron Leader'], blurb: 'Air forces' },
+  army: { name: 'Army', ico: 'army', blurb: 'Land forces', ranks: [['Captain', 700], ['Major', 1000], ['Lieutenant Colonel', 1400], ['Colonel', 1900], ['Brigadier', 2500], ['Major General', 3200], ['Lieutenant General', 4000], ['General', 5000], ['Field Marshal', 6000]] },
+  navy: { name: 'Navy', ico: 'navy', blurb: 'Sea forces', ranks: [['Lieutenant Commander', 700], ['Commander', 1000], ['Captain', 1500], ['Commodore', 2200], ['Rear Admiral', 3000], ['Vice Admiral', 4000], ['Admiral', 5000], ['Admiral of the Fleet', 6000]] },
+  air: { name: 'Air Force', ico: 'air', blurb: 'Air forces', ranks: [['Flight Lieutenant', 700], ['Squadron Leader', 1000], ['Wing Commander', 1400], ['Group Captain', 1900], ['Air Commodore', 2500], ['Air Vice-Marshal', 3200], ['Air Marshal', 4000], ['Air Chief Marshal', 5000], ['Marshal of the Air Force', 6000]] },
 };
-// Rank name for ladder position i: shared up to Lieutenant, then the chosen service's ranks (Army names until a service is chosen).
-const rankName = (i, s = RKS) => (i > LIEUTENANT && s && s.branch && BRANCHES[s.branch] ? BRANCHES[s.branch].ranks[i - LIEUTENANT - 1] : RANKS[i][0]);
+// The full ladder for a person: the shared ranks, then their service's ranks (the Army ladder until a service is chosen, which is also what
+// people who were Captain or Major before services existed keep).
+const ladder = (s = RKS) => BASE_RANKS.concat(BRANCHES[(s && s.branch) || 'army'].ranks);
+const rankName = (i, s = RKS) => ladder(s)[Math.min(i, ladder(s).length - 1)][0];
 const GATES = [
   { to: 'Private', short: 'Complete the Field guide (all chapters)', ok: s => s.ch.length >= CHAPTERS.length, text: s => `Complete the Field guide: ${s.ch.length}/${CHAPTERS.length} chapters finished` },
   { to: 'Corporal', short: `Pass ${DRILLS_REQ} chart reading drills`, ok: s => (s.drillOk || 0) >= DRILLS_REQ, text: s => `Pass ${DRILLS_REQ} chart reading drills: ${Math.min(s.drillOk || 0, DRILLS_REQ)}/${DRILLS_REQ} passed. Misses ${s.drillMiss || 0}/${DRILL_MISS_MAX} allowed; going over 30% restarts the drills from 0` },
@@ -113,7 +117,7 @@ const GATES = [
 ];
 // The rank the person actually holds: the XP rank, held back at the first rank whose requirement is not met yet.
 function rankOf(s) {
-  const xpRank = rankIdx(s.xp); let i = 0;
+  const xpRank = rankIdx(s.xp, s); let i = 0;
   while (i < xpRank && (!GATES[i] || GATES[i].ok(s))) i++;
   return i;
 }
@@ -135,7 +139,7 @@ async function award(xp, why, medal) {
   let msg = xp ? `<b>+${xp} XP</b> ${esc(why)}` : esc(why);
   if (medal && !s.medals.includes(medal)) { s.medals.push(medal); msg += `<br>Medal: <b>${MEDALS[medal][0]}</b>`; }
   if (s.ch.length === CHAPTERS.length && !s.promo) {   // finishing every chapter is a promotion
-    s.promo = 1; const nx = RANKS[Math.min(RANKS.length - 1, rankIdx(s.xp) + 1)][1]; if (nx > s.xp) s.xp = nx;
+    s.promo = 1; const L = ladder(s), nx = L[Math.min(L.length - 1, rankIdx(s.xp, s) + 1)][1]; if (nx > s.xp) s.xp = nx;
     if (!s.medals.includes('scholar')) s.medals.push('scholar');
     msg += '<br>Guide complete: <b>Scholar</b>';
   }
@@ -325,21 +329,45 @@ function rkHeader() {
 window.addEventListener('load', () => { rk().then(() => { rkHeader(); setTimeout(() => askBranch(), 900); }); });   // a Lieutenant who has not chosen yet is asked again on the next start
 
 // ---- rank page
-// Insignia for ladder position i. Up to Lieutenant (and for the Army) it is chevrons then stars; above Lieutenant the Navy wears gold sleeve stripes
-// on navy blue and the Air Force wears sky blue bars on air force blue.
-function insignia(i, size = 44, branch = null) {
-  const c = '#E3C16A';
-  if (i > LIEUTENANT && (branch === 'navy' || branch === 'air')) {
-    const navy = branch === 'navy', col = navy ? c : '#8EC5F0', bg = navy ? '#0A1A33' : '#0B2540';
-    // [y, height] of each bar. Navy: Lieutenant Commander = two broad with a thin one between, Commander = three broad. Air Force: Flight Lieutenant = two broad, Squadron Leader = two broad with a thin one between.
-    const broad2 = [[7.2, 3.4], [15.4, 3.4]], mid = [[6.4, 3.4], [12.3, 1.5], [16.2, 3.4]], broad3 = [[5.6, 3.4], [10.8, 3.4], [16, 3.4]];
-    const bars = i === 5 ? (navy ? mid : broad2) : (navy ? broad3 : mid);
-    const g = bars.map(([y, h]) => `<rect x="4.5" y="${y}" width="17" height="${h}" fill="${col}"/>`).join('');
-    return `<svg width="${size}" height="${size}" viewBox="0 0 26 26" role="img" aria-label="Rank ${rankName(i, { branch })}"><rect x="1" y="1" width="24" height="24" rx="3" fill="${bg}" stroke="${col}" stroke-width="1.5"/>${g}</svg>`;
+// Insignia for ladder position i. Chevrons up to Sergeant, a star for Lieutenant. Above Lieutenant each service wears its own:
+//   Army: stars for Captain and Major, an oak leaf (Lieutenant Colonel), an eagle (Colonel), then 1 to 4 large silver stars for the generals,
+//         and a ring of five stars for the Field Marshal.
+//   Navy / Air Force: sleeve stripes (gold on navy blue / sky blue on air force blue). Broad stripes for the officers, then one wide band with
+//         0 to 4 thin stripes under it for the flag officers (Commodore ... Admiral of the Fleet / Air Commodore ... Marshal of the Air Force).
+const STAR_D = 'M0 -9l2.6 5.4 5.9.8-4.3 4 1 5.8L0 3.4l-5.2 2.6 1-5.8-4.3-4 5.9-.8z';
+const star = (x, y, sc, fill) => `<path transform="translate(${x} ${y}) scale(${sc})" d="${STAR_D}" fill="${fill}"/>`;
+// Bar patterns, one string per rank above Lieutenant, from the first service rank up: b = broad, t = thin, w = wide.
+const NAVY_BARS = ['btb', 'bbb', 'bbbb', 'w', 'wt', 'wtt', 'wttt', 'wtttt'];
+const AIR_BARS = ['bb', 'btb', 'bbb', 'bbbb', 'w', 'wt', 'wtt', 'wttt', 'wtttt'];
+const BAR_H = { b: 3, t: 1.3, w: 5 };
+function barsSvg(spec, col) {
+  const gap = spec.length > 5 ? 1.3 : 1.6, hs = [...spec].map(k => BAR_H[k]), tot = hs.reduce((a, b) => a + b, 0) + gap * (hs.length - 1);
+  let y = 13 - tot / 2;
+  return hs.map(h => { const r = `<rect x="4.5" y="${y.toFixed(2)}" width="17" height="${h}" fill="${col}"/>`; y += h + gap; return r; }).join('');
+}
+function armySvg(off, c) {
+  const W = '#EDEBD8';   // generals wear silver stars
+  if (off <= 1) return Array.from({ length: off + 2 }, (_, k) => star(13 + (k - (off + 1) / 2) * 7, 13, .5, c)).join('');   // Captain 2 stars, Major 3
+  if (off === 2) return `<path d="M13 4c6 2.8 7 9.5 0 18-7-8.5-6-15.2 0-18z" fill="${c}"/><path d="M13 8v14" stroke="#0C1109" stroke-width="1.1"/>`;   // oak leaf
+  if (off === 3) return `<path d="M2.5 9c3.7-.6 7.3.9 10.5 4.2C16.200 9.900 19.800 8.400 23.500 9c-1 4.200-3.700 7-7 8.200l-1 3.800-2.500-1.600-2.500 1.600-1-3.800c-3.300-1.200-6-4-7-8.200z" fill="${c}"/><circle cx="13" cy="8.200" r="2" fill="${c}"/>`;   // eagle
+  if (off <= 7) {                                                                   // Brigadier .. General: 1 to 4 large silver stars
+    const n = off - 3, at = { 1: [[13, 13.5, .95]], 2: [[7.8, 13.5, .62], [18.2, 13.5, .62]], 3: [[13, 7.8, .56], [7.4, 17.4, .56], [18.6, 17.4, .56]], 4: [[8, 8, .56], [18, 8, .56], [8, 18, .56], [18, 18, .56]] }[n];
+    return at.map(([x, y, sc]) => star(x, y, sc, W)).join('');
   }
-  let g = i === 0 ? '<path d="M8 13h10" stroke="#3A4A2A" stroke-width="2.2"/>' : i <= 3 ? Array.from({ length: i }, (_, k) => `<path d="M5 ${9 + k * 5}l8 5 8-5" fill="none" stroke="${c}" stroke-width="2.2"/>`).join('')
-    : Array.from({ length: i - 3 }, (_, k) => `<path transform="translate(${13 + (k - (i - 4) / 2) * 7} 13) scale(.5)" d="M0 -9l2.6 5.4 5.9.8-4.3 4 1 5.8L0 3.4l-5.2 2.6 1-5.8-4.3-4 5.9-.8z" fill="${c}"/>`).join('');
-  return `<svg width="${size}" height="${size}" viewBox="0 0 26 26" role="img" aria-label="Rank ${rankName(i, { branch })}"><rect x="1" y="1" width="24" height="24" rx="3" fill="#0C1109" stroke="${i ? c : '#3A4A2A'}" stroke-width="1.5"/>${g}</svg>`;
+  return `<circle cx="13" cy="13.5" r="9.6" fill="none" stroke="${c}" stroke-width="1"/>` + Array.from({ length: 5 }, (_, k) => { const a = (-90 + k * 72) * Math.PI / 180; return star((13 + 6.6 * Math.cos(a)).toFixed(2), (13.5 + 6.6 * Math.sin(a)).toFixed(2), .36, W); }).join('');   // Field Marshal: ring of five stars
+}
+function insignia(i, size = 44, branch = null) {
+  const c = '#E3C16A', label = `Rank ${rankName(i, { branch })}`;
+  const svg = (bg, edge, g) => `<svg width="${size}" height="${size}" viewBox="0 0 26 26" role="img" aria-label="${label}"><rect x="1" y="1" width="24" height="24" rx="3" fill="${bg}" stroke="${edge}" stroke-width="1.5"/>${g}</svg>`;
+  if (i > LIEUTENANT) {
+    const off = i - LIEUTENANT - 1;
+    if (branch === 'navy') return svg('#0A1A33', c, barsSvg(NAVY_BARS[off] || 'wtttt', c));
+    if (branch === 'air') return svg('#0B2540', '#8EC5F0', barsSvg(AIR_BARS[off] || 'wtttt', '#8EC5F0'));
+    return svg('#0C1109', c, armySvg(off, c));
+  }
+  const g = i === 0 ? '<path d="M8 13h10" stroke="#3A4A2A" stroke-width="2.2"/>' : i <= 3 ? Array.from({ length: i }, (_, k) => `<path d="M5 ${9 + k * 5}l8 5 8-5" fill="none" stroke="${c}" stroke-width="2.2"/>`).join('')
+    : star(13, 13, .5, c);
+  return svg('#0C1109', i ? c : '#3A4A2A', g);
 }
 // Sub-navigation under the Rank tab: rank, missions, medals, rank ladder. The chosen page is remembered, so the back button of a mission returns to Missions.
 const SUBTABS = [
@@ -350,9 +378,9 @@ const SUBTABS = [
 ];
 let rkSub = 'rank';
 async function renderRank() {
-  const s = await rk(), i = rankOf(s), nx = RANKS[i + 1], cur = RANKS[i][1], br = BRANCHES[s.branch];
+  const s = await rk(), i = rankOf(s), L = ladder(s), nx = L[i + 1], cur = L[i][1], br = BRANCHES[s.branch];
   const nxName = nx ? (i === LIEUTENANT && !s.branch && !s.legacy ? 'your service rank' : rankName(i + 1, s)) : '';
-  const held = i < rankIdx(s.xp), gate = GATES[i] && !GATES[i].ok(s) ? GATES[i] : null;      // held: enough XP, but the requirement is still open
+  const held = i < rankIdx(s.xp, s), gate = GATES[i] && !GATES[i].ok(s) ? GATES[i] : null;      // held: enough XP, but the requirement is still open
   const pct = nx && !held ? Math.min(100, Math.round((s.xp - cur) / (nx[1] - cur) * 100)) : 100;
   const name = rkName();
   const m = (t, d, p, btn, id, ic) => `<div class="card"><h4>${ic ? ico(ic) : ''}${t} <span class="px">${p}</span></h4><p class="small">${d}</p>${btn ? `<button class="btn" id="${id}">${btn}</button>` : ''}</div>`;
@@ -370,7 +398,7 @@ async function renderRank() {
       ${m('Field guide', 'Finish a chapter (scroll to its end) for a stripe and XP. Required to become Private: finish all chapters.', `${s.ch.length}/${CHAPTERS.length}`, 'Open the guide', 'g1', 'guide')}
       ${m('Proficiency Exam', 'Three questions per chapter. Pass with all 3 right for XP. Required to become Sergeant: pass every chapter. Failing more than 30% of any chapter exam fails you and restarts the exam from chapter 1.', `${examsPassed}/${CHAPTERS.length}`, 'Sit the exam', 'g2', 'exam')}`,
     medals: `<h3 class="ctr" style="margin-top:0">Medals</h3><div class="medals">${Object.entries(MEDALS).map(([k, [t, d]]) => `<div class="medal ${s.medals.includes(k) ? 'on' : ''}">${ico(k)}<b>${t}</b><span>${d}</span></div>`).join('')}</div>`,
-    ladder: `<h3 class="ctr" style="margin-top:0">Rank ladder</h3>${RANKS.map((r, k) => `<div class="rl ${k <= i ? 'on' : ''}">${insignia(k, 26, s.branch)}<b>${k > LIEUTENANT && !s.branch ? 'Your service rank ' + (k - LIEUTENANT) : rankName(k, s)}</b><span class="px">${r[1]} XP</span>${k && GATES[k - 1] ? `<span class="rq">${GATES[k - 1].short}</span>` : ''}</div>`).join('')}${s.branch ? '' : `<p class="small">After Lieutenant the ranks follow the service you choose. ${Object.values(BRANCHES).map(b => `${b.name}: ${b.ranks.join(', ')}`).join('. ')}.</p>`}<p class="small">XP can be earned any way, but each rank up to Lieutenant also needs its requirement completed, and Lieutenant to the next rank needs you to choose a service. Until it is, you keep your rank and the XP keeps adding up. Progress is saved in your Telegram account on this app. It is for practice and fun: there is no leaderboard and it does not rate your trading.</p>`,
+    ladder: `<h3 class="ctr" style="margin-top:0">Rank ladder</h3>${(s.branch ? L : L.slice(0, LIEUTENANT + 1)).map((r, k) => `<div class="rl ${k <= i ? 'on' : ''}">${insignia(k, 26, s.branch)}<b>${r[0]}</b><span class="px">${r[1]} XP</span>${k && GATES[k - 1] ? `<span class="rq">${GATES[k - 1].short}</span>` : ''}</div>`).join('')}${s.branch ? '' : `<div class="card"><h4>After Lieutenant: choose a service</h4>${Object.entries(BRANCHES).map(([k, b]) => `<p class="small"><b>${b.name}:</b> ${b.ranks[0][0]} (${b.ranks[0][1]} XP) up to ${b.ranks[b.ranks.length - 1][0]} (${b.ranks[b.ranks.length - 1][1]} XP), ${b.ranks.length} ranks</p>`).join('')}</div>`}<p class="small">XP can be earned any way, but each rank up to Lieutenant also needs its requirement completed, and Lieutenant to the next rank needs you to choose a service. Until it is, you keep your rank and the XP keeps adding up. Progress is saved in your Telegram account on this app. It is for practice and fun: there is no leaderboard and it does not rate your trading.</p>`,
   };
   view.innerHTML = `<div class="subtabs" role="tablist">${SUBTABS.map(([k, t, ic]) => `<button role="tab" data-sub="${k}" class="${k === rkSub ? 'on' : ''}" aria-selected="${k === rkSub}"><svg viewBox="0 0 24 24" aria-hidden="true">${ic}</svg>${t}</button>`).join('')}</div>` + pages[rkSub];
   view.querySelectorAll('[data-sub]').forEach(b => b.onclick = () => { rkSub = b.dataset.sub; renderRank(); });
@@ -390,7 +418,7 @@ async function askBranch(force) {
   o.id = 'bp'; o.setAttribute('role', 'dialog'); o.setAttribute('aria-modal', 'true'); o.setAttribute('aria-label', 'Choose your service');
   o.innerHTML = `<div class="bpbox"><h3 class="ctr" style="margin-top:0">Choose your service</h3>
     <p class="small">You have reached Lieutenant. Choose the service you will continue in: every rank above Lieutenant will be a rank of that service. This choice is permanent.</p>
-    ${Object.entries(BRANCHES).map(([k, b]) => `<button class="bpc" data-b="${k}" aria-pressed="false">${ico(b.ico)}<span><b>${b.name}</b><small>${b.blurb}</small><small class="path">Lieutenant &rarr; ${b.ranks.join(' &rarr; ')}</small></span></button>`).join('')}
+    ${Object.entries(BRANCHES).map(([k, b]) => `<button class="bpc" data-b="${k}" aria-pressed="false">${ico(b.ico)}<span><b>${b.name}</b><small>${b.blurb}</small><small class="path">${b.ranks[0][0]} &rarr; ${b.ranks.length} ranks &rarr; ${b.ranks[b.ranks.length - 1][0]}</small></span></button>`).join('')}
     <div class="row"><button class="btn" id="bp-ok" disabled>Choose a service</button><button class="btn" id="bp-later" style="background:transparent">Decide later</button></div></div>`;
   document.body.appendChild(o);
   const ok = o.querySelector('#bp-ok'), close = () => o.remove();
@@ -404,7 +432,7 @@ async function askBranch(force) {
     if (!pick) return;
     s.branch = pick; delete s.legacy;                   // permanent: nothing in the app changes it again
     const pm = promoMsg(s); rkSave(); close();
-    toast(`Service chosen: <b>${BRANCHES[pick].name}</b><br>Next rank: ${BRANCHES[pick].ranks[0]}` + (pm ? '<br>' + pm : ''), true);
+    toast(`Service chosen: <b>${BRANCHES[pick].name}</b><br>Next rank: ${BRANCHES[pick].ranks[0][0]}` + (pm ? '<br>' + pm : ''), true);
     if (typeof tab !== 'undefined' && tab === 'rank') renderRank();
   };
 }
