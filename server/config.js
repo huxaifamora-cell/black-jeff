@@ -26,6 +26,9 @@ export function loadConfig() {
     // Links for the app's Barracks tab (t.me addresses of your community group and channel). A link left empty is not shown.
     groupUrl: (e.BARRACKS_GROUP_URL || '').trim(),
     channelUrl: (e.BARRACKS_CHANNEL_URL || '').trim(),
+    // The community group where members get their rank as a tag next to their name: @groupname or the numeric id (-100...).
+    // If left out, it is taken from BARRACKS_GROUP_URL when that is a public https://t.me/groupname link. The bot must be an admin with the "manage tags" right.
+    rankGroup: (e.RANK_GROUP_ID || (/^https:\/\/t\.me\/([A-Za-z][A-Za-z0-9_]{3,})\/?$/.exec((e.BARRACKS_GROUP_URL || '').trim()) || [])[1] && '@' + /^https:\/\/t\.me\/([A-Za-z][A-Za-z0-9_]{3,})\/?$/.exec((e.BARRACKS_GROUP_URL || '').trim())[1] || '').trim(),
     // Telegram chat (usually your own user id) where the bot keeps its pinned user backup. Empty = no backup.
     stateChatId: (e.STATE_CHAT_ID || '').trim(),
     // Keep-alive: ping our own public URL every N minutes so a free Web Service does not spin down. 0 = off.

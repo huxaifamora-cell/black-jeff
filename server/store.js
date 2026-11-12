@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS alerts(
   concept TEXT, kind TEXT, dir INTEGER, title TEXT, body TEXT, payload TEXT);
 CREATE INDEX IF NOT EXISTS alerts_symbol ON alerts(symbol, id);
 CREATE TABLE IF NOT EXISTS alert_xp(tg_id INTEGER, oid TEXT, st INTEGER, ts INTEGER, PRIMARY KEY(tg_id, oid));
+CREATE TABLE IF NOT EXISTS user_rank(tg_id INTEGER PRIMARY KEY, tag TEXT, applied INTEGER DEFAULT 0);
 CREATE TABLE IF NOT EXISTS users(
   tg_id INTEGER PRIMARY KEY, chat_id INTEGER, name TEXT, subscribed INTEGER DEFAULT 1,
   muted TEXT DEFAULT '[]', concepts TEXT DEFAULT '[]', created INTEGER);
@@ -99,6 +100,24 @@ export class Store {
     const ins = this.db.prepare('INSERT OR IGNORE INTO alert_xp(tg_id,oid,st,ts) VALUES(?,?,?,?)');
     let n = 0;
     for (const x of Array.isArray(rows) ? rows : []) if (Number.isInteger(x.tg_id) && typeof x.oid === 'string' && [1, 2].includes(x.st)) n += ins.run(x.tg_id, x.oid, x.st, x.ts || 0).changes;
+    return n;
+  }
+
+  // ---- rank tag per person (for the group); applied = 1 once Telegram accepted it
+  rankSet(tgId, tag) {
+    const cur = this.rankGet(tgId);
+    if (cur && cur.tag === tag) return false;
+    this.db.prepare('INSERT INTO user_rank(tg_id,tag,applied) VALUES(?,?,0) ON CONFLICT(tg_id) DO UPDATE SET tag=excluded.tag, applied=0').run(tgId, tag);
+    this.onUsersChanged?.();
+    return true;
+  }
+  rankGet(tgId) { return this.db.prepare('SELECT tag, applied FROM user_rank WHERE tg_id=?').get(tgId) || null; }
+  rankApplied(tgId) { this.db.prepare('UPDATE user_rank SET applied=1 WHERE tg_id=?').run(tgId); this.onUsersChanged?.(); }
+  exportRanks() { return this.db.prepare('SELECT tg_id, tag, applied FROM user_rank').all(); }
+  importRanks(rows) {
+    const ins = this.db.prepare('INSERT OR IGNORE INTO user_rank(tg_id,tag,applied) VALUES(?,?,?)');
+    let n = 0;
+    for (const x of Array.isArray(rows) ? rows : []) if (Number.isInteger(x.tg_id) && typeof x.tag === 'string' && x.tag.length <= 16) n += ins.run(x.tg_id, x.tag, x.applied ? 1 : 0).changes;
     return n;
   }
 

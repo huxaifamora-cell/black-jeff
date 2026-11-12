@@ -12,6 +12,7 @@ import { Bot } from './telegram.js';
 import { TelegramBackup } from './backup.js';
 import { Service, formatAlert } from './service.js';
 import { alertParam, alertId, checkParam, isAlertId, xpStatusText } from './alertlink.js';
+import { rankTag } from './ranks.js';
 import { ALL_CONCEPTS, Store } from './store.js';
 
 const WEB = resolve(dirname(fileURLToPath(import.meta.url)), '..', 'web');
@@ -112,6 +113,11 @@ export function createApp({ cfg = loadConfig(), store, svc, deriv, bot, log = co
       if (r.ok && user) store.xpMark(user.id, r.id, 1);         // remembered per person, so the channel post can show their XP status privately
       return json(res, 200, r);
     }
+    if (path === '/api/rank' && req.method === 'POST') {            // the app reports the person's rank so the group can show it as a tag
+      const b = await readJson(req), tag = rankTag(b.b || null, b.r);
+      if (user && tag) { store.upsertUser(user.id, user.first_name || ''); store.rankSet(user.id, tag); applyRankTag(user.id); }
+      return json(res, 200, { ok: !!tag });
+    }
     if (path === '/api/alert-analysed' && req.method === 'POST') {   // the person finished the Intercept Analysis of an alert they opened
       const b = await readJson(req);
       if (user && isAlertId(b.id) && store.xpState(user.id, b.id) >= 1) store.xpMark(user.id, b.id, 2);
@@ -190,9 +196,10 @@ export function createApp({ cfg = loadConfig(), store, svc, deriv, bot, log = co
     }
     for (const id of cfg.alertChatIds || []) store.upsertUser(id, '');
     if (!backup) return;
-    store.importXp(backup.xp);
-    store.onUsersChanged = () => backup.schedule(() => store.exportUsers(), () => store.exportXp());
-    backup.schedule(() => store.exportUsers(), () => store.exportXp());       // write once so the backup exists from the start
+    store.importXp((backup.extra || {}).xp); store.importRanks((backup.extra || {}).ranks);
+    const extra = () => ({ xp: store.exportXp(), ranks: store.exportRanks() });
+    store.onUsersChanged = () => backup.schedule(() => store.exportUsers(), extra);
+    backup.schedule(() => store.exportUsers(), extra);       // write once so the backup exists from the start
   }
 
   // Keep-alive: a request to our own public address counts as traffic, so a free Web Service stays awake.
@@ -208,7 +215,19 @@ export function createApp({ cfg = loadConfig(), store, svc, deriv, bot, log = co
     log.info(`keep-alive on: pinging ${cfg.webappUrl}/healthz every ${minutes} min`);
   }
 
+  // Rank tag in the community group (Bot API setChatMemberTag: regular members only, 0-16 characters). Tried again when the person next posts.
+  const tagFailed = new Set();
+  const inRankGroup = (c) => !!(cfg.rankGroup && c && (String(c.id) === cfg.rankGroup || (c.username && '@' + c.username.toLowerCase() === cfg.rankGroup.toLowerCase())));
+  async function applyRankTag(uid) {
+    if (!bot || !cfg.rankGroup) return;
+    const r = store.rankGet(uid);
+    if (!r || r.applied || tagFailed.has(`${uid}:${r.tag}`)) return;
+    try { await bot.call('setChatMemberTag', { chat_id: cfg.rankGroup, user_id: uid, tag: r.tag }); store.rankApplied(uid); }
+    catch (e) { tagFailed.add(`${uid}:${r.tag}`); log.warn(`rank tag for ${uid} not set:`, e.message); }   // not in the group yet, or an admin
+  }
+
   async function onUpdate(u) {
+    if (u.message && u.message.from && !u.message.from.is_bot && inRankGroup(u.message.chat)) { tagFailed.delete(`${u.message.from.id}:${(store.rankGet(u.message.from.id) || {}).tag}`); await applyRankTag(u.message.from.id); }
     const cq = u.callback_query;
     if (cq && /^xp_[0-9a-z]+_[0-9a-f]{8}$/.test(cq.data || '')) {     // "My XP status" under a channel alert: answered as a pop-up for that person only
       const id = cq.data.slice(3);
