@@ -44,7 +44,7 @@ const RADAR_SUBS = [
 async function renderSymbols() {
   Radar.unmount(); view.innerHTML = '<p class="mut">Loading...</p>';
   try {
-    const [{ symbols }, al] = await Promise.all([api('/api/symbols'), api('/api/alerts?limit=1').catch(() => ({ alerts: [] }))]);
+    const { symbols } = await api('/api/symbols');
     const G = { ready: symbols.filter(s => s.status === 'ready'), building: symbols.filter(s => s.status === 'building'), quiet: symbols.filter(s => s.status === 'quiet') }, ready = G.ready;
     const row = s => {
       const buy = s.plan && s.plan.dir === 1, cls = s.status === 'ready' ? (buy ? 'buy' : 'sell') : s.status === 'building' ? 'build' : '';
@@ -56,17 +56,15 @@ async function renderSymbols() {
     };
     const map = `<div class="scope"><canvas id="radar" tabindex="0" role="img" aria-label="Live radar: ${ready.length} symbol(s) ready to trade"></canvas>
       <div class="scopeinfo"><span id="rdBrg">BRG 000&deg;</span><span>TARGETS <b id="rdN">${ready.length}</b></span><span id="rdClk"></span></div></div>`;
-    const last = al.alerts && al.alerts[0];
     const subs = `<div class="subtabs" role="tablist">${RADAR_SUBS.map(([k, t, ic]) => `<button role="tab" data-rs="${k}" class="${k === radarSub ? 'on' : ''}" aria-selected="${k === radarSub}"><svg viewBox="0 0 24 24" aria-hidden="true">${ic}</svg>${t}</button>`).join('')}</div>`;
-    const lastHtml = last ? `<div class="latest"><span>LATEST</span><span style="flex:1">${esc(last.title)}</span><span class="mut">${T(last.ts)}</span></div>` : '';
     if (radarSub === 'radar') {
       view.innerHTML = subs + `<h3 class="ctr" style="margin-top:0">Tactical radar</h3>${map}
-        <div class="legend"><span><i style="background:#5AFF64"></i>BUY READY</span><span><i style="background:#FF6955"></i>SELL READY</span></div>` + lastHtml +
-        '<p class="small">Only symbols that are ready to trade appear on the scope. Bearing is fixed per symbol. Tap a target to open it. The full list is under Watchlist.</p>';
+        <div class="legend"><span><i style="background:#5AFF64"></i>BUY READY</span><span><i style="background:#FF6955"></i>SELL READY</span></div>` +
+        '<p class="small">Only symbols that are ready to trade appear on the radar. Bearing is fixed per symbol. Tap a target to open it. The full list is under Watchlist.</p>';
     } else {
       view.innerHTML = subs + `<h3 class="ctr" style="margin-top:0">Watchlist</h3>` +
         `<div class="rtabs" role="tablist">${[['ready', 'Ready to trade'], ['building', 'Building'], ['quiet', 'Quiet']].map(([k, t]) => `<button role="tab" class="${radarTab === k ? 'on' : ''}" data-rt="${k}"><svg viewBox="0 0 24 24" aria-hidden="true">${RT_ICON[k]}</svg><em>${t} <span>${G[k].length}</span></em></button>`).join('')}</div>` +
-        (G[radarTab].length ? G[radarTab].map(row).join('') : `<p class="mut">${{ ready: 'No symbols are ready to trade.', building: 'Nothing is building right now.', quiet: 'No quiet symbols.' }[radarTab]}</p>`) + lastHtml;
+        (G[radarTab].length ? G[radarTab].map(row).join('') : `<p class="mut">${{ ready: 'No symbols are ready to trade.', building: 'Nothing is building right now.', quiet: 'No quiet symbols.' }[radarTab]}</p>`);
     }
     view.querySelectorAll('[data-rs]').forEach(b => b.onclick = () => { radarSub = b.dataset.rs; renderSymbols(); });
     view.querySelectorAll('.rtabs button').forEach(b => b.onclick = () => { radarTab = b.dataset.rt; renderSymbols(); });
@@ -315,7 +313,8 @@ async function renderAlerts() {
     const alerts2 = (concept ? alerts.filter(a => inView(a, concept)) : alerts).slice(0, SHOWN);
     let list = '', day = '';
     alerts2.forEach(a => { const d = dayLabel(a.ts); if (d !== day) { day = d; list += `<div class="grp">${d}</div>`; } list += alertHtml(a, true); });
-    view.innerHTML = `<h3 style="margin-top:0">Alerts${alerts2.length ? ` &middot; ${alerts2.length}` : ''}</h3>${snavHtml(alerts, concept)}` +
+    const last = alerts[0], lastHtml = last ? `<div class="latest"><span>LATEST</span><span style="flex:1">${esc(last.title)}</span><span class="mut">${T(last.ts)}</span></div>` : '';
+    view.innerHTML = `<h3 style="margin-top:0">Alerts${alerts2.length ? ` &middot; ${alerts2.length}` : ''}</h3>${lastHtml}${snavHtml(alerts, concept)}` +
       (alerts2.length ? `<div class="alist">${list}</div>` : '<p class="mut">No alerts yet. They appear when a SORK concept becomes valid.</p>') +
       `<details class="more"><summary>Alert settings</summary><div class="card"><h4>Alert messages in Telegram</h4>
       <div class="row"><button class="btn" id="sub">${me.subscribed ? 'On: tap to pause' : 'Paused: tap to turn on'}</button></div>
