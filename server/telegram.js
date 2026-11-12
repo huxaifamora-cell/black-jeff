@@ -21,7 +21,7 @@ export class Bot {
       if (button.style) b.style = button.style;
       params.reply_markup = { inline_keyboard: [[b]] };
       // button.callback: a second button that answers with a pop-up only the person who tapped it sees (used for the private XP status)
-      if (button.callback) params.reply_markup.inline_keyboard.push([{ text: button.callback.text, callback_data: button.callback.data }]);
+      if (button.callback) params.reply_markup.inline_keyboard[0].push({ text: button.callback.text, callback_data: button.callback.data });   // same row: left and right
     }
     return this.call('sendMessage', params);
   }
