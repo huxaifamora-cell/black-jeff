@@ -426,7 +426,7 @@ async function renderRank() {
         <p class="small"><b>Chart reading drill:</b> 10 XP per pass (the first ${DAILY_CAP.drill} a day pay XP, every pass counts). Required for Corporal: ${DRILLS_REQ} passes. A Private may miss at most ${DRILL_MISS_MAX}; the next miss restarts the drills from 0.</p>
         <p class="small"><b>Proficiency Exam:</b> 20 XP the first time a chapter is passed. Required for Sergeant: pass all ${CHAPTERS.length} chapters with every answer right. More than 30% wrong restarts the exam from chapter 1.</p>
         <p class="small"><b>Intercept Analysis:</b> ${ANALYSIS_XP} XP per alert analysed, and ${ALERT_XP} XP the first time an alert is opened from Telegram. Required for Lieutenant: ${ANALYSES_REQ} analyses.</p>
-        <p class="small"><b>Choose a service:</b> required at Lieutenant. Every rank above Lieutenant needs XP only.</p></div>`;
+        <p class="small"><b>Choose a service:</b> required at Lieutenant. It unlocks ${SERVICE_PERKS.join(' and ').toLowerCase()}. Every rank above Lieutenant needs XP only.</p></div>`;
   const ldPage = () => {
     if (ld === 'base') return `<h4 class="svch">Shared ranks &middot; every service</h4>${BASE_RANKS.map((r, k) => lrow(r, k, null, k <= i, k && GATES[k - 1] ? GATES[k - 1].short : '')).join('')}
       <p class="small">At Lieutenant the person chooses the Army, the Navy or the Air Force and continues up that service's own ladder. Open a service above to see it. All three end at 6000 XP.</p>
@@ -462,6 +462,9 @@ async function renderRank() {
 // ---- choosing a service at Lieutenant: Army, Navy or Air Force (a permanent choice)
 const needsBranch = s => rankOf(s) >= LIEUTENANT && !s.branch;
 let bpAsked = false;
+// What choosing a service unlocks. Shown on the service picker, the Rank page and in the confirmation. Edit this list to change the wording everywhere.
+const SERVICE_PERKS = ['Copy trading', 'Other service features'];
+const perksHtml = `<div class="card perks"><small>CHOOSING A SERVICE UNLOCKS</small><ul>${SERVICE_PERKS.map(x => `<li>${x}</li>`).join('')}</ul></div>`;
 async function askBranch(force) {
   const s = await rk();
   if (!needsBranch(s) || document.getElementById('bp') || (bpAsked && !force)) return;
@@ -471,6 +474,7 @@ async function askBranch(force) {
   o.id = 'bp'; o.setAttribute('role', 'dialog'); o.setAttribute('aria-modal', 'true'); o.setAttribute('aria-label', 'Choose your service');
   o.innerHTML = `<div class="bpbox"><h3 class="ctr" style="margin-top:0">Choose your service</h3>
     <p class="small">You have reached Lieutenant. Choose the service you will continue in: every rank above Lieutenant will be a rank of that service. This choice is permanent.</p>
+    ${perksHtml}
     ${Object.entries(BRANCHES).map(([k, b]) => `<button class="bpc" data-b="${k}" aria-pressed="false">${ico(b.ico)}<span><b>${b.name}</b><small>${b.blurb}</small><small class="path">${b.ranks[0][0]} &rarr; ${b.ranks.length} ranks &rarr; ${b.ranks[b.ranks.length - 1][0]}</small></span></button>`).join('')}
     <div class="row"><button class="btn" id="bp-ok" disabled>Choose a service</button><button class="btn" id="bp-later" style="background:transparent">Decide later</button></div></div>`;
   document.body.appendChild(o);
@@ -485,7 +489,7 @@ async function askBranch(force) {
     if (!pick) return;
     s.branch = pick; delete s.legacy;                   // permanent: nothing in the app changes it again
     const pm = promoMsg(s); rkSave(); close();
-    toast(`Service chosen: <b>${BRANCHES[pick].name}</b><br>Next rank: ${BRANCHES[pick].ranks[0][0]}` + (pm ? '<br>' + pm : ''), true);
+    toast(`Service chosen: <b>${BRANCHES[pick].name}</b><br>Unlocked: ${SERVICE_PERKS.join(', ')}<br>Next rank: ${BRANCHES[pick].ranks[0][0]}` + (pm ? '<br>' + pm : ''), true);
     if (typeof tab !== 'undefined' && tab === 'rank') renderRank();
   };
 }

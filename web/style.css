@@ -256,3 +256,7 @@ main > .xpl{display:block;text-align:center;font-size:12px;margin:6px 0 10px}
 /* XP status on each alert row: earned, or waiting to be claimed */
 .xpb{display:block;margin-top:3px;font:700 10px var(--mono);letter-spacing:.3px}
 .xpb.done{color:var(--up)}.xpb.part{color:var(--gold)}.xpb.new{color:var(--hint)}
+
+/* what choosing a service unlocks (service picker) */
+.perks{margin:10px 0;border-left:3px solid var(--gold);font-size:13px}.perks small{display:block;font:700 10px var(--head);letter-spacing:1.2px;color:var(--gold);margin-bottom:4px}
+.perks ul{margin:0;padding-left:18px}.perks li{margin:2px 0}
