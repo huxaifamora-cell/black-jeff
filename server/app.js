@@ -11,7 +11,7 @@ import { Deriv } from './deriv.js';
 import { Bot } from './telegram.js';
 import { TelegramBackup } from './backup.js';
 import { Service, formatAlert } from './service.js';
-import { alertParam, checkParam } from './alertlink.js';
+import { alertParam, alertId, checkParam, isAlertId, xpStatusText } from './alertlink.js';
 import { ALL_CONCEPTS, Store } from './store.js';
 
 const WEB = resolve(dirname(fileURLToPath(import.meta.url)), '..', 'web');
@@ -99,12 +99,23 @@ export function createApp({ cfg = loadConfig(), store, svc, deriv, bot, log = co
       return v ? json(res, 200, v) : json(res, 404, { error: 'unknown symbol' });
     }
     if (path === '/api/alerts' && req.method === 'GET') {
-      return json(res, 200, { alerts: store.recentAlerts({ symbol: q.get('symbol') || undefined, concept: q.get('concept') || undefined,
-        limit: q.get('limit') || 50, before: q.get('before') || undefined }) });
+      const chatC = cfg.chatConcepts || ['R', 'K', 'QML', 'ADV'];
+      // oid: the id the app remembers for the alert; xp: true when the alert was posted to the channel with an XP link
+      const alerts = store.recentAlerts({ symbol: q.get('symbol') || undefined, concept: q.get('concept') || undefined,
+        limit: q.get('limit') || 50, before: q.get('before') || undefined })
+        .map((a) => ({ ...a, oid: alertId(a), xp: chatC.includes(a.concept) && !CHAT_SKIP_KINDS.has(a.kind) }));
+      return json(res, 200, { alerts });
     }
     if (path === '/api/alert-open' && req.method === 'POST') {       // the app asks whether a button link is a real, recent alert
       const b = await readJson(req);
-      return json(res, 200, checkParam(b.p, cfg.botToken));
+      const r = checkParam(b.p, cfg.botToken);
+      if (r.ok && user) store.xpMark(user.id, r.id, 1);         // remembered per person, so the channel post can show their XP status privately
+      return json(res, 200, r);
+    }
+    if (path === '/api/alert-analysed' && req.method === 'POST') {   // the person finished the Intercept Analysis of an alert they opened
+      const b = await readJson(req);
+      if (user && isAlertId(b.id) && store.xpState(user.id, b.id) >= 1) store.xpMark(user.id, b.id, 2);
+      return json(res, 200, { ok: true });
     }
     if (path === '/api/me' && req.method === 'GET') return json(res, 200, { me: store.upsertUser(user.id, user.first_name || ''), concepts: ALL_CONCEPTS });
     if (path === '/api/me/settings' && req.method === 'POST') {
@@ -134,8 +145,9 @@ export function createApp({ cfg = loadConfig(), store, svc, deriv, bot, log = co
     const style = alert.dir === 1 && !CHAT_SKIP_KINDS.has(alert.kind) ? 'success' : alert.dir === -1 && !CHAT_SKIP_KINDS.has(alert.kind) ? 'danger' : undefined;
     const btn = (signed) => {
       const param = alertParam(alert, cfg.botToken, signed);
-      if (cfg.miniAppLink) return { text: label, url: `${cfg.miniAppLink}?startapp=${param}`, plain: true, style };   // t.me link: works in groups and channels
-      return cfg.webappUrl ? { text: label, url: `${cfg.webappUrl}/?p=${param}`, plain: signed, style } : null;
+      const callback = signed ? { text: 'My XP status', data: `xp_${alertId(alert)}` } : undefined;   // channel posts only: a private pop-up
+      if (cfg.miniAppLink) return { text: label, url: `${cfg.miniAppLink}?startapp=${param}`, plain: true, style, callback };   // t.me link: works in groups and channels
+      return cfg.webappUrl ? { text: label, url: `${cfg.webappUrl}/?p=${param}`, plain: signed, style, callback } : null;
     };
     // Groups and channels: reclamation, key level, QML and bjeff zone only, and never an invalidation (those stay in the app's Alerts tab and in private messages).
     if ((cfg.chatConcepts || ['R', 'K', 'QML', 'ADV']).includes(alert.concept) && !CHAT_SKIP_KINDS.has(alert.kind)) {
@@ -177,8 +189,9 @@ export function createApp({ cfg = loadConfig(), store, svc, deriv, bot, log = co
     }
     for (const id of cfg.alertChatIds || []) store.upsertUser(id, '');
     if (!backup) return;
-    store.onUsersChanged = () => backup.schedule(() => store.exportUsers());
-    backup.schedule(() => store.exportUsers());       // write once so the backup exists from the start
+    store.importXp(backup.xp);
+    store.onUsersChanged = () => backup.schedule(() => store.exportUsers(), () => store.exportXp());
+    backup.schedule(() => store.exportUsers(), () => store.exportXp());       // write once so the backup exists from the start
   }
 
   // Keep-alive: a request to our own public address counts as traffic, so a free Web Service stays awake.
@@ -195,6 +208,12 @@ export function createApp({ cfg = loadConfig(), store, svc, deriv, bot, log = co
   }
 
   async function onUpdate(u) {
+    const cq = u.callback_query;
+    if (cq && /^xp_[0-9a-z]+_[0-9a-f]{8}$/.test(cq.data || '')) {     // "My XP status" under a channel alert: answered as a pop-up for that person only
+      const id = cq.data.slice(3);
+      await bot.answerCallback(cq.id, xpStatusText(store.xpState(cq.from.id, id), id)).catch((e) => log.warn('xp status reply failed:', e.message));
+      return;
+    }
     const m = u.message || {}, text = (m.text || '').trim(), chat = m.chat && m.chat.id;
     if (!chat || !text.startsWith('/')) return;
     const cmd = text.split(/\s+/)[0].split('@')[0].toLowerCase(), uid = (m.from && m.from.id) || chat;

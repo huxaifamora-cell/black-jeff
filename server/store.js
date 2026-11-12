@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS alerts(
   id INTEGER PRIMARY KEY AUTOINCREMENT, key TEXT UNIQUE, ts INTEGER, symbol TEXT, symbol_name TEXT,
   concept TEXT, kind TEXT, dir INTEGER, title TEXT, body TEXT, payload TEXT);
 CREATE INDEX IF NOT EXISTS alerts_symbol ON alerts(symbol, id);
+CREATE TABLE IF NOT EXISTS alert_xp(tg_id INTEGER, oid TEXT, st INTEGER, ts INTEGER, PRIMARY KEY(tg_id, oid));
 CREATE TABLE IF NOT EXISTS users(
   tg_id INTEGER PRIMARY KEY, chat_id INTEGER, name TEXT, subscribed INTEGER DEFAULT 1,
   muted TEXT DEFAULT '[]', concepts TEXT DEFAULT '[]', created INTEGER);
@@ -82,6 +83,22 @@ export class Store {
       n += ins.run(u.tg_id, Number.isInteger(u.chat_id) ? u.chat_id : u.tg_id, String(u.name || ''), u.subscribed ? 1 : 0,
         typeof u.muted === 'string' ? u.muted : '[]', typeof u.concepts === 'string' ? u.concepts : '[]', u.created || 0).changes;
     }
+    return n;
+  }
+
+  // ---- per-person alert XP status (1 = opened, 2 = analysed); backed up with the users, forgotten after 30 days
+  xpMark(tgId, oid, st) {
+    const ts = parseInt(String(oid).split('_')[0], 36) || 0;
+    this.db.prepare('INSERT INTO alert_xp(tg_id,oid,st,ts) VALUES(?,?,?,?) ON CONFLICT(tg_id,oid) DO UPDATE SET st=MAX(st,excluded.st)').run(tgId, oid, st, ts);
+    this.db.prepare('DELETE FROM alert_xp WHERE ts<?').run(Math.floor(Date.now() / 1000) - 30 * 86400);
+    this.onUsersChanged?.();
+  }
+  xpState(tgId, oid) { const r = this.db.prepare('SELECT st FROM alert_xp WHERE tg_id=? AND oid=?').get(tgId, oid); return r ? r.st : 0; }
+  exportXp() { return this.db.prepare('SELECT tg_id, oid, st, ts FROM alert_xp').all(); }
+  importXp(rows) {
+    const ins = this.db.prepare('INSERT OR IGNORE INTO alert_xp(tg_id,oid,st,ts) VALUES(?,?,?,?)');
+    let n = 0;
+    for (const x of Array.isArray(rows) ? rows : []) if (Number.isInteger(x.tg_id) && typeof x.oid === 'string' && [1, 2].includes(x.st)) n += ins.run(x.tg_id, x.oid, x.st, x.ts || 0).changes;
     return n;
   }
 

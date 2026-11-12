@@ -20,9 +20,13 @@ export class Bot {
       const b = button.plain ? { text: button.text, url: button.url } : { text: button.text, web_app: { url: button.url } };
       if (button.style) b.style = button.style;
       params.reply_markup = { inline_keyboard: [[b]] };
+      // button.callback: a second button that answers with a pop-up only the person who tapped it sees (used for the private XP status)
+      if (button.callback) params.reply_markup.inline_keyboard.push([{ text: button.callback.text, callback_data: button.callback.data }]);
     }
     return this.call('sendMessage', params);
   }
+
+  answerCallback(id, text) { return this.call('answerCallbackQuery', { callback_query_id: id, text, show_alert: true, cache_time: 0 }); }
 
   setMenuButton(url, text = 'B-JEFF TERMINAL') {
     return this.call('setChatMenuButton', { menu_button: { type: 'web_app', text, web_app: { url } } });
@@ -33,7 +37,7 @@ export class Bot {
     let offset = 0;
     while (!this.abort.signal.aborted) {
       try {
-        const updates = await this.call('getUpdates', { offset, timeout: 50, allowed_updates: ['message'] }, this.abort.signal);
+        const updates = await this.call('getUpdates', { offset, timeout: 50, allowed_updates: ['message', 'callback_query'] }, this.abort.signal);
         for (const u of updates) {
           offset = u.update_id + 1;
           try { await handler(u); } catch (e) { log.error('update handler failed', e); }

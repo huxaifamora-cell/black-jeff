@@ -17,12 +17,13 @@ export class TelegramBackup {
     const r = await fetch(`https://api.telegram.org/file/bot${this.bot.token}/${file.file_path}`, { signal: AbortSignal.timeout(20000) });
     if (!r.ok) throw new Error(`download failed (${r.status})`);
     const data = await r.json();
+    this.xp = Array.isArray(data.xp) ? data.xp : [];          // per-person alert XP status, saved in the same file
     return Array.isArray(data.users) ? data.users : [];
   }
 
   // Call whenever users change. Writes are batched into one upload every few seconds.
-  schedule(getUsers) {
-    this.dirty = getUsers;
+  schedule(getUsers, getXp) {
+    this.dirty = getUsers; this.dirtyXp = getXp;
     if (this.timer) return;
     this.timer = setTimeout(() => { this.timer = null; this.flush(); }, this.delayMs);
     this.timer.unref?.();
@@ -30,19 +31,19 @@ export class TelegramBackup {
 
   flush() {
     if (this.timer) { clearTimeout(this.timer); this.timer = null; }
-    const getUsers = this.dirty;
+    const getUsers = this.dirty, getXp = this.dirtyXp;
     this.dirty = null;
     if (!getUsers) return this.saving;
-    this.saving = this.saving.then(() => this.#save(getUsers())).catch((e) => this.log.warn('user backup failed:', e.message));
+    this.saving = this.saving.then(() => this.#save(getUsers(), getXp ? getXp() : [])).catch((e) => this.log.warn('user backup failed:', e.message));
     return this.saving;
   }
 
-  async #save(users) {
+  async #save(users, xp = []) {
     const form = new FormData();
     form.append('chat_id', String(this.chatId));
     form.append('disable_notification', 'true');
     form.append('caption', `SORK user backup: ${users.length} users`);
-    form.append('document', new Blob([JSON.stringify({ saved: new Date().toISOString(), users })], { type: 'application/json' }), 'sork-users.json');
+    form.append('document', new Blob([JSON.stringify({ saved: new Date().toISOString(), users, xp })], { type: 'application/json' }), 'sork-users.json');
     const r = await fetch(this.bot.base + 'sendDocument', { method: 'POST', body: form, signal: AbortSignal.timeout(30000) });
     const data = await r.json();
     if (!data.ok) throw new Error(`telegram sendDocument: ${data.description}`);
