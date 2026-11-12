@@ -48,7 +48,17 @@ XP can be earned in any way, but a rank is only granted once its mission is done
 | Sergeant | Pass the Proficiency Exam (every chapter, all 3 right) |
 | Lieutenant | Complete 99 Intercept Analyses |
 
-Captain and Major follow XP alone. The rules live in `GATES` in `web/rank.js`.
+The two ranks above Lieutenant follow XP alone, once a service has been chosen. The rules live in `GATES` in `web/rank.js`.
+
+**Choosing a service at Lieutenant.** When a person reaches Lieutenant, a full-screen picker asks them to join the **Army**, **Navy** or **Air Force** (each with its own icon). The choice is permanent and is saved with the rest of their rank progress. From then on the ranks above Lieutenant use that service's names and insignia, at the same XP steps (700 and 1000):
+
+| Service | After Lieutenant | Insignia |
+| --- | --- | --- |
+| Army | Captain, Major | gold stars |
+| Navy | Lieutenant Commander, Commander | gold sleeve stripes on navy blue |
+| Air Force | Flight Lieutenant, Squadron Leader | sky blue bars on air force blue |
+
+Until a service is chosen the person stays at Lieutenant, even with enough XP: choosing one is the requirement for the next rank. "Decide later" closes the picker, and it appears again on the next start, from the promotion requirement card on the Rank page. People who were already above Lieutenant before this existed keep their rank (the Army names are the old ones) and can still choose. The services, rank names and icons are `BRANCHES` and `ICON` in `web/rank.js`.
 
 **Promotional exam fail rule.** If a person gets more than 30% of any promotional exam wrong, they fail it and the whole promotional mission restarts from the beginning: every chapter pass of the Proficiency Exam is cleared and they start again at chapter 1. Each chapter exam has 3 questions, so one wrong answer (33%) is already a fail. XP and medals already earned are kept. Once a person holds Sergeant the exam is no longer promotional: a low score costs nothing and clears nothing. People who were already Sergeant or higher when the rule arrived keep their earlier passes. The limit is `EXAM_FAIL_MAX` in `web/rank.js`.
 
@@ -59,7 +69,7 @@ Captain and Major follow XP alone. The rules live in `GATES` in `web/rank.js`.
 Groups and channels get only **reclamation, key level, QML and advanced key level** alerts. Market structure (S) and order flow (O)
 alerts stay in the app (and in private messages for people who turned them on). Invalidation alerts (for example "K: RBS invalidated") are never posted to groups or channels; they only appear in the app's Alerts tab and in private messages. `ALERT_CHAT_CONCEPTS=R,K,QML,ADV` is the default; change it to widen or narrow the list.
 
-Each message has five lines: alert type, symbol, H4 bias, status, and the timeframe that fired it. The button reads
+Each message is a small signal card: a bold headline with a status dot (🟢 buy or bullish, 🔴 sell or bearish, ⚪ invalidation or no direction) and the alert type, the symbol, then a quoted block with the H4 bias, the status and the timeframe that fired it. Key level, QML and advanced key level alerts read "BUY SETUP" or "SELL SETUP"; structure, order flow and reclamation read "BULLISH" or "BEARISH". The layout is `formatAlert` in `server/service.js`. The button reads
 **Open (symbol) chart** and opens the symbol in the mini app on the SORK page (S, O, R or K; QML and ADV sit under Key level) that fired the alert.
 
 **Button colour.** The button is green for a buy setup and red for a sell setup (Telegram's button `style`: `success` / `danger`). Invalidation alerts and alerts without a direction keep Telegram's default colour. It is set in `notify` in `server/app.js` and passed on by `Bot.send` in `server/telegram.js`. Telegram clients that are too old to know button colours show the default button instead.
