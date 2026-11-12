@@ -218,6 +218,7 @@ main > .xpl{display:block;text-align:center;font-size:12px;margin:6px 0 10px}
 
 /* header: B-JEFF, FIELD TERMINAL, then the person's rank insignia, rank and name */
 #title small i{display:none}
+#tsvc{font-size:.58em;letter-spacing:2px;color:var(--gold);white-space:nowrap}
 #hrank{display:flex;align-items:center;justify-content:center;gap:8px;margin-top:2px;padding-top:7px;border-top:1px solid var(--edge);align-self:stretch;letter-spacing:0;min-height:31px}
 #hrank:empty{display:none}
 #hrank svg{flex:none}

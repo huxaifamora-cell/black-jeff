@@ -325,6 +325,7 @@ const rkName = () => (tgs && tgs.initDataUnsafe && tgs.initDataUnsafe.user && tg
 function rkHeader() {
   const el = document.getElementById('hrank'); if (!el || !RKS) return;
   const i = rankOf(RKS);
+  const sv = document.getElementById('tsvc'); if (sv) sv.textContent = RKS.branch && BRANCHES[RKS.branch] ? ` (${BRANCHES[RKS.branch].name})` : '';   // B-JEFF (ARMY) FIELD TERMINAL once a service is chosen
   el.innerHTML = `${insignia(i, 24, RKS.branch)}<b class="hr">${rankName(i)}</b><span class="hn">${esc(rkName())}</span>`;
 }
 window.addEventListener('load', () => { rk().then(() => { rkHeader(); setTimeout(() => askBranch(), 900); }); });   // a Lieutenant who has not chosen yet is asked again on the next start
