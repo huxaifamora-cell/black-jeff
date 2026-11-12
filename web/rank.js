@@ -64,6 +64,7 @@ const tgs = window.Telegram && Telegram.WebApp;
 const cloud = () => { try { return tgs && tgs.CloudStorage && tgs.isVersionAtLeast && tgs.isVersionAtLeast('6.9') ? tgs.CloudStorage : null; } catch { return null; } };
 // The browser's localStorage is shared by every Telegram account on the same phone, so each key carries the account's own id. Without this a second
 // account opening the app on the same phone would read the first account's rank and XP (and then report it to the server as its own).
+const myId = () => (tgs && tgs.initDataUnsafe && tgs.initDataUnsafe.user && tgs.initDataUnsafe.user.id) || null;
 const lsKey = k => `${k}@${(tgs && tgs.initDataUnsafe && tgs.initDataUnsafe.user && tgs.initDataUnsafe.user.id) || 'anon'}`;
 const lsGet = k => { try { return localStorage.getItem(lsKey(k)); } catch { return null; } };
 const lsSet = (k, v) => { try { localStorage.setItem(lsKey(k), v); } catch { /* private mode */ } };
@@ -74,9 +75,21 @@ const today = () => new Date().toLocaleDateString('en-CA');
 const dayBefore = () => new Date(Date.now() - 864e5).toLocaleDateString('en-CA');
 let RKS = null;
 const fresh = () => ({ v: 1, xp: 0, ch: [], qz: {}, streak: 0, best: 0, last: '', drillOk: 0, drillMiss: 0, anTotal: 0, medals: [], promo: 0, rank: null, branch: null, d: { date: '', drill: 0 } });
+// ONE-OFF cleanup for a single test account that was handed another account's progress (two Telegram accounts on one phone, before the
+// per-account storage fix). Runs once for this id, then never again (it leaves a flag). Delete this block and the call in rk() afterwards.
+const WIPE_ID = 959811481;
+async function wipeOnce() {
+  if (myId() !== WIPE_ID || await kvGet('sork_wiped_1')) return;
+  const keys = ['sork_rank', 'sork_alert_opens', 'sork_alert_queue', 'sork_alert_log'], c = cloud();
+  keys.forEach(k => { try { localStorage.removeItem(lsKey(k)); } catch { /* ignore */ } });
+  if (c) await new Promise(r => { try { c.removeItems(keys, () => r()); } catch { r(); } });
+  kvSet('sork_wiped_1', '1');
+}
 async function rk() {
   if (RKS) return RKS;
+  await wipeOnce();
   let s; try { s = JSON.parse(await kvGet('sork_rank') || 'null'); } catch { s = null; }
+  if (s && s.owner && myId() && s.owner !== myId()) s = null;   // saved by another account: never show it as this person's
   RKS = Object.assign(fresh(), s || {});
   // Saved before the 30% rule: anyone already at Sergeant or above keeps their old passes (2 of 3) so the new rule never demotes them.
   if (RKS.rank != null && RKS.rank >= SERGEANT) for (const k of Object.keys(RKS.qz)) if (RKS.qz[k] >= 2) RKS.qz[k] = Math.max(RKS.qz[k], EXAM_PASS);
@@ -86,7 +99,7 @@ async function rk() {
   if (RKS.d.date !== today()) RKS.d = { date: today(), drill: 0 };
   return RKS;
 }
-const rkSave = () => { kvSet('sork_rank', JSON.stringify(RKS)); rkHeader(); };
+const rkSave = () => { if (myId()) RKS.owner = myId(); kvSet('sork_rank', JSON.stringify(RKS)); rkHeader(); };
 const rankIdx = (xp, s = RKS) => { let i = 0; ladder(s).forEach((r, k) => { if (xp >= r[1]) i = k; }); return i; };   // the rank XP alone would give
 // Mandatory requirements: XP can be earned any way, but each rank below Lieutenant also needs one mission completed before the next rank is granted.
 const DRILLS_REQ = 33, ANALYSES_REQ = 99;
