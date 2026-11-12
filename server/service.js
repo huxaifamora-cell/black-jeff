@@ -36,17 +36,28 @@ export function statusOf(a) {
   }
 }
 
-// Telegram text: alert type, symbol, H4 bias, status, timeframe. Nothing else.
+// Telegram text, "signal card" style: alert type, symbol, H4 bias, status, timeframe. Nothing else.
+//   🟢 <b>BUY SETUP · KEY LEVEL</b>
+//   Volatility 75 Index
+//   ┃ H4 bias    Bullish          (a Telegram blockquote, labels and values in monospace)
+//   ┃ Status     Valid RBS (buy setup)
+//   ┃ Timeframe  H1
+// The dot matches the button colour: green buy / bullish, red sell / bearish, white for invalidations and alerts with no direction.
+// Key level, QML and advanced key level alerts are "setups" (BUY / SELL SETUP); structure, order flow and reclamation are BULLISH / BEARISH.
+const SETUP_CONCEPTS = new Set(['K', 'QML', 'ADV']);
+const INVALID_KINDS = new Set(['kl_invalid', 'invalidated']);
 export const formatAlert = (a) => {
   const esc = (t) => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  const p = a.payload || {};
-  return [
-    `<b>Alert type:</b> ${esc(TYPE_NAME[a.concept] || a.concept)}`,
-    `<b>Symbol:</b> ${esc(a.symbol_name)}`,
-    `<b>H4 bias:</b> ${BIAS_NAME[p.bias] || 'None yet'}`,
-    `<b>Status:</b> ${esc(statusOf(a))}`,
-    `<b>Timeframe:</b> ${TF_NAME[p.tf] || '-'}`,
-  ].join('\n');
+  const p = a.payload || {}, type = esc(String(TYPE_NAME[a.concept] || a.concept).toUpperCase());
+  const dir = INVALID_KINDS.has(a.kind) ? 0 : a.dir;
+  const setup = SETUP_CONCEPTS.has(a.concept);
+  const head = INVALID_KINDS.has(a.kind) ? `⚪ <b>INVALIDATED · ${type}</b>`
+    : dir === 1 ? `🟢 <b>${setup ? 'BUY SETUP' : 'BULLISH'} · ${type}</b>`
+    : dir === -1 ? `🔴 <b>${setup ? 'SELL SETUP' : 'BEARISH'} · ${type}</b>`
+    : `⚪ <b>${type}</b>`;
+  const rows = [['H4 bias', BIAS_NAME[p.bias] || 'None yet'], ['Status', esc(statusOf(a))], ['Timeframe', TF_NAME[p.tf] || '-']];
+  const card = rows.map(([k, v]) => `${k.padEnd(11)}${v}`).join('\n');
+  return `${head}\n${esc(a.symbol_name)}\n\n<blockquote><code>${card}</code></blockquote>`;
 };
 
 // The SORK checklist for one symbol: S structure, O order flow, R reclamation, K key level.
