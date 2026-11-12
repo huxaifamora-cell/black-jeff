@@ -117,7 +117,8 @@ export function createApp({ cfg = loadConfig(), store, svc, deriv, bot, log = co
       if (user && isAlertId(b.id) && store.xpState(user.id, b.id) >= 1) store.xpMark(user.id, b.id, 2);
       return json(res, 200, { ok: true });
     }
-    if (path === '/api/me' && req.method === 'GET') return json(res, 200, { me: store.upsertUser(user.id, user.first_name || ''), concepts: ALL_CONCEPTS });
+    if (path === '/api/me' && req.method === 'GET') return json(res, 200, { me: store.upsertUser(user.id, user.first_name || ''), concepts: ALL_CONCEPTS,
+      links: { group: /^https:\/\/t\.me\//.test(cfg.groupUrl || '') ? cfg.groupUrl : '', channel: /^https:\/\/t\.me\//.test(cfg.channelUrl || '') ? cfg.channelUrl : '' } });
     if (path === '/api/me/settings' && req.method === 'POST') {
       store.upsertUser(user.id, user.first_name || '');
       const b = await readJson(req);

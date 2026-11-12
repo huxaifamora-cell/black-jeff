@@ -23,6 +23,9 @@ export function loadConfig() {
     // Direct link of the mini app (from BotFather /newapp), e.g. https://t.me/your_bot/app. Makes the alert button open the
     // mini app inside a group or channel, straight on the symbol. Without it the button opens the plain web address.
     miniAppLink: (e.MINIAPP_LINK || '').trim().replace(/\/+$/, ''),
+    // Links for the app's Barracks tab (t.me addresses of your community group and channel). A link left empty is not shown.
+    groupUrl: (e.BARRACKS_GROUP_URL || '').trim(),
+    channelUrl: (e.BARRACKS_CHANNEL_URL || '').trim(),
     // Telegram chat (usually your own user id) where the bot keeps its pinned user backup. Empty = no backup.
     stateChatId: (e.STATE_CHAT_ID || '').trim(),
     // Keep-alive: ping our own public URL every N minutes so a free Web Service does not spin down. 0 = off.
