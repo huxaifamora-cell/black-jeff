@@ -151,11 +151,12 @@ async function award(xp, why, medal) {
 }
 
 // ---- Roll Call: daily check-in streak
+const ROLL_XP = 5;
 async function rkCheckIn() {
   const s = await rk(), t = today();
   if (s.last === t) return;
   s.streak = s.last === dayBefore() ? s.streak + 1 : 1; s.last = t; s.best = Math.max(s.best, s.streak);
-  let bonus = 5, medal = s.medals.includes('first') ? null : 'first', why = `roll call, day ${s.streak}`;
+  let bonus = ROLL_XP, medal = s.medals.includes('first') ? null : 'first', why = `roll call, day ${s.streak}`;
   for (const [n, m, x] of [[7, 'wk7', 50], [30, 'wk30', 150], [90, 'wk90', 300]]) if (s.streak === n && !s.medals.includes(m)) { medal = m; bonus += x; why = `${n} day streak`; }
   await award(bonus, why, medal);
 }
@@ -384,6 +385,7 @@ async function renderRank() {
   const pct = nx && !held ? Math.min(100, Math.round((s.xp - cur) / (nx[1] - cur) * 100)) : 100;
   const name = rkName();
   const m = (t, d, p, btn, id, ic) => `<div class="card"><h4>${ic ? ico(ic) : ''}${t} <span class="px">${p}</span></h4><p class="small">${d}</p>${btn ? `<button class="btn" id="${id}">${btn}</button>` : ''}</div>`;
+  const lrow = (r, k, svc, on, rq) => `<div class="rl ${on ? 'on' : 'st'}">${insignia(k, 26, svc)}<b>${r[0]}</b><span class="px">${r[1]} XP</span>${rq ? `<span class="rq">${rq}</span>` : ''}</div>`;
   const examsPassed = CHAPTERS.filter((_, k) => (s.qz[k] || 0) >= EXAM_PASS).length;
   const pages = {
     rank: `<h3 class="ctr" style="margin-top:0">Service record</h3>
@@ -398,7 +400,18 @@ async function renderRank() {
       ${m('Field guide', 'Finish a chapter (scroll to its end) for a stripe and XP. Required to become Private: finish all chapters.', `${s.ch.length}/${CHAPTERS.length}`, 'Open the guide', 'g1', 'guide')}
       ${m('Proficiency Exam', 'Three questions per chapter. Pass with all 3 right for XP. Required to become Sergeant: pass every chapter. Failing more than 30% of any chapter exam fails you and restarts the exam from chapter 1.', `${examsPassed}/${CHAPTERS.length}`, 'Sit the exam', 'g2', 'exam')}`,
     medals: `<h3 class="ctr" style="margin-top:0">Medals</h3><div class="medals">${Object.entries(MEDALS).map(([k, [t, d]]) => `<div class="medal ${s.medals.includes(k) ? 'on' : ''}">${ico(k)}<b>${t}</b><span>${d}</span></div>`).join('')}</div>`,
-    ladder: `<h3 class="ctr" style="margin-top:0">Rank ladder</h3>${(s.branch ? L : L.slice(0, LIEUTENANT + 1)).map((r, k) => `<div class="rl ${k <= i ? 'on' : ''}">${insignia(k, 26, s.branch)}<b>${r[0]}</b><span class="px">${r[1]} XP</span>${k && GATES[k - 1] ? `<span class="rq">${GATES[k - 1].short}</span>` : ''}</div>`).join('')}${s.branch ? '' : `<div class="card"><h4>After Lieutenant: choose a service</h4>${Object.entries(BRANCHES).map(([k, b]) => `<p class="small"><b>${b.name}:</b> ${b.ranks[0][0]} (${b.ranks[0][1]} XP) up to ${b.ranks[b.ranks.length - 1][0]} (${b.ranks[b.ranks.length - 1][1]} XP), ${b.ranks.length} ranks</p>`).join('')}</div>`}<p class="small">XP can be earned any way, but each rank up to Lieutenant also needs its requirement completed, and Lieutenant to the next rank needs you to choose a service. Until it is, you keep your rank and the XP keeps adding up. Progress is saved in your Telegram account on this app. It is for practice and fun: there is no leaderboard and it does not rate your trading.</p>`,
+    ladder: `<h3 class="ctr" style="margin-top:0">Rank ladder</h3>
+      <h4 class="svch">Shared ranks &middot; every service</h4>${BASE_RANKS.map((r, k) => lrow(r, k, null, k <= i, k && GATES[k - 1] ? GATES[k - 1].short : '')).join('')}
+      <p class="small">After Lieutenant the person chooses a service and continues up that service's own ladder. All three end at 6000 XP.</p>
+      ${Object.entries(BRANCHES).map(([key, b]) => `<h4 class="svch">${ico(b.ico)}${b.name}${s.branch === key ? '<span class="you">YOUR SERVICE</span>' : ''}</h4>${b.ranks.map((r, n) => lrow(r, LIEUTENANT + 1 + n, key, s.branch === key && LIEUTENANT + 1 + n <= i, n === 0 ? `Choose the ${b.name} at Lieutenant` : '')).join('')}`).join('')}
+      <div class="card"><h4>Mission summary</h4>
+        <p class="small"><b>Roll Call:</b> ${ROLL_XP} XP a day. Streaks of 7, 30 and 90 days add 50, 150 and 300 XP and a medal.</p>
+        <p class="small"><b>Field guide:</b> 15 XP per chapter. Required for Private: finish all ${CHAPTERS.length} chapters.</p>
+        <p class="small"><b>Chart reading drill:</b> 10 XP per pass (the first ${DAILY_CAP.drill} a day pay XP, every pass counts). Required for Corporal: ${DRILLS_REQ} passes. A Private may miss at most ${DRILL_MISS_MAX}; the next miss restarts the drills from 0.</p>
+        <p class="small"><b>Proficiency Exam:</b> 20 XP the first time a chapter is passed. Required for Sergeant: pass all ${CHAPTERS.length} chapters with every answer right. More than 30% wrong restarts the exam from chapter 1.</p>
+        <p class="small"><b>Intercept Analysis:</b> ${ANALYSIS_XP} XP per alert analysed, and ${ALERT_XP} XP the first time an alert is opened from Telegram. Required for Lieutenant: ${ANALYSES_REQ} analyses.</p>
+        <p class="small"><b>Choose a service:</b> required at Lieutenant. Every rank above Lieutenant needs XP only.</p></div>
+      <p class="small">XP can be earned any way, but each rank up to Lieutenant also needs its mission completed, and Lieutenant to the next rank needs you to choose a service. Until it is, you keep your rank and the XP keeps adding up. Progress is saved in your Telegram account on this app. It is for practice and fun: there is no leaderboard and it does not rate your trading.</p>`,
   };
   view.innerHTML = `<div class="subtabs" role="tablist">${SUBTABS.map(([k, t, ic]) => `<button role="tab" data-sub="${k}" class="${k === rkSub ? 'on' : ''}" aria-selected="${k === rkSub}"><svg viewBox="0 0 24 24" aria-hidden="true">${ic}</svg>${t}</button>`).join('')}</div>` + pages[rkSub];
   view.querySelectorAll('[data-sub]').forEach(b => b.onclick = () => { rkSub = b.dataset.sub; renderRank(); });
