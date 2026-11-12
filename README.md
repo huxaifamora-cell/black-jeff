@@ -48,15 +48,26 @@ XP can be earned in any way, but a rank is only granted once its mission is done
 | Sergeant | Pass the Proficiency Exam (every chapter, all 3 right) |
 | Lieutenant | Complete 99 Intercept Analyses |
 
-The two ranks above Lieutenant follow XP alone, once a service has been chosen. The rules live in `GATES` in `web/rank.js`.
+The ranks above Lieutenant follow XP alone, once a service has been chosen. The rules live in `GATES` in `web/rank.js`.
 
-**Choosing a service at Lieutenant.** When a person reaches Lieutenant, a full-screen picker asks them to join the **Army**, **Navy** or **Air Force** (each with its own icon). The choice is permanent and is saved with the rest of their rank progress. From then on the ranks above Lieutenant use that service's names and insignia, at the same XP steps (700 and 1000):
+**Choosing a service at Lieutenant.** When a person reaches Lieutenant, a full-screen picker asks them to join the **Army**, **Navy** or **Air Force** (each with its own icon). The choice is permanent and is saved with the rest of their rank progress. From then on every rank above Lieutenant is a rank of that service, up to the highest one at 6000 XP:
 
-| Service | After Lieutenant | Insignia |
-| --- | --- | --- |
-| Army | Captain, Major | gold stars |
-| Navy | Lieutenant Commander, Commander | gold sleeve stripes on navy blue |
-| Air Force | Flight Lieutenant, Squadron Leader | sky blue bars on air force blue |
+| XP | Army | Navy | Air Force |
+| --- | --- | --- | --- |
+| 700 | Captain | Lieutenant Commander | Flight Lieutenant |
+| 1000 | Major | Commander | Squadron Leader |
+| 1400 | Lieutenant Colonel | | Wing Commander |
+| 1500 | | Captain | |
+| 1900 | Colonel | | Group Captain |
+| 2200 | | Commodore | |
+| 2500 | Brigadier | | Air Commodore |
+| 3000 | | Rear Admiral | |
+| 3200 | Major General | | Air Vice-Marshal |
+| 4000 | Lieutenant General | Vice Admiral | Air Marshal |
+| 5000 | General | Admiral | Air Chief Marshal |
+| 6000 | **Field Marshal** | **Admiral of the Fleet** | **Marshal of the Air Force** |
+
+The Navy has one rank fewer in between, as in the real navy. Insignia: the Army wears stars (Captain, Major), an oak leaf (Lieutenant Colonel), an eagle (Colonel), 1 to 4 large silver stars (Brigadier to General) and a ring of five stars (Field Marshal). The Navy wears gold sleeve stripes on navy blue and the Air Force sky blue bars on air force blue: broad stripes for the officers, then a wide band with 0 to 4 thin stripes under it for the flag officers.
 
 Until a service is chosen the person stays at Lieutenant, even with enough XP: choosing one is the requirement for the next rank. "Decide later" closes the picker, and it appears again on the next start, from the promotion requirement card on the Rank page. People who were already above Lieutenant before this existed keep their rank (the Army names are the old ones) and can still choose. The services, rank names and icons are `BRANCHES` and `ICON` in `web/rank.js`.
 
