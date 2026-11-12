@@ -62,8 +62,11 @@ const QUIZ = [
 // ---- storage
 const tgs = window.Telegram && Telegram.WebApp;
 const cloud = () => { try { return tgs && tgs.CloudStorage && tgs.isVersionAtLeast && tgs.isVersionAtLeast('6.9') ? tgs.CloudStorage : null; } catch { return null; } };
-const lsGet = k => { try { return localStorage.getItem(k); } catch { return null; } };
-const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch { /* private mode */ } };
+// The browser's localStorage is shared by every Telegram account on the same phone, so each key carries the account's own id. Without this a second
+// account opening the app on the same phone would read the first account's rank and XP (and then report it to the server as its own).
+const lsKey = k => `${k}@${(tgs && tgs.initDataUnsafe && tgs.initDataUnsafe.user && tgs.initDataUnsafe.user.id) || 'anon'}`;
+const lsGet = k => { try { return localStorage.getItem(lsKey(k)); } catch { return null; } };
+const lsSet = (k, v) => { try { localStorage.setItem(lsKey(k), v); } catch { /* private mode */ } };
 const kvGet = k => new Promise(res => { const c = cloud(); if (!c) return res(lsGet(k)); try { c.getItem(k, (e, v) => res(!e && v ? v : lsGet(k))); } catch { res(lsGet(k)); } });
 const kvSet = (k, v) => { lsSet(k, v); const c = cloud(); if (c) try { c.setItem(k, v, () => {}); } catch { /* ignore */ } };
 
