@@ -303,7 +303,7 @@ function chart(cv, s, tf, name) {
 const dayLabel = ts => { const d = new Date(ts * 1000), n = new Date(), ymd = x => x.toDateString();
   return ymd(d) === ymd(n) ? 'Today' : ymd(d) === ymd(new Date(n - 864e5)) ? 'Yesterday' : d.toLocaleDateString([], { month: 'short', day: 'numeric' }); };
 const clock = ts => new Date(ts * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-const alertHtml = (a, withOpen) => `<details class="arow"><summary><span class="bdg">${esc(a.concept || '')}</span><span class="at"><b>${esc(a.title.replace(/^[A-Z]+: /, ''))}</b><span class="m">${esc(a.symbol_name.replace('Volatility ', 'V').replace(' Index', ''))}</span></span><span class="tm">${clock(a.ts)}</span></summary>
+const alertHtml = (a, withOpen, xpb = {}) => `<details class="arow"><summary><span class="bdg">${esc(a.concept || '')}</span><span class="at"><b>${esc(a.title.replace(/^[A-Z]+: /, ''))}</b><span class="m">${esc(a.symbol_name.replace('Volatility ', 'V').replace(' Index', ''))}</span>${xpb[a.oid] || ''}</span><span class="tm">${clock(a.ts)}</span></summary>
   <div class="ab">${esc(a.body)}${withOpen ? `<div><button class="btn" data-open="${esc(a.symbol)}">Open chart</button></div>` : ''}</div></details>`;
 async function renderAlerts() {
   const SHOWN = 40;
@@ -312,7 +312,8 @@ async function renderAlerts() {
     const [{ alerts }, { me, concepts }] = await Promise.all([api('/api/alerts?limit=100'), api('/api/me')]);
     const alerts2 = (concept ? alerts.filter(a => inView(a, concept)) : alerts).slice(0, SHOWN);
     let list = '', day = '';
-    alerts2.forEach(a => { const d = dayLabel(a.ts); if (d !== day) { day = d; list += `<div class="grp">${d}</div>`; } list += alertHtml(a, true); });
+    const xpb = await alertBadges(alerts2);   // opened / XP earned / XP to claim, shown on each alert row
+    alerts2.forEach(a => { const d = dayLabel(a.ts); if (d !== day) { day = d; list += `<div class="grp">${d}</div>`; } list += alertHtml(a, true, xpb); });
     const last = alerts[0], lastHtml = last ? `<div class="latest"><span>LATEST</span><span style="flex:1">${esc(last.title)}</span><span class="mut">${T(last.ts)}</span></div>` : '';
     view.innerHTML = `<h3 style="margin-top:0">Alerts${alerts2.length ? ` &middot; ${alerts2.length}` : ''}</h3>${lastHtml}${snavHtml(alerts, concept)}` +
       (alerts2.length ? `<div class="alist">${list}</div>` : '<p class="mut">No alerts yet. They appear when a SORK concept becomes valid.</p>') +

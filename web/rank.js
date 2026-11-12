@@ -164,6 +164,32 @@ async function rkCheckIn() {
 // ---- alert button from a group or channel: the FIRST open of each alert earns 3 XP, later opens earn nothing.
 // The server only confirms the link is a real, recent alert; the opened alerts are remembered in Telegram's CloudStorage.
 const ALERT_XP = 3;
+// What the Alerts tab shows per alert: 1 = opened from Telegram (+3 XP earned), 2 = also analysed (+10 XP earned). Kept as "id:state,id:state".
+// Telegram CloudStorage values are capped at 4096 characters, so only the newest 200 alerts from the last 30 days are kept.
+async function alLog() {
+  const m = new Map(); (await kvGet('sork_alert_log') || '').split(',').forEach(x => { const [id, st] = x.split(':'); if (id && st) m.set(id, +st); });
+  return m;
+}
+async function alMark(id, st) {
+  const m = await alLog(), cutoff = Date.now() / 1000 - 30 * 86400;
+  m.set(id, Math.max(st, m.get(id) || 0));
+  const out = [...m].filter(([k]) => parseInt(k.split('_')[0], 36) > cutoff).slice(-200).map(([k, v]) => `${k}:${v}`).join(',');
+  kvSet('sork_alert_log', out);
+}
+// HTML badge per alert id for the Alerts tab: earned XP, XP waiting to be claimed, or nothing when the alert pays no XP.
+async function alertBadges(alerts) {
+  const log = await alLog(), q = await anQueue(), waiting = new Set(q.map(x => x.id)), now = Date.now() / 1000, out = {};
+  for (const a of alerts) {
+    if (!a.xp || !a.oid) continue;
+    const st = log.get(a.oid) || 0;
+    if (st >= 2) out[a.oid] = `<span class="xpb done">&#10003; Analysed &middot; +${ALERT_XP + ANALYSIS_XP} XP earned</span>`;
+    else if (st === 1) out[a.oid] = waiting.has(a.oid)
+      ? `<span class="xpb part">&#10003; Opened &middot; +${ALERT_XP} XP earned &middot; +${ANALYSIS_XP} XP to claim</span>`
+      : `<span class="xpb done">&#10003; Opened &middot; +${ALERT_XP} XP earned</span>`;
+    else if (now - a.ts < 24 * 3600) out[a.oid] = `<span class="xpb new">+${ALERT_XP} XP to claim &middot; open it from Telegram</span>`;
+  }
+  return out;
+}
 async function rkAlertOpen(link) {
   let r; try { r = await api('/api/alert-open', { method: 'POST', body: JSON.stringify({ p: link }) }); } catch { return; }
   if (!r || !r.ok) return;
@@ -172,7 +198,7 @@ async function rkAlertOpen(link) {
   const cutoff = Date.now() / 1000 - 48 * 3600;                      // links older than 24 h pay nothing, so older ids can be forgotten
   seen = seen.filter(x => parseInt(String(x).split('_')[0], 36) > cutoff);
   if (seen.includes(r.id)) return;
-  seen.push(r.id); kvSet('sork_alert_opens', JSON.stringify(seen.slice(-200)));
+  seen.push(r.id); kvSet('sork_alert_opens', JSON.stringify(seen.slice(-200))); alMark(r.id, 1);
   const q = await anQueue(); q.push({ id: r.id, sym: r.symbol, c: r.concept, ts: r.ts }); kvSet('sork_alert_queue', JSON.stringify(q.slice(-20)));   // waits for its analysis mission
   await award(ALERT_XP, 'new alert opened');
 }
@@ -218,6 +244,7 @@ async function renderAnalysis() {
   ad.onclick = async () => {
     ad.disabled = true;
     kvSet('sork_alert_queue', JSON.stringify(q.filter(x => x.id !== a.id)));
+    alMark(a.id, 2); api('/api/alert-analysed', { method: 'POST', body: JSON.stringify({ id: a.id }) }).catch(() => {});   // so the channel post's XP status button knows
     s.anTotal = (s.anTotal || 0) + 1; await award(ANALYSIS_XP, `${a.sym} alert analysed`, s.anTotal >= 5 ? 'analyst' : undefined);
     renderRank();
   };

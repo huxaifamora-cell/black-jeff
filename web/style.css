@@ -252,3 +252,7 @@ main > .xpl{display:block;text-align:center;font-size:12px;margin:6px 0 10px}
 .svch .ico{width:20px;height:20px}.svch .you{margin-left:auto;font:500 10px var(--mono);letter-spacing:1px;color:var(--bg);background:var(--gold);padding:2px 7px}
 .rl.st{opacity:.9}
 .subtabs.ld{margin-top:4px}.subtabs.ld button{font-size:10px;letter-spacing:0;padding-left:1px;padding-right:1px;line-height:1.15;text-align:center;white-space:normal}
+
+/* XP status on each alert row: earned, or waiting to be claimed */
+.xpb{display:block;margin-top:3px;font:700 10px var(--mono);letter-spacing:.3px}
+.xpb.done{color:var(--up)}.xpb.part{color:var(--gold)}.xpb.new{color:var(--hint)}
