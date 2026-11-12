@@ -24,7 +24,7 @@ function setTab(t) {
   document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === t));
   if (tg) tg.BackButton.hide();
   Radar.unmount();
-  ({ symbols: renderSymbols, alerts: renderAlerts, guide: renderGuide, rank: renderRank })[t]();
+  ({ symbols: renderSymbols, alerts: renderAlerts, guide: renderGuide, barracks: renderBarracks, rank: renderRank })[t]();
 }
 
 // ------------------------------------------------------------ symbols
@@ -333,6 +333,24 @@ async function renderAlerts() {
   } catch (e) { view.innerHTML = `<p class="down">${esc(e.message)}</p>`; }
 }
 
+// ------------------------------------------------------------ barracks: links to the Telegram channel and group
+// Command Post = the channel (broadcasts), Mess Hall = the group (where the troops talk). Links come from BARRACKS_CHANNEL_URL / BARRACKS_GROUP_URL.
+const BARRACKS_ICON = {
+  channel: '<path d="M12 21V9M8 21h8M12 9l-3 12M12 9l3 12"/><circle cx="12" cy="6.5" r="1.8"/><path d="M7.6 4.2a6 6 0 000 4.6M16.4 4.2a6 6 0 010 4.6M4.9 2.4a9.5 9.5 0 000 8.2M19.1 2.4a9.5 9.5 0 010 8.2"/>',
+  group: '<path d="M5 11a4 4 0 018 0v1H5zM4 12h10M9 7V5.5"/><path d="M13.5 18v-1a3.2 3.2 0 013.2-3.2h.6A3.2 3.2 0 0120.5 17v1"/><path d="M15.3 10.5a2.2 2.2 0 014.4 0v.8h-4.4z"/><path d="M3 19.5h8"/>',
+};
+async function renderBarracks() {
+  view.innerHTML = '<p class="mut">Loading...</p>';
+  let links = {}; try { links = (await api('/api/me')).links || {}; } catch { /* no links shown */ }
+  const posts = [
+    ['channel', 'Command Post', 'Official channel', 'Live alerts and orders from HQ. Report here for the latest.', 'Report to the Command Post', links.channel],
+    ['group', 'Mess Hall', 'Community group', 'Fall in with the troops: talk setups, trade notes and ask questions.', 'Join the Mess Hall', links.group],
+  ].filter(x => x[5]);
+  view.innerHTML = `<h3 class="ctr" style="margin-top:0">Barracks</h3>` + (posts.length
+    ? posts.map(([k, name, tag, text, cta]) => `<button class="bpost" data-url="${esc(links[k])}"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true">${BARRACKS_ICON[k]}</svg><span><b>${name}</b><small>${tag}</small><span class="small">${text}</span><em>${cta} &rsaquo;</em></span></button>`).join('')
+    : '<p class="mut">The barracks are being set up. Check back soon.</p>');
+  view.querySelectorAll('.bpost').forEach(b => b.onclick = () => { const u = b.dataset.url; tg && tg.openTelegramLink ? tg.openTelegramLink(u) : window.open(u, '_blank'); });
+}
 // ------------------------------------------------------------ study guide
 function renderGuide() {
   view.innerHTML = `<div class="row"><button class="btn" id="pdf">Download the PDF</button><button class="btn" id="qz">Proficiency Exam</button></div><div id="gprog" class="gprog"></div><iframe src="/static/guide.html" title="SORK study guide"></iframe>`;
