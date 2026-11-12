@@ -233,5 +233,15 @@ main > .xpl{display:block;text-align:center;font-size:12px;margin:6px 0 10px}
 /* promotion requirements */
 .rl{flex-wrap:wrap}.rl .rq{flex-basis:100%;padding-left:36px;font:500 11px var(--mono);color:var(--hint);margin-top:-2px}
 .req{margin:0 0 10px;border-left:3px solid var(--gold);font-size:13px}.req small{display:block;font:700 10px var(--head);letter-spacing:1.2px;color:var(--gold);margin-bottom:3px}
-.req.soon{border-left-color:var(--hint)}.req.soon small{color:var(--hint)}
-.rrow.req{width:100%;text-align:left;margin:0 0 10px;border-left:3px solid var(--gold)}.rrow.req .mid{font-size:13px}.rrow.req .px{font-size:22px;color:var(--gold)}
+
+/* Choose your service (Lieutenant): full-screen picker with the Army, Navy and Air Force */
+#bp{position:fixed;inset:0;z-index:40;background:rgba(6,9,4,.94);display:flex;align-items:flex-start;justify-content:center;padding:16px;overflow-y:auto}
+#bp .bpbox{width:100%;max-width:440px;margin:auto;padding:4px 0}
+.bpc{display:flex;align-items:center;gap:14px;width:100%;min-height:72px;text-align:left;background:var(--card);border:1px solid var(--edge);border-left:4px solid var(--edge);color:var(--fg);padding:10px 12px;margin:8px 0;font:inherit}
+.bpc .ico{width:46px;height:46px;stroke-width:1.5}
+.bpc b{display:block;font:700 20px var(--head);letter-spacing:2px;text-transform:uppercase;color:var(--gold)}
+.bpc small{display:block;font-size:12px;color:var(--hint)}.bpc .path{font:500 11px var(--mono);color:var(--fg);margin-top:3px}
+.bpc.on{border-color:var(--gold);box-shadow:0 0 0 1px var(--gold),0 0 16px rgba(227,193,106,.25)}
+#bp .row{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px}#bp .btn:disabled{opacity:.45;filter:grayscale(.6)}
+.svc{display:flex;align-items:center;gap:6px;margin-top:4px;font:700 13px var(--head);letter-spacing:2px;text-transform:uppercase;color:var(--gold)}.svc .ico{width:18px;height:18px}
+#hrank{flex-wrap:wrap;row-gap:2px}
