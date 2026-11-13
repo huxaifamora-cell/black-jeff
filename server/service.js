@@ -2,8 +2,9 @@
 import { H1, H4, M5, defaultParams, evaluate } from './engine.js';
 import { SYMBOLS, norm } from './symbols.js';
 
-// H1 needs the last 2 months (h1Days x 24 candles, the Deriv indices trade round the clock) plus a small margin.
-const countsFor = (p) => ({ [H4]: 400, [H1]: Math.ceil(p.h1Days * 24) + 48, [M5]: 500 });
+// H1 needs the last 6 months (h1Days x 24 candles, the Deriv indices trade round the clock) plus a small margin; H4 covers the same span.
+// Deriv returns at most 5000 candles per request, so the counts are capped there.
+const countsFor = (p) => ({ [H4]: Math.min(5000, p.h1Days * 6 + 40), [H1]: Math.min(5000, Math.ceil(p.h1Days * 24) + 48), [M5]: 500 });
 
 // Number of decimals to show, guessed from the prices (Deriv indices use 2 to 4).
 export function digitsFor(candles) {

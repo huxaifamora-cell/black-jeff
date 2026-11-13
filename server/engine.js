@@ -12,7 +12,7 @@ export const defaultParams = {
   avgBodyLen: 20,
   obScanBack: 6,        // how far back from the V tip to look for the order block candle
   klTolAtr: 0.10,       // "equal / almost identical" edges = within this x ATR
-  h1Days: 60,           // H1 candles used everywhere: the last 2 months (key levels, order flow, reclamation, QML liquidity)
+  h1Days: 180,          // H1 candles used everywhere: the last 6 months (key levels, order flow, reclamation, QML liquidity)
   maxKlWicks: 2,        // high probability key level: no more than this many wicks in the POI
   slBufferAtr: 0.25,    // "slightly outside the POI" = this x M5 ATR
   rr: 2.0,              // risk reward ratio used for the example TP
@@ -20,7 +20,7 @@ export const defaultParams = {
   liveM5: true,         // the M5 candle still forming is used (live price)
   liveHtf: true,        // H1 and H4 charts show the forming candle too; the H1 / H4 rules still only use closed candles
   klWithBias: true,     // trend continuation: only key levels in the direction of the H4 bias count (RBS in a bullish bias, SBR in a bearish bias). QML is the exception.
-  maxScanH1: 1440,      // H1 candles scanned for reclamations (after the inducement / disruption BOS); 2 months of H1
+  maxScanH1: 4320,      // H1 candles scanned for reclamations (after the inducement / disruption BOS); 6 months of H1
 };
 
 export const C = (t, o, h, l, c) => ({ t, o, h, l, c });
@@ -31,7 +31,7 @@ const bot = (c) => Math.min(c.o, c.c);
 const body = (c) => Math.abs(c.c - c.o);
 const upWick = (c) => c.h - top(c);
 const loWick = (c) => bot(c) - c.l;
-// The last `days` of candles, counted back from the newest candle (H1 uses 2 months).
+// The last `days` of candles, counted back from the newest candle (H1 uses 6 months).
 export const lastDays = (cs, days) => (cs.length ? cs.filter((c) => c.t >= cs[cs.length - 1].t - days * 86400) : cs);
 export const mirror = (c) => ({ t: c.t, o: -c.o, h: -c.l, l: -c.h, c: -c.c });
 
@@ -136,10 +136,9 @@ export function orderBlock(cs, b, p) {
   return start;
 }
 
-// POI box. The two candles are the order block and the candle right after it.
-// Bearish: top = highest body edge of the two, bottom = low of the one with the longer lower wick.
-// Bullish (mirror): bottom = lowest body edge of the two, top = high of the one with the longer upper wick.
-// Exception kept from before: a LONG order block body uses only 50% of its body (no wick extension).
+// POI box (inducement, disruption and points of liquidity), as in the study guide: the ORDER BLOCK CANDLE ONLY, from body to body.
+// Wicks are left out and the box never extends to the candle after the order block (that candle is often the BOS candle itself).
+// Exception: a LONG order block body uses only 50% of its body (bullish: the bottom half, bearish: the top half).
 export function poiFromOb(cs, j, d, p) {
   const c = cs[j];
   let lo = bot(c), hi = top(c);
@@ -149,15 +148,6 @@ export function poiFromOb(cs, j, d, p) {
   if (avg > 0 && b > p.longBodyMult * avg) {
     if (d === 1) hi = lo + b / 2;   // bullish scenario: bottom 50% of the body
     else lo = hi - b / 2;           // bearish scenario: top 50% of the body
-    return [lo, hi];
-  }
-  const n = cs[j + 1] || c;         // no next candle yet: the order block alone
-  if (d === -1) {
-    hi = Math.max(top(c), top(n));
-    lo = loWick(c) >= loWick(n) ? c.l : n.l;
-  } else {
-    lo = Math.min(bot(c), bot(n));
-    hi = upWick(c) >= upWick(n) ? c.h : n.h;
   }
   return [lo, hi];
 }
@@ -168,39 +158,46 @@ function poiOf(cs, b, role, p) {
   return { role, dir: b.dir, lo, hi, line: b.tip_price, bos_t: b.t, bos_idx: b.idx, ob_t: cs[j].t };
 }
 
-// Inducement = latest BOS in the trend, disruption = the BOS before it, the rest are points of liquidity.
-// If the disruption POI is invalidated (an H1 body closes beyond it) the trend has changed direction and
-// the order flow is mapped again in the new direction.
+// Order flow is read in two steps, walking the H1 candles in time order.
+//  1. Find the PREVIOUS INVALIDATED order flow. A flow (direction d) has an inducement and a disruption; when an H1 body closes beyond the
+//     disruption POI that flow is dead, the trend changes direction, and everything before that point is history.
+//  2. Look for the NEW order flow only among the breaks of structure that come after that invalidation. Only VALID breaks of structure
+//     count (structural liquidity, same rule as H4 via markValid), so a small break with no liquidity behind it never becomes an
+//     inducement and the latest BOS is not automatically the inducement.
+// Inducement = the latest valid BOS of the flow, disruption = the valid BOS before it, the older ones are points of liquidity.
+// A flow needs BOTH an inducement and a disruption; with a single valid BOS nothing is marked (it is kept in `pending`, never drawn).
+// With no invalidation in the window, the flow runs in the H4 direction from the start of the window.
+// The order flow keeps up with the latest breaks of structure: the inducement is always the newest valid BOS of the flow. And once a flow
+// has been invalidated, while the new one has no disruption yet (empty or one BOS, so it cannot be invalidated), a valid BOS the other
+// way takes over, so the order flow never sits waiting in a direction the market has already left.
 export function orderFlow(h1, trend, p) {
-  const bos = findBos(h1, p.swingK);
   const res = { dir: trend, pois: [], pending: null, invalidated: null, remapped: false };
   if (trend === 0) return res;
-  let d = trend, minIdx = -1;
-  // Each time the disruption POI of the direction being mapped is broken by an H1 body, the order flow flips and is mapped again the other way.
-  // This repeats (up to 8 times), so a bearish order flow whose own disruption is later broken goes back to bullish. The last pass always maps.
-  for (let attempt = 0; attempt < 8; attempt++) {
-    const mine = bos.filter((b) => b.dir === d && b.idx > minIdx);
-    if (!mine.length) { res.dir = d; res.pois = []; return res; }
-    const ind = mine[mine.length - 1];
-    const dis = mine.length >= 2 ? mine[mine.length - 2] : null;
-    const plq = mine.length >= 3 ? mine.slice(-4, -2) : [];
-    // A valid order flow needs BOTH an inducement and a disruption. With only one BOS in this direction the disruption has not formed
-    // yet, so nothing is marked: no POI, no alert, no reclamation. The lone BOS is kept in `pending` (never drawn) for bookkeeping only.
-    if (!dis) { res.dir = d; res.pois = []; res.pending = { dir: ind.dir, bos_t: ind.t, bos_idx: ind.idx }; return res; }
-    if (attempt < 7) {
-      const dp = poiOf(h1, dis, 'disruption', p);
-      let hit = null;                                  // checked afresh on every pass: only THIS pass's disruption counts
-      for (let j = dis.idx + 1; j < h1.length; j++) {
-        const c = h1[j];
-        if ((d === 1 && c.c < dp.lo) || (d === -1 && c.c > dp.hi)) { hit = { dir: d, t: c.t, idx: j, poi: dp }; break; }
+  const valid = markValid(h1, findBos(h1, p.swingK)).filter((b) => b.valid);
+  const at = new Map();
+  for (const b of valid) { if (!at.has(b.idx)) at.set(b.idx, []); at.get(b.idx).push(b); }
+  const dpCache = new Map(), disPoi = (b) => { if (!dpCache.has(b.idx)) dpCache.set(b.idx, poiOf(h1, b, 'disruption', p)); return dpCache.get(b.idx); };
+  let d = trend, list = [], last = null;              // current flow: its direction and its valid BOS (oldest first); last = latest invalidation
+  for (let i = 0; i < h1.length; i++) {
+    const c = h1[i];
+    if (list.length >= 2) {                           // step 1: is the disruption POI of the flow broken by a body close?
+      const dp = disPoi(list[list.length - 2]);
+      if ((d === 1 && c.c < dp.lo) || (d === -1 && c.c > dp.hi)) {
+        last = { dir: d, t: c.t, idx: i, poi: dp };
+        d = -d;                                       // step 2: the new flow starts here, in the opposite direction
+        list = valid.filter((b) => b.dir === d && b.idx >= i - 3 && b.idx < i);
       }
-      if (hit) { res.invalidated = hit; minIdx = hit.idx - 3; d = -d; res.remapped = true; continue; }
     }
-    const pois = [poiOf(h1, ind, 'inducement', p), poiOf(h1, dis, 'disruption', p)];
-    for (const b of plq) pois.push(poiOf(h1, b, 'plq', p));
-    res.dir = d; res.pois = pois;
-    return res;
+    for (const b of at.get(i) || []) {
+      if (b.dir === d) list.push(b);
+      else if (last !== null && list.length < 2) { d = b.dir; list = [b]; }       // no disruption yet: follow the latest valid BOS
+    }
   }
+  res.dir = d; res.invalidated = last; res.remapped = last !== null;
+  if (list.length === 1) { res.pending = { dir: d, bos_t: list[0].t, bos_idx: list[0].idx }; return res; }
+  if (list.length < 2) return res;
+  const ind = list[list.length - 1], dis = list[list.length - 2];
+  res.pois = [poiOf(h1, ind, 'inducement', p), poiOf(h1, dis, 'disruption', p), ...list.slice(-4, -2).map((b) => poiOf(h1, b, 'plq', p))];
   return res;
 }
 
@@ -339,7 +336,7 @@ export function tradePlan(lo, hi, d, atr5, p) {
 }
 
 // ---------------------------------------------------------------- QML
-// Points of liquidity: every H1 BOS in the window (2 months) except the current inducement and disruption.
+// Points of liquidity: every H1 BOS in the window (6 months) except the current inducement and disruption.
 // Each one is a POI (order block box) plus its horizontal line.
 export function liquidityPoints(h1, of, p) {
   const skip = new Set(((of && of.pois) || []).filter((x) => x.role === 'inducement' || x.role === 'disruption').map((x) => x.bos_idx));
@@ -455,7 +452,7 @@ export function evaluate(h4Live, h1Live, m5, p = defaultParams, digits = 3) {
   // (BOS, order flow, reclamation, key levels, QML) are judged on CLOSED candles only, because they depend on a body CLOSING
   // beyond a level: a forming candle would make a POI appear and disappear while the candle is still moving.
   const h4 = closedOnly(h4Live), h1All = closedOnly(h1Live);
-  const h1 = lastDays(h1All, p.h1Days);        // H1 candles: only the last 2 months are used
+  const h1 = lastDays(h1All, p.h1Days);        // H1 candles: only the last 6 months are used
   const f = (x) => Number(x).toFixed(digits);
   const events = [], overlays = [];
   const state = { s: null, o: null, r: [], k: null, qml: null, adv: null, signals: [] };
