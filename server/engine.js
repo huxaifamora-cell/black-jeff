@@ -17,7 +17,8 @@ export const defaultParams = {
   slBufferAtr: 0.25,    // "slightly outside the POI" = this x M5 ATR
   rr: 2.0,              // risk reward ratio used for the example TP
   plqNearAtr: 0.5,      // QML reversal is "close to" a point of liquidity when it is within this x H1 ATR of it
-  liveM5: true,         // the M5 candle still forming is used (live price); H1 and H4 stay closed-candle only
+  liveM5: true,         // the M5 candle still forming is used (live price)
+  liveHtf: true,        // H1 and H4 charts show the forming candle too; the H1 / H4 rules still only use closed candles
   klWithBias: true,     // trend continuation: only key levels in the direction of the H4 bias count (RBS in a bullish bias, SBR in a bearish bias). QML is the exception.
   maxScanH1: 1440,      // H1 candles scanned for reclamations (after the inducement / disruption BOS); 2 months of H1
 };
@@ -433,14 +434,18 @@ const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
 export const nice = (s, dir = 0) => s === 'move_out' ? (dir === 1 ? 'bullish breakout' : dir === -1 ? 'bearish breakout' : 'breakout') : s.replace('_', ' ');
 const tail = (cs, n) => cs.slice(-n).map((c) => [c.t, c.o, c.h, c.l, c.c]);
 
-export function evaluate(h4, h1All, m5, p = defaultParams, digits = 3) {
+export function evaluate(h4Live, h1Live, m5, p = defaultParams, digits = 3) {
+  // H4 and H1 arrive live (the forming candle is the last one, flagged `forming`) so the chart can show it. All the H4 / H1 rules
+  // (BOS, order flow, reclamation, key levels, QML) are judged on CLOSED candles only, because they depend on a body CLOSING
+  // beyond a level: a forming candle would make a POI appear and disappear while the candle is still moving.
+  const h4 = closedOnly(h4Live), h1All = closedOnly(h1Live);
   const h1 = lastDays(h1All, p.h1Days);        // H1 candles: only the last 2 months are used
   const f = (x) => Number(x).toFixed(digits);
   const events = [], overlays = [];
   const state = { s: null, o: null, r: [], k: null, qml: null, adv: null, signals: [] };
   const minLen = 2 * p.swingK + 4;
   if (h4.length < minLen || h1.length < minLen || m5.length < minLen) {
-    Object.assign(state, { note: 'Not enough candle history yet.', candles: { m5: tail(m5, 150), h1: tail(h1, 150), h4: tail(h4, 120) }, overlays, digits });
+    Object.assign(state, { note: 'Not enough candle history yet.', candles: { m5: tail(m5, 150), h1: tail(h1Live, 150), h4: tail(h4Live, 120) }, overlays, digits });
     return { state, events };
   }
   const m5c = closedOnly(m5);                  // closed M5 candles: confirmation patterns wait for the candle to close
@@ -557,6 +562,6 @@ export function evaluate(h4, h1All, m5, p = defaultParams, digits = 3) {
       }
     }
   }
-  Object.assign(state, { candles: { m5: tail(m5, 150), h1: tail(h1, 150), h4: tail(h4, 120) }, overlays, digits, atr: { h1: atr1, m5: atr5 } });
+  Object.assign(state, { candles: { m5: tail(m5, 150), h1: tail(h1Live, 150), h4: tail(h4Live, 120) }, overlays, digits, atr: { h1: atr1, m5: atr5 } });
   return { state, events };
 }

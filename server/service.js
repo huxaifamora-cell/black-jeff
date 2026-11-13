@@ -122,19 +122,21 @@ export class Service {
     return fresh;
   }
 
-  // Live M5: the history is fetched once, then on every poll only the last 3 candles are fetched and merged in (the forming
+  // Live candles (M5, and H1 / H4 when liveHtf): the history is fetched once, then on every poll only the last 3 candles are fetched and merged in (the forming
   // candle keeps changing, the one before it gets its final values). A bigger gap (restart, lost connection) fetches everything again.
-  async #liveM5(deriv, s, cache, now) {
-    const ent = cache[M5], prev = (Math.floor(now / M5) - 1) * M5;
+  async #live(deriv, s, cache, now, gran) {
+    const ent = cache[gran], prev = (Math.floor(now / gran) - 1) * gran, n = countsFor(this.p)[gran];
     const last = ent && ent.cs.length ? ent.cs[ent.cs.length - 1].t : null;
     if (last === null || last < prev) {
-      cache[M5] = { cs: await deriv.candles(s.code, M5, countsFor(this.p)[M5], true) };
+      cache[gran] = { cs: await deriv.candles(s.code, gran, n, true) };
       return;
     }
-    const tail = await deriv.candles(s.code, M5, 3, true);
+    const tail = await deriv.candles(s.code, gran, 3, true);
     const byT = new Map(ent.cs.map((c) => [c.t, c]));
-    for (const c of tail) byT.set(c.t, c);
-    ent.cs = [...byT.values()].sort((a, b) => a.t - b.t).slice(-countsFor(this.p)[M5]);
+    for (const c of tail) { byT.set(c.t, c); }
+    ent.cs = [...byT.values()].sort((a, b) => a.t - b.t).slice(-n);
+    const lt = ent.cs[ent.cs.length - 1];
+    for (const c of ent.cs) if (c !== lt && c.forming) delete c.forming;   // a candle that has since closed is no longer forming
   }
 
   async refresh(deriv, sid) {
@@ -142,14 +144,15 @@ export class Service {
     if (!s.available) return [];
     const now = Date.now() / 1000, cache = this.cache.get(sid);
     let changed = false;
-    for (const gran of [H4, H1]) {                              // H4 and H1: closed candles only, fetched once per candle
-      const bucket = Math.floor(now / gran), ent = cache[gran];
+    for (const gran of [H4, H1]) {
+      if (this.p.liveHtf) { await this.#live(deriv, s, cache, now, gran); changed = true; continue; }   // forming candle too, refreshed on every poll
+      const bucket = Math.floor(now / gran), ent = cache[gran];                                         // otherwise closed candles only, fetched once per candle
       if (!ent || (ent.bucket !== bucket && now - bucket * gran >= 3)) {
         cache[gran] = { bucket, cs: await deriv.candles(s.code, gran, countsFor(this.p)[gran]) };
         changed = true;
       }
     }
-    if (this.p.liveM5) { await this.#liveM5(deriv, s, cache, now); changed = true; }   // M5: the forming candle too, refreshed on every poll
+    if (this.p.liveM5) { await this.#live(deriv, s, cache, now, M5); changed = true; }   // M5: the forming candle too, refreshed on every poll
     else {
       const bucket = Math.floor(now / M5), ent = cache[M5];
       if (!ent || (ent.bucket !== bucket && now - bucket * M5 >= 3)) {
