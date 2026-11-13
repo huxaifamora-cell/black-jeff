@@ -395,7 +395,7 @@ story.append(figure("f12_qml.png",
                     "Price comes up into the QML POI and sells off.", width=CW * 0.95))
 story.append(P("Things to watch out for", h2))
 story += rule("A QML must be traded where the reversal happened at a point of liquidity, or close to a point of liquidity. "
-              "Points of liquidity are looked for in the last 2 months of H1 candles.", color=PURPLE, bg=colors.HexColor("#F3ECF7"))
+              "Points of liquidity are looked for in the last 6 months of H1 candles.", color=PURPLE, bg=colors.HexColor("#F3ECF7"))
 story += B(["<b>QML plus inverse:</b> if a directional key level has failed, the QML is how to enter in the inverse direction. After that, every other key "
             "level can be traded in the inverse direction.",
             "<b>Stop loss and take profit</b> stay the same as for directional key levels: the SL slightly outside the POI, the TP set with a risk reward ratio.",
