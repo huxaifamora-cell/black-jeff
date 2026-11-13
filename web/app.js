@@ -160,13 +160,13 @@ function cards(s, d) {
        <p class="small">An H1 body closed beyond the disruption POI ${T(S.trend_invalidated.t)}, so the old trend is over.</p>`
     : S.valid
     ? `<p><b class="${S.trend === 1 ? 'up' : 'down'}">${S.trend === 1 ? 'Uptrend' : 'Downtrend'} is valid</b></p>
-       <p class="small">Valid BOS ${T(S.anchor_t)} at ${P(S.level, d)}. ${S.slq ? 'Liquidity (SLQ) present.' : '2 or more BOS without SLQ.'}${S.shift_pending ? ' A newer BOS the other way is not valid yet.' : ''}</p>`
+       <p class="small">Valid BOS ${T(S.anchor_t)} at ${P(S.level, d)}. Liquidity (SLQ) present.${S.shift_pending ? ' A newer BOS the other way is not valid yet.' : ''}</p>`
     : '<p class="mut">No valid structure yet.</p>') : '<p class="mut">No data.</p>') + '</div>';
   const O = s.o;
   h += `<div class="card"><h4>O &middot; Order flow (H1)</h4>` + (O && O.pois.some(p => p.role !== 'plq') ? O.pois.filter(p => p.role !== 'plq').map(p =>
     `<p><b>${p.role === 'plq' ? 'Point of liquidity' : p.role}</b> (${p.dir === 1 ? 'bullish' : 'bearish'}) POI ${box(p, d)}</p>`).join('')
     : '<p class="mut">Nothing mapped yet.</p>') +
-    (O && O.invalidated ? `<p class="down small">Inducement and disruption were invalidated ${T(O.invalidated.t)}; the trend changed direction and the order flow was re-mapped.</p>` : '') + '</div>';
+    (O && O.recovered ? `<p class="small">${O.recovered.kind === 'reclamation' ? 'The disruption was invalidated and then reclaimed: the trend and its order flow are kept.' : 'Break out: the disruption was invalidated, then price returned and carried on. Skip the first valid key level and trade from the second.' + (O.recovered.waiting ? ' <b>Waiting for the 2nd key level.</b>' : '')}</p>` : '') + (O && O.invalidated ? `<p class="down small">Inducement and disruption were invalidated ${T(O.invalidated.t)}; the trend changed direction and the order flow was re-mapped.</p>` : '') + '</div>';
   h += `<div class="card"><h4>R &middot; Reclamation (H1)</h4>` + (s.r.some(r => r.role !== 'plq') ? s.r.filter(r => r.role !== 'plq').map(r =>
     `<p>${r.role === 'plq' ? 'Point of liquidity' : r.role}: ${r.state ? 'in progress, step ' + r.state + ' of 5' : 'waiting'}${r.last_complete ? ` <span class="small">last complete ${T(r.last_complete)}</span>` : ''}</p>`).join('')
     : '<p class="mut">No POI to watch.</p>') + '<p class="small">A reclamation is a confirmation, not an entry.</p></div>';
