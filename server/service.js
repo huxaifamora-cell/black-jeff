@@ -76,7 +76,7 @@ export function stepsOf(st) {
     valid ? (a.high_prob ? step('K', 'done', `${a.type} key level is valid`) : step('K', 'now', `${a.type} is valid but low probability, not traded`))
       : step('K', 'todo', a ? 'Last key level was invalidated' : 'No valid key level yet'),
   ];
-  const ready = valid && a.high_prob;
+  const ready = valid && a.high_prob && pois.length > 0 && !!(S && S.valid);   // a setup needs structure and order flow, not just a key level
   const wait = steps.find((x) => x.state !== 'done');
   return { steps, status: ready ? 'ready' : (S && S.valid ? 'building' : 'quiet'),
     plan: valid ? { dir: a.dir, type: a.type, entry: a.plan ? a.plan.entry : null } : null,

@@ -522,7 +522,9 @@ export function evaluate(h4Live, h1Live, m5, p = defaultParams, digits = 3) {
   const vk = validateKls(h1, findKls(h1, p, atr1, h1.length), p);
   // Trend continuation model: the key level must agree with the H4 bias (no bias = no key level). A QML is built from an invalidated key level and may go against it.
   const livePx = m5.length ? m5[m5.length - 1].c : null;
-  const valid = vk.filter((k) => k.status === 'valid' && (!p.klWithBias || (ms.trend !== 0 && k.dir === ms.trend)) && klFitsOrderFlow(k, of, livePx));
+  // No valid order flow (inducement AND disruption both mapped) = no valid key level, so nothing is drawn, alerted or marked ready.
+  const hasFlow = ['inducement', 'disruption'].every((r) => of.pois.some((x) => x.role === r));
+  const valid = !hasFlow ? [] : vk.filter((k) => k.status === 'valid' && (!p.klWithBias || (ms.trend !== 0 && k.dir === ms.trend)) && klFitsOrderFlow(k, of, livePx));
   const kState = { active: null, pending: [] };      // RKL/SKL (levels not yet valid) are not shown or alerted
   state.k = kState;
   if (valid.length) {
