@@ -1,7 +1,7 @@
 const tg = window.Telegram && Telegram.WebApp;
 if (tg) { tg.ready(); tg.expand(); }
 const view = document.getElementById('view');
-let tab = 'symbols', current = null, timer = null, tf = 'm5', concept = '', symConcept = '', kSub = 'K';
+let tab = 'symbols', current = null, timer = null, tf = 'h1', concept = '', symConcept = '', kSub = 'K';
 
 async function api(path, opts = {}) {
   const r = await fetch(path, { ...opts, headers: { 'Content-Type': 'application/json',
@@ -77,7 +77,7 @@ async function renderSymbols() {
 
 // ------------------------------------------------------------ symbol page
 function openSymbol(id) {
-  Radar.unmount(); current = id; tf = 'm5'; liveCtx = null; clearInterval(timer);
+  Radar.unmount(); current = id; tf = 'h1'; liveCtx = null; clearInterval(timer);
   if (tg) { tg.BackButton.show(); tg.BackButton.onClick(() => setTab(tab === 'alerts' ? 'alerts' : 'symbols')); }
   loadSymbol(); timer = setInterval(loadSymbol, 3000);          // live: the chart refreshes every 3 s
 }
