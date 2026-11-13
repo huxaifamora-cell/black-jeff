@@ -103,12 +103,10 @@ export function hasSlq(cs, b) {
 }
 
 export function markValid(cs, bos) {
-  let prev = null;
   for (const b of bos) {
     b.slq = hasSlq(cs, b);
-    // exception: two or more BOS in a row without SLQ act as the liquidity
-    b.valid = b.slq || (prev !== null && prev.dir === b.dir && !prev.slq);
-    prev = b;
+    // a BOS is valid only with structural liquidity (SLQ); 2 or more BOS without SLQ no longer count as the liquidity
+    b.valid = b.slq;
   }
   return bos;
 }
@@ -480,7 +478,7 @@ export function evaluate(h4Live, h1Live, m5, p = defaultParams, digits = 3) {
     bos: ms.bos.map((b) => ({ dir: b.dir, t: b.t, level: b.level, valid: b.valid, slq: b.slq })),
   };
   if (anc && !flipped) {
-    const how = anc.slq ? 'liquidity (SLQ) + BOS' : '2+ BOS without SLQ';
+    const how = 'liquidity (SLQ) + BOS';
     events.push(ev('S', 'trend_valid', anc.dir, anc.t + H4, H4, `S: H4 ${anc.dir === 1 ? 'uptrend' : 'downtrend'} is valid`,
       `Valid through ${how}. BOS broke ${f(anc.level)}. Look for ${side(anc.dir)} setups on H1.`, anc.t));
   }
