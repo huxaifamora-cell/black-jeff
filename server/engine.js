@@ -282,6 +282,22 @@ export function validateKls(cs, kls, p) {
   });
 }
 
+// Key levels must agree with the order flow. In an uptrend, once price is above the inducement (or the disruption) POI, a key level only
+// counts when it was formed AFTER that POI's BOS and sits entirely ABOVE the POI box. The downtrend is the exact inverse (after it, and
+// entirely below). Checked separately for the inducement and for the disruption; a POI that price has not moved beyond sets no limit.
+export function klFitsOrderFlow(k, of, price) {
+  if (!of || !of.pois || price == null) return true;
+  for (const poi of of.pois) {
+    if (poi.role !== 'inducement' && poi.role !== 'disruption') continue;
+    if (poi.dir !== k.dir) continue;
+    const beyond = k.dir === 1 ? price > poi.hi : price < poi.lo;       // price is already past the POI in the trend direction
+    if (!beyond) continue;
+    if (!(k.t0 > poi.bos_t)) return false;                              // built from candles that came before the POI formed
+    if (k.dir === 1 ? !(k.lo >= poi.hi) : !(k.hi <= poi.lo)) return false;   // not fully above (below) the POI box
+  }
+  return true;
+}
+
 // A candle body closing outside the POI (pullback side) invalidates the key level.
 export function klInvalidation(kl, h1, m5) {
   const { lo, hi, dir: d } = kl;
@@ -445,7 +461,7 @@ export function evaluate(h4Live, h1Live, m5, p = defaultParams, digits = 3) {
   const state = { s: null, o: null, r: [], k: null, qml: null, adv: null, signals: [] };
   const minLen = 2 * p.swingK + 4;
   if (h4.length < minLen || h1.length < minLen || m5.length < minLen) {
-    Object.assign(state, { note: 'Not enough candle history yet.', candles: { m5: tail(m5, 150), h1: tail(h1Live, 150), h4: tail(h4Live, 120) }, overlays, digits });
+    Object.assign(state, { note: 'Not enough candle history yet.', candles: { m5: tail(m5, 300), h1: tail(h1Live, 300), h4: tail(h4Live, 200) }, overlays, digits });
     return { state, events };
   }
   const m5c = closedOnly(m5);                  // closed M5 candles: confirmation patterns wait for the candle to close
@@ -506,7 +522,8 @@ export function evaluate(h4Live, h1Live, m5, p = defaultParams, digits = 3) {
   // ---- K: key levels on H1
   const vk = validateKls(h1, findKls(h1, p, atr1, h1.length), p);
   // Trend continuation model: the key level must agree with the H4 bias (no bias = no key level). A QML is built from an invalidated key level and may go against it.
-  const valid = vk.filter((k) => k.status === 'valid' && (!p.klWithBias || (ms.trend !== 0 && k.dir === ms.trend)));
+  const livePx = m5.length ? m5[m5.length - 1].c : null;
+  const valid = vk.filter((k) => k.status === 'valid' && (!p.klWithBias || (ms.trend !== 0 && k.dir === ms.trend)) && klFitsOrderFlow(k, of, livePx));
   const kState = { active: null, pending: [] };      // RKL/SKL (levels not yet valid) are not shown or alerted
   state.k = kState;
   if (valid.length) {
@@ -562,6 +579,6 @@ export function evaluate(h4Live, h1Live, m5, p = defaultParams, digits = 3) {
       }
     }
   }
-  Object.assign(state, { candles: { m5: tail(m5, 150), h1: tail(h1Live, 150), h4: tail(h4Live, 120) }, overlays, digits, atr: { h1: atr1, m5: atr5 } });
+  Object.assign(state, { candles: { m5: tail(m5, 300), h1: tail(h1Live, 300), h4: tail(h4Live, 200) }, overlays, digits, atr: { h1: atr1, m5: atr5 } });
   return { state, events };
 }
