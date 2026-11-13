@@ -77,7 +77,7 @@ async function renderSymbols() {
 
 // ------------------------------------------------------------ symbol page
 function openSymbol(id) {
-  Radar.unmount(); current = id; tf = 'h1'; liveCtx = null; clearInterval(timer);
+  Radar.unmount(); current = id; tf = 'h1'; ZOOM = {}; liveCtx = null; clearInterval(timer);
   if (tg) { tg.BackButton.show(); tg.BackButton.onClick(() => setTab(tab === 'alerts' ? 'alerts' : 'symbols')); }
   loadSymbol(); timer = setInterval(loadSymbol, 3000);          // live: the chart refreshes every 3 s
 }
@@ -131,7 +131,7 @@ function drawSymbol(v, alerts) {
   const done = v.steps.filter(x => x.state === 'done').length, nextWp = v.steps.find(x => x.state !== 'done');
   const stp = v.steps.map(x => `<div class="rt ${x.state}"><i>${x.state === 'done' ? '&#10003;' : x.state === 'now' ? '&#9679;' : '&#9675;'}</i><b>${x.k}</b> ${esc(x.text)}</div>`).join('');
   const plan = v.plan && v.status === 'ready' ? `<div class="plan"><div><small>${v.plan.dir === 1 ? 'BUY LIMIT' : 'SELL LIMIT'}</small><span class="px">${N(s.k.active.plan.entry, d)}</span></div><div><small>STOP LOSS</small><span class="down">${N(s.k.active.plan.sl, d)}</span></div><div><small>TAKE PROFIT 1:${s.k.active.plan.rr}</small><span class="up">${N(s.k.active.plan.tp, d)}</span></div></div>` : '';
-  h += `<div class="pills">${['m5', 'h1', 'h4'].map(x => `<button data-tf="${x}" class="${x === tf ? 'on' : ''}">${x.toUpperCase()}</button>`).join('')}</div>
+  h += `<div class="pills">${['m5', 'h1', 'h4'].map(x => `<button data-tf="${x}" class="${x === tf ? 'on' : ''}">${x.toUpperCase()}</button>`).join('')}<span class="zbtns"><button data-z="out" aria-label="Zoom out">&minus;</button><button data-z="in" aria-label="Zoom in">+</button><button data-z="reset" aria-label="Reset zoom">&#8634;</button></span></div>
     <canvas id="chart"></canvas><div class="small"><span class="livedot"></span>LIVE &middot; updated <span id="lvUp">${T(s.updated)}</span></div>` + plan +
     `<details class="more"${wasOpen ? ' open' : ''}><summary>Full details</summary><div class="small">${done} of 4 steps cleared. ${nextWp ? `Next: <span class="px">${nextWp.k}</span> &middot; ${esc(nextWp.text)}` : 'All steps cleared.'}</div><div class="rts">${stp}</div>` + cards(s, d) + `</details>` +
     `<h3>Alerts for this symbol</h3>` + symAlerts(alerts) +
@@ -139,7 +139,8 @@ function drawSymbol(v, alerts) {
   view.innerHTML = h;
   document.getElementById('back').onclick = goBack;
   const redraw = () => chart(document.getElementById('chart'), s, tf, v.short);
-  view.querySelectorAll('.pills button').forEach(b => b.onclick = () => { tf = b.dataset.tf; drawSymbol(v, alerts); });
+  view.querySelectorAll('.pills button[data-tf]').forEach(b => b.onclick = () => { tf = b.dataset.tf; drawSymbol(v, alerts); });
+  view.querySelectorAll('.pills button[data-z]').forEach(b => b.onclick = () => { const cv = document.getElementById('chart'); if (b.dataset.z === 'reset') zoomReset(cv); else zoomBy(cv, b.dataset.z === 'in' ? 1 / 1.3 : 1.3); });
   view.querySelectorAll('.snav button').forEach(b => b.onclick = () => { symConcept = b.dataset.sc; drawSymbol(v, alerts); });
   view.querySelectorAll('.ksub button').forEach(b => b.onclick = () => { kSub = b.dataset.ks; drawSymbol(v, alerts); });
   document.getElementById('mute').onclick = async () => {
@@ -191,13 +192,59 @@ const SHOW = {
   h1: o => o.grp === 'o' || o.grp === 'k' || o.label === 'QML',
   m5: o => o.grp === 'k' || o.tone === 'adv' || o.tone === 'adv2',
 };
+// ---- zoom and pan. Per timeframe: n = candles on screen, off = candles hidden on the right (0 = the live edge). Kept across the 3 s refreshes.
+const ZOOM_DEF = 80, ZOOM_MIN = 12;
+let ZOOM = {};
+const zoomOf = tf => ZOOM[tf] || (ZOOM[tf] = { n: ZOOM_DEF, off: 0 });
+function zoomSet(tf, total, n, off) {
+  const z = zoomOf(tf); n = Math.round(Math.max(Math.min(ZOOM_MIN, total), Math.min(total, n)));
+  z.n = n; z.off = Math.round(Math.max(0, Math.min(total - n, off)));
+}
+// scale the number of visible candles by `k` (k < 1 zooms in), keeping the candle at screen fraction `f` (0..1) where it is
+function zoomBy(cv, k, f = 1) {
+  const c = cv._ctx; if (!c) return; const total = (c.s.candles[c.tf] || []).length, z = zoomOf(c.tf);
+  const idx = total - z.n - z.off + f * z.n, n = z.n * k;
+  zoomSet(c.tf, total, n, total - n - (idx - f * n)); chart(cv, c.s, c.tf, c.name);
+}
+function panBy(cv, dCandles) {
+  const c = cv._ctx; if (!c) return; const total = (c.s.candles[c.tf] || []).length, z = zoomOf(c.tf);
+  zoomSet(c.tf, total, z.n, z.off + dCandles); chart(cv, c.s, c.tf, c.name);
+}
+function zoomReset(cv) { const c = cv._ctx; if (!c) return; ZOOM[c.tf] = { n: ZOOM_DEF, off: 0 }; chart(cv, c.s, c.tf, c.name); }
+function bindZoom(cv) {                                   // once per canvas element: wheel, drag to pan, pinch, double tap to reset
+  if (cv._zoomBound) return; cv._zoomBound = true; cv.style.touchAction = 'pan-y'; cv.style.cursor = 'grab';
+  const geo = () => cv._geom || { plotW: cv.clientWidth, step: 6 };
+  const frac = x => Math.max(0, Math.min(1, x / Math.max(1, geo().plotW)));
+  const pts = new Map(); let lastX = 0, pinch = 0, acc = 0, lastTap = 0;
+  cv.addEventListener('wheel', e => { e.preventDefault(); const r = cv.getBoundingClientRect(); zoomBy(cv, e.deltaY > 0 ? 1.15 : 1 / 1.15, frac(e.clientX - r.left)); }, { passive: false });
+  cv.addEventListener('pointerdown', e => {
+    pts.set(e.pointerId, { x: e.clientX, y: e.clientY }); try { cv.setPointerCapture(e.pointerId); } catch { /* ignore */ }
+    lastX = e.clientX; acc = 0; if (pts.size === 2) { const [a, b] = [...pts.values()]; pinch = Math.hypot(a.x - b.x, a.y - b.y); }
+    const now = Date.now(); if (pts.size === 1 && now - lastTap < 300) zoomReset(cv); if (pts.size === 1) lastTap = now;
+  });
+  cv.addEventListener('pointermove', e => {
+    if (!pts.has(e.pointerId)) return; pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pts.size === 2) {                                   // pinch: fingers apart = zoom in
+      const [a, b] = [...pts.values()], d = Math.hypot(a.x - b.x, a.y - b.y), r = cv.getBoundingClientRect();
+      if (pinch > 0 && d > 0) zoomBy(cv, pinch / d, frac((a.x + b.x) / 2 - r.left)); pinch = d; return;
+    }
+    acc += lastX - e.clientX; lastX = e.clientX;            // drag right = look at older candles
+    const stepPx = geo().step || 6, whole = Math.trunc(-acc / stepPx);
+    if (whole) { acc += whole * stepPx; panBy(cv, whole); }
+  });
+  const up = e => { pts.delete(e.pointerId); pinch = 0; acc = 0; };
+  cv.addEventListener('pointerup', up); cv.addEventListener('pointercancel', up); cv.addEventListener('pointerleave', up);
+}
 function chart(cv, s, tf, name) {
   const W = cv.clientWidth, wide = W >= 600;                                        // desktop: bigger text and a taller chart
   const dpr = Math.max(window.devicePixelRatio || 1, 2), Hh = wide ? 440 : 340;   // always draw at 2x or more, so a normal desktop screen is as sharp as a phone
   const FS = wide ? 13 : 11, MONO = '"JetBrains Mono", ui-monospace, monospace';
   cv.style.height = Hh + 'px'; cv.width = W * dpr; cv.height = Hh * dpr;
   const g = cv.getContext('2d'); g.scale(dpr, dpr);
-  const cs = (s.candles[tf] || []).slice(-80); if (!cs.length) return;
+  const all = s.candles[tf] || []; if (!all.length) return;
+  cv._ctx = { s, tf, name }; bindZoom(cv);
+  const zm = zoomOf(tf); zoomSet(tf, all.length, zm.n, zm.off);                 // clamp to what exists
+  const cs = all.slice(Math.max(0, all.length - zm.n - zm.off), all.length - zm.off);
   let lo = Math.min(...cs.map(c => c[3])), hi = Math.max(...cs.map(c => c[2]));
   const shown = (s.overlays || []).filter(SHOW[tf] || (() => true));
   const span = hi - lo || 1, ov = shown.filter(o => o.type === 'box' ? (o.hi >= lo - span * .3 && o.lo <= hi + span * .3)
@@ -295,6 +342,7 @@ function chart(cv, s, tf, name) {
     g.fillStyle = l.col; g.globalAlpha = .95; g.beginPath(); g.roundRect ? g.roundRect(r.x, r.y, r.w, r.h, 3) : g.rect(r.x, r.y, r.w, r.h); g.fill(); g.globalAlpha = 1;
     g.fillStyle = ['#8DC3FF', '#E3C16A', '#5CC8E6', '#E58FD0', '#8A94A6'].includes(l.col) ? '#10150C' : '#F4F2E2'; g.textBaseline = 'middle'; g.fillText(l.text, r.x + 5, r.y + r.h / 2 + .5); g.textBaseline = 'alphabetic';
   });
+  cv._geom = { plotW, step };
   return { toPrice: y => lo + (Hh - 14 - y) / (Hh - 14 - TOP) * (hi - lo), xOf: X, step, lo, hi };
 }
 
