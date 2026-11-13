@@ -496,7 +496,7 @@ export function evaluate(h4Live, h1Live, m5, p = defaultParams, digits = 3) {
       events.push(ev('O', poi.role, poi.dir, poi.bos_t + H1, H1, `O: new ${poi.role} POI (${poi.dir === 1 ? 'bullish' : 'bearish'})`,
         `POI ${f(poi.lo)} to ${f(poi.hi)} (order block body). Line at ${f(poi.line)}.`, `${poi.role}-${poi.bos_t}`, { lo: poi.lo, hi: poi.hi }));
     }
-    if (poi.role !== 'plq') overlays.push({ type: 'box', grp: 'o', lo: poi.lo, hi: poi.hi, t0: poi.ob_t, label: cap(poi.role), tone: 'o' });   // point of liquidity is not drawn
+    if (poi.role !== 'plq') overlays.push({ type: 'box', grp: 'o', lo: poi.lo, hi: poi.hi, t0: poi.ob_t, label: cap(poi.role), tone: poi.role === 'disruption' ? 'dis' : 'o' });   // point of liquidity is not drawn
   }
   if (of.invalidated) {
     const iv = of.invalidated;
