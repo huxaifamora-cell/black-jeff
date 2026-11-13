@@ -169,23 +169,40 @@ function poiOf(cs, b, role, p) {
 // has been invalidated, while the new one has no disruption yet (empty or one BOS, so it cannot be invalidated), a valid BOS the other
 // way takes over, so the order flow never sits waiting in a direction the market has already left.
 export function orderFlow(h1, trend, p) {
-  const res = { dir: trend, pois: [], pending: null, invalidated: null, remapped: false };
+  const res = { dir: trend, pois: [], pending: null, invalidated: null, remapped: false, recovered: null };
   if (trend === 0) return res;
   const valid = markValid(h1, findBos(h1, p.swingK)).filter((b) => b.valid);
   const at = new Map();
   for (const b of valid) { if (!at.has(b.idx)) at.set(b.idx, []); at.get(b.idx).push(b); }
   const dpCache = new Map(), disPoi = (b) => { if (!dpCache.has(b.idx)) dpCache.set(b.idx, poiOf(h1, b, 'disruption', p)); return dpCache.get(b.idx); };
-  let d = trend, list = [], last = null;              // current flow: its direction and its valid BOS (oldest first); last = latest invalidation
+  let d = trend, list = [], last = null, saved = null; // current flow: its direction and its valid BOS (oldest first); last = latest invalidation; saved = the flow that was invalidated
   for (let i = 0; i < h1.length; i++) {
     const c = h1[i];
+    // After the disruption POI is invalidated there are 3 outcomes:
+    //  1. pullback / reversal: the trend has changed and the new flow forms the other way (once it has both an inducement and a disruption it is final);
+    //  2. reclamation of the disruption: the trend is still valid and its order flow is kept;
+    //  3. break out: price returns to the trend side of the disruption POI and carries on: the order flow is kept, but the first valid key level
+    //     after it is not traded (we wait for the second one).
+    // 2 and 3 are only possible while the new flow has no disruption yet (list < 2), by an H1 body close back beyond the disruption POI.
+    if (saved !== null && list.length < 2) {
+      const dp = saved.poi;
+      if ((saved.dir === 1 && c.c > dp.hi) || (saved.dir === -1 && c.c < dp.lo)) {
+        const rc = reclamation(h1.slice(0, i + 1), dp, p).last_complete;
+        res.recovered = { kind: rc !== null && rc > saved.t ? 'reclamation' : 'breakout', dir: saved.dir, invalidated_t: saved.t, t: c.t, idx: i };
+        d = saved.dir; list = saved.list; last = saved.prev; saved = null;
+      }
+    }
     if (list.length >= 2) {                           // step 1: is the disruption POI of the flow broken by a body close?
       const dp = disPoi(list[list.length - 2]);
       if ((d === 1 && c.c < dp.lo) || (d === -1 && c.c > dp.hi)) {
+        saved = { dir: d, t: c.t, poi: dp, list: list.slice(), prev: last };   // prev = the invalidation before this one (if the flow was itself a flipped one)
         last = { dir: d, t: c.t, idx: i, poi: dp };
+        res.recovered = null;
         d = -d;                                       // step 2: the new flow starts here, in the opposite direction
         list = valid.filter((b) => b.dir === d && b.idx >= i - 3 && b.idx < i);
       }
     }
+    if (saved !== null && list.length >= 2) saved = null;   // the new order flow has both an inducement and a disruption: the reversal is final
     for (const b of at.get(i) || []) {
       if (b.dir === d) list.push(b);
       else if (last !== null && list.length < 2) { d = b.dir; list = [b]; }       // no disruption yet: follow the latest valid BOS
@@ -489,6 +506,7 @@ export function evaluate(h4Live, h1Live, m5, p = defaultParams, digits = 3) {
 
   // ---- O: order flow on H1
   state.o = of;
+  const rec = of.recovered;
   for (const poi of of.pois) {
     if (poi.role === 'inducement' || poi.role === 'disruption') {
       events.push(ev('O', poi.role, poi.dir, poi.bos_t + H1, H1, `O: new ${poi.role} POI (${poi.dir === 1 ? 'bullish' : 'bearish'})`,
@@ -501,7 +519,16 @@ export function evaluate(h4Live, h1Live, m5, p = defaultParams, digits = 3) {
   if (of.invalidated) {
     const iv = of.invalidated;
     events.push(ev('O', 'invalidated', iv.dir, iv.t + H1, H1, 'O: inducement and disruption invalidated',
-      `An H1 body closed beyond the disruption POI, so the old trend is invalidated. The trend has changed to ${iv.dir === 1 ? 'down' : 'up'}. A new inducement and disruption are mapped only once both have formed.`, `inv-${iv.t}`));
+      `An H1 body closed beyond the disruption POI, so the old trend is invalidated. The trend has changed to ${iv.dir === 1 ? 'down' : 'up'}. A new inducement and disruption are mapped only once both have formed. If price comes back past the disruption POI first (reclamation or break out), the old order flow is restored.`, `inv-${iv.t}`));
+  }
+
+  if (rec) {
+    const word = rec.kind === 'reclamation' ? 'reclaimed' : 'broke out';
+    events.push(ev('O', rec.kind, rec.dir, rec.t + H1, H1, `O: disruption ${rec.kind === 'reclamation' ? 'reclaimed' : 'break out'}`,
+      rec.kind === 'reclamation'
+        ? `The disruption POI was invalidated, then price ${word} it. The ${rec.dir === 1 ? 'up' : 'down'}trend is still valid and its order flow is kept.`
+        : `The disruption POI was invalidated, then price returned and ${word}. The ${rec.dir === 1 ? 'up' : 'down'}trend order flow is kept, but it is not proven to hold: skip the first valid key level and trade from the second.`,
+      `${rec.kind}-${rec.invalidated_t}-${rec.t}`));
   }
 
   // ---- R: reclamation on H1, at the inducement and disruption POIs (confirmation only)
@@ -522,7 +549,15 @@ export function evaluate(h4Live, h1Live, m5, p = defaultParams, digits = 3) {
   const livePx = m5.length ? m5[m5.length - 1].c : null;
   // No valid order flow (inducement AND disruption both mapped) = no valid key level, so nothing is drawn, alerted or marked ready.
   const hasFlow = ['inducement', 'disruption'].every((r) => of.pois.some((x) => x.role === r));
-  const valid = !hasFlow ? [] : vk.filter((k) => k.status === 'valid' && (!p.klWithBias || (ms.trend !== 0 && k.dir === ms.trend)) && klFitsOrderFlow(k, of, livePx));
+  let valid = !hasFlow ? [] : vk.filter((k) => k.status === 'valid' && (!p.klWithBias || (ms.trend !== 0 && k.dir === ms.trend)) && klFitsOrderFlow(k, of, livePx));
+  // Break out (disruption invalidated, then price returned and carried on): the trend is not proven yet, so the FIRST valid key level after
+  // the return is not traded. Only the second valid key level (and later ones) counts.
+  if (rec && rec.kind === 'breakout') {
+    const after = valid.filter((k) => k.t_valid > rec.t).sort((a, b) => a.t_valid - b.t_valid);
+    rec.first_kl_t = after.length ? after[0].t_valid : null;
+    rec.waiting = after.length < 2;
+    valid = after.slice(1);
+  }
   const kState = { active: null, pending: [] };      // RKL/SKL (levels not yet valid) are not shown or alerted
   state.k = kState;
   if (valid.length) {
