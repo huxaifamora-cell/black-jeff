@@ -155,7 +155,7 @@ export function poiFromOb(cs, j, d, p) {
 function poiOf(cs, b, role, p) {
   const j = orderBlock(cs, b, p);
   const [lo, hi] = poiFromOb(cs, j, b.dir, p);
-  return { role, dir: b.dir, lo, hi, line: b.tip_price, bos_t: b.t, bos_idx: b.idx, ob_t: cs[j].t };
+  return { role, dir: b.dir, lo, hi, line: b.tip_price, bos_t: b.t, bos_idx: b.idx, ob_t: cs[j].t, bos_level: b.level, broken_t: cs[b.broken_idx].t };
 }
 
 // Order flow is read in two steps, walking the H1 candles in time order.
@@ -496,6 +496,8 @@ export function evaluate(h4Live, h1Live, m5, p = defaultParams, digits = 3) {
       events.push(ev('O', poi.role, poi.dir, poi.bos_t + H1, H1, `O: new ${poi.role} POI (${poi.dir === 1 ? 'bullish' : 'bearish'})`,
         `POI ${f(poi.lo)} to ${f(poi.hi)} (order block body). Line at ${f(poi.line)}.`, `${poi.role}-${poi.bos_t}`, { lo: poi.lo, hi: poi.hi }));
     }
+    // H1 chart: dotted grey horizontal line at the level the inducement / disruption BOS broke, labelled BOS
+    if (poi.role === 'inducement' || poi.role === 'disruption') overlays.push({ type: 'line', tf: 'h1', grp: 'o', y: poi.bos_level, t0: poi.broken_t, label: 'BOS', tone: 'bos', dotted: true });
     if (poi.role !== 'plq') overlays.push({ type: 'box', grp: 'o', lo: poi.lo, hi: poi.hi, t0: poi.ob_t, label: cap(poi.role), tone: poi.role === 'disruption' ? 'dis' : 'o' });   // point of liquidity is not drawn
   }
   if (of.invalidated) {
