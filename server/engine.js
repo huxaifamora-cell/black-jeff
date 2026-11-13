@@ -172,7 +172,7 @@ function poiOf(cs, b, role, p) {
 // the order flow is mapped again in the new direction.
 export function orderFlow(h1, trend, p) {
   const bos = findBos(h1, p.swingK);
-  const res = { dir: trend, pois: [], invalidated: null, remapped: false };
+  const res = { dir: trend, pois: [], pending: null, invalidated: null, remapped: false };
   if (trend === 0) return res;
   let d = trend, minIdx = -1;
   // Each time the disruption POI of the direction being mapped is broken by an H1 body, the order flow flips and is mapped again the other way.
@@ -183,7 +183,10 @@ export function orderFlow(h1, trend, p) {
     const ind = mine[mine.length - 1];
     const dis = mine.length >= 2 ? mine[mine.length - 2] : null;
     const plq = mine.length >= 3 ? mine.slice(-4, -2) : [];
-    if (dis && attempt < 7) {
+    // A valid order flow needs BOTH an inducement and a disruption. With only one BOS in this direction the disruption has not formed
+    // yet, so nothing is marked: no POI, no alert, no reclamation. The lone BOS is kept in `pending` (never drawn) for bookkeeping only.
+    if (!dis) { res.dir = d; res.pois = []; res.pending = { dir: ind.dir, bos_t: ind.t, bos_idx: ind.idx }; return res; }
+    if (attempt < 7) {
       const dp = poiOf(h1, dis, 'disruption', p);
       let hit = null;                                  // checked afresh on every pass: only THIS pass's disruption counts
       for (let j = dis.idx + 1; j < h1.length; j++) {
@@ -192,8 +195,7 @@ export function orderFlow(h1, trend, p) {
       }
       if (hit) { res.invalidated = hit; minIdx = hit.idx - 3; d = -d; res.remapped = true; continue; }
     }
-    const pois = [poiOf(h1, ind, 'inducement', p)];
-    if (dis) pois.push(poiOf(h1, dis, 'disruption', p));
+    const pois = [poiOf(h1, ind, 'inducement', p), poiOf(h1, dis, 'disruption', p)];
     for (const b of plq) pois.push(poiOf(h1, b, 'plq', p));
     res.dir = d; res.pois = pois;
     return res;
@@ -324,6 +326,7 @@ export function tradePlan(lo, hi, d, atr5, p) {
 // Each one is a POI (order block box) plus its horizontal line.
 export function liquidityPoints(h1, of, p) {
   const skip = new Set(((of && of.pois) || []).filter((x) => x.role === 'inducement' || x.role === 'disruption').map((x) => x.bos_idx));
+  if (of && of.pending) skip.add(of.pending.bos_idx);     // a BOS waiting to become the inducement is not a point of liquidity yet
   const out = [];
   for (const b of findBos(h1, p.swingK)) {
     if (skip.has(b.idx)) continue;
@@ -480,7 +483,7 @@ export function evaluate(h4, h1All, m5, p = defaultParams, digits = 3) {
   if (of.invalidated) {
     const iv = of.invalidated;
     events.push(ev('O', 'invalidated', iv.dir, iv.t + H1, H1, 'O: inducement and disruption invalidated',
-      `An H1 body closed beyond the disruption POI, so the old trend is invalidated. The trend has changed to ${iv.dir === 1 ? 'down' : 'up'}. New inducement and disruption are mapped.`, `inv-${iv.t}`));
+      `An H1 body closed beyond the disruption POI, so the old trend is invalidated. The trend has changed to ${iv.dir === 1 ? 'down' : 'up'}. A new inducement and disruption are mapped only once both have formed.`, `inv-${iv.t}`));
   }
 
   // ---- R: reclamation on H1, at the inducement and disruption POIs (confirmation only)
