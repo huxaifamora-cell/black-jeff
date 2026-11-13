@@ -152,7 +152,7 @@ export function createApp({ cfg = loadConfig(), store, svc, deriv, bot, log = co
     const style = alert.dir === 1 && !CHAT_SKIP_KINDS.has(alert.kind) ? 'success' : alert.dir === -1 && !CHAT_SKIP_KINDS.has(alert.kind) ? 'danger' : undefined;
     const btn = (signed) => {
       const param = alertParam(alert, cfg.botToken, signed);
-      const callback = signed ? { text: 'My XP status', data: `xp_${alertId(alert)}` } : undefined;   // channel posts only: a private pop-up
+      const callback = signed ? { text: 'XP status', data: `xp_${alertId(alert)}` } : undefined;   // channel posts only: a private pop-up
       if (cfg.miniAppLink) return { text: label, url: `${cfg.miniAppLink}?startapp=${param}`, plain: true, style, callback };   // t.me link: works in groups and channels
       return cfg.webappUrl ? { text: label, url: `${cfg.webappUrl}/?p=${param}`, plain: signed, style, callback } : null;
     };
