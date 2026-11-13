@@ -184,7 +184,7 @@ function cards(s, d) {
   return h;
 }
 // Zone colours avoid the candle colours (green up, red-orange down) and the cyan live-price line.
-const TONE = { s: '#8A94A6', o: '#8E6BFF', k: '#8DC3FF', qml: '#E58FD0', pending: '#5d6875', dead: '#6B7480', adv: '#E3C16A', adv2: '#4A7CFF', dis: '#F5D547' };   // dis = disruption POI, yellowish
+const TONE = { s: '#8A94A6', o: '#8E6BFF', k: '#8DC3FF', qml: '#E58FD0', pending: '#5d6875', dead: '#6B7480', adv: '#E3C16A', adv2: '#4A7CFF', dis: '#F5D547', bos: '#9AA3B2' };   // dis = disruption POI, yellowish
 // Which overlays each timeframe shows (everything else is hidden, not deleted: the engine still computes and alerts on it).
 //  H4: BOS lines.  H1: inducement, disruption, key level POI, QML POI.  M5: key level POI with its 50% POI, and the bjeff zone.
 const SHOW = {
@@ -281,7 +281,7 @@ function chart(cv, s, tf, name) {
       else { g.fillStyle = col + '40'; g.fillRect(x, Y(o.hi), x1 - x, Y(o.lo) - Y(o.hi)); g.strokeStyle = col; g.strokeRect(x, Y(o.hi), x1 - x, Y(o.lo) - Y(o.hi)); }
       labels.push({ text: o.label, col, kind: 'box', x: Math.max(2, x + 2), bx: x, top: Y(o.hi), bot: Y(o.lo) });
     } else {
-      const x = X(o.t0); g.strokeStyle = col; g.setLineDash([4, 3]); g.beginPath(); g.moveTo(x, Y(o.y)); g.lineTo(W, Y(o.y)); g.stroke(); g.setLineDash([]);
+      const x = X(o.t0); g.strokeStyle = col; g.setLineDash(o.dotted ? [1.5, 4] : [4, 3]); g.beginPath(); g.moveTo(x, Y(o.y)); g.lineTo(W, Y(o.y)); g.stroke(); g.setLineDash([]);
       labels.push({ text: o.label, col, kind: 'line', y: Y(o.y) - LH / 2 });
     }
   });
