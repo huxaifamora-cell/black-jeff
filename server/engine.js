@@ -102,10 +102,14 @@ export function hasSlq(cs, b) {
 }
 
 export function markValid(cs, bos) {
+  let prev = null;
   for (const b of bos) {
     b.slq = hasSlq(cs, b);
-    // a BOS is valid only with structural liquidity (SLQ); 2 or more BOS without SLQ no longer count as the liquidity
     b.valid = b.slq;
+    // Rule: if the current BOS has no SLQ, go back to the BOS before it. When that previous BOS (same direction) has no SLQ either
+    // (two BOS in a row without SLQ), the previous one becomes a valid BOS without SLQ. The current one stays invalid until the next BOS shows up.
+    if (!b.slq && prev !== null && prev.dir === b.dir && !prev.slq) prev.valid = true;
+    prev = b;
   }
   return bos;
 }
