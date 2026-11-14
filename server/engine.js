@@ -245,9 +245,13 @@ export function orderFlow(h1, trend, p) {
       if (b.dir === d) {
         // Order of the pair: in an uptrend the inducement is above the disruption, in a downtrend it is below. A new BOS whose POI is at or
         // beyond the current disruption POI (price only wicked through the disruption, no body close) is skipped as an inducement; the current pair is kept.
-        if (list.length >= 2) {
-          const dp = disPoi(list[list.length - 2]), np = poiOf(h1, b, 'inducement', p);
-          if (d === 1 ? np.lo <= dp.hi : np.hi >= dp.lo) continue;
+        if (list.length >= 1) {
+          const np = poiOf(h1, b, 'inducement', p), ip = poiOf(h1, list[list.length - 1], 'disruption', p), mid = (q) => (q.lo + q.hi) / 2;
+          if (d === 1 ? mid(np) <= mid(ip) : mid(np) >= mid(ip)) continue;   // the new inducement must sit above (uptrend) / below (downtrend) the disruption it would pair with
+          if (list.length >= 2) {
+            const dp = disPoi(list[list.length - 2]);
+            if (d === 1 ? np.lo <= dp.hi : np.hi >= dp.lo) continue;
+          }
         }
         list.push(b);
         if (pb !== null && !pb.resume_t) pb.resume_t = c.t;   // the first valid BOS in the trend direction after the pullback = the trend resumes
