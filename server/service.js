@@ -37,10 +37,10 @@ export function statusOf(a) {
   }
 }
 
-// Telegram text, "signal card" style: alert type, symbol, H4 bias, status, timeframe. Nothing else.
+// Telegram text, "signal card" style: alert type, symbol, H1 trend, status, timeframe. Nothing else.
 //   🟢 <b>BUY SETUP · KEY LEVEL</b>
 //   Volatility 75 Index
-//   ┃ H4 bias    Bullish          (a Telegram blockquote, labels and values in monospace)
+//   ┃ H1 trend   Bullish          (a Telegram blockquote, labels and values in monospace)
 //   ┃ Status     Valid RBS (buy setup)
 //   ┃ Timeframe  H1
 // The dot matches the button colour: green buy / bullish, red sell / bearish, white for invalidations and alerts with no direction.
@@ -56,7 +56,7 @@ export const formatAlert = (a) => {
     : dir === 1 ? `🟢 <b>${setup ? 'BUY SETUP' : 'BULLISH'} · ${type}</b>`
     : dir === -1 ? `🔴 <b>${setup ? 'SELL SETUP' : 'BEARISH'} · ${type}</b>`
     : `⚪ <b>${type}</b>`;
-  const rows = [['H4 bias', BIAS_NAME[p.bias] || 'None yet'], ['Status', esc(statusOf(a))], ['Timeframe', TF_NAME[p.tf] || '-']];
+  const rows = [['H1 trend', BIAS_NAME[p.bias] || 'None yet'], ['Status', esc(statusOf(a))], ['Timeframe', TF_NAME[p.tf] || '-']];
   const card = rows.map(([k, v]) => `${k.padEnd(11)}${v}`).join('\n');
   return `${head}\n${esc(a.symbol_name)}\n\n<blockquote><code>${card}</code></blockquote>`;
 };
@@ -69,7 +69,7 @@ export function stepsOf(st) {
   const a = st.k && st.k.active, valid = !!(a && !a.invalidated);
   const steps = [
     S && S.trend_invalidated ? step('S', 'now', `${S.trend === 1 ? 'Uptrend' : 'Downtrend'}: old trend invalidated (disruption POI broken)`)
-      : S && S.valid ? step('S', 'done', `${S.trend === 1 ? 'Uptrend' : 'Downtrend'} valid on H4`) : step('S', 'todo', 'No valid structure yet'),
+      : S && S.valid ? step('S', 'done', `${S.trend === 1 ? 'Uptrend' : 'Downtrend'} valid on H1`) : step('S', 'todo', 'No valid structure yet'),
     pois.length ? step('O', 'done', 'Inducement and disruption mapped') : step('O', 'todo', 'Nothing mapped yet'),
     rs.some((r) => r.state > 0) ? step('R', 'now', `In progress: step ${Math.max(...rs.map((r) => r.state))} of 5 on H1`)
       : rs.some((r) => r.last_complete) ? step('R', 'done', 'Reclamation complete') : step('R', 'todo', 'Waiting for a reclamation'),

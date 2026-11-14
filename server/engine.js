@@ -19,7 +19,7 @@ export const defaultParams = {
   plqNearAtr: 0.5,      // QML reversal is "close to" a point of liquidity when it is within this x H1 ATR of it
   liveM5: true,         // the M5 candle still forming is used (live price)
   liveHtf: true,        // H1 and H4 charts show the forming candle too; the H1 / H4 rules still only use closed candles
-  klWithBias: true,     // trend continuation: only key levels in the direction of the H4 bias count (RBS in a bullish bias, SBR in a bearish bias). QML is the exception.
+  klWithBias: true,     // trend continuation: only key levels in the direction of the internal (H1) order flow count (RBS when it is bullish, SBR when it is bearish). QML is the exception.
   maxScanH1: 4320,      // H1 candles scanned for reclamations (after the inducement / disruption BOS); 6 months of H1
 };
 
@@ -156,59 +156,87 @@ function poiOf(cs, b, role, p) {
   return { role, dir: b.dir, lo, hi, line: b.tip_price, bos_t: b.t, bos_idx: b.idx, ob_t: cs[j].t, bos_level: b.level, broken_t: cs[b.broken_idx].t };
 }
 
-// Order flow is read in two steps, walking the H1 candles in time order.
+// Internal order flow (H1) is the trend. It is read in two steps, walking the H1 candles in time order.
 //  1. Find the PREVIOUS INVALIDATED order flow. A flow (direction d) has an inducement and a disruption; when an H1 body closes beyond the
-//     disruption POI that flow is dead, the trend changes direction, and everything before that point is history.
-//  2. Look for the NEW order flow only among the breaks of structure that come after that invalidation. Only VALID breaks of structure
-//     count (structural liquidity, same rule as H4 via markValid), so a small break with no liquidity behind it never becomes an
-//     inducement and the latest BOS is not automatically the inducement.
+//     disruption POI that flow is broken (a pullback at the disruption) and the NEW order flow is mapped the other way straight away.
+//  2. Look for the NEW order flow only among the breaks of structure that come after that break. Only VALID breaks of structure
+//     count (structural liquidity, via markValid), so a small break with no liquidity behind it never becomes an inducement.
 // Inducement = the latest valid BOS of the flow, disruption = the valid BOS before it, the older ones are points of liquidity.
 // A flow needs BOTH an inducement and a disruption; with a single valid BOS nothing is marked (it is kept in `pending`, never drawn).
-// With no invalidation in the window, the flow runs in the H4 direction from the start of the window.
-// The order flow keeps up with the latest breaks of structure: the inducement is always the newest valid BOS of the flow. And once a flow
-// has been invalidated, while the new one has no disruption yet (empty or one BOS, so it cannot be invalidated), a valid BOS the other
-// way takes over, so the order flow never sits waiting in a direction the market has already left.
+// The flow is seeded from the first valid H1 BOS in the window (or from `trend` when a direction is passed in, as the tests do).
+//
+// After the disruption POI is broken the flip is NOT official yet. Whichever happens first:
+//  1. the next point of liquidity (the older BOS POI beyond the disruption) is invalidated by a WICK: the new trend is official;
+//  2. an H1 body closes back beyond the disruption POI: the old flow is restored, as a reclamation (when a reclamation of that POI completed
+//     since the break) or as a break out (the first valid key level after it is not traded);
+// While waiting, the new order flow is mapped in the other direction (it can also be restored if 2 happens). When there is no point of
+// liquidity beyond the disruption to reach, the flip becomes official once the new flow has both an inducement and a disruption.
+//
+// Pullback at the inducement: price comes back to the inducement POI. It never changes the trend. It has resumed once a valid BOS forms in the
+// trend direction (`pullback.resume_t`); trading then starts from the second valid key level after that (the first one is not traded).
 export function orderFlow(h1, trend, p) {
-  const res = { dir: trend, pois: [], pending: null, invalidated: null, remapped: false, recovered: null };
+  const res = { dir: trend || 0, pois: [], pending: null, invalidated: null, remapped: false, recovered: null, pending_flip: null, official: null, pullback: null };
   if (trend === 0) return res;
   const valid = markValid(h1, findBos(h1, p.swingK)).filter((b) => b.valid);
+  if (trend == null) { if (!valid.length) return res; trend = valid[0].dir; res.dir = trend; }
   const at = new Map();
   for (const b of valid) { if (!at.has(b.idx)) at.set(b.idx, []); at.get(b.idx).push(b); }
   const dpCache = new Map(), disPoi = (b) => { if (!dpCache.has(b.idx)) dpCache.set(b.idx, poiOf(h1, b, 'disruption', p)); return dpCache.get(b.idx); };
-  let d = trend, list = [], last = null, saved = null; // current flow: its direction and its valid BOS (oldest first); last = latest invalidation; saved = the flow that was invalidated
+  // the point of liquidity a pullback from the disruption has to reach: the nearest older BOS POI that lies beyond the disruption POI
+  const nextPlq = (lst, dp, dir) => {
+    for (let j = lst.length - 3; j >= 0; j--) {
+      const q = poiOf(h1, lst[j], 'plq', p);
+      if (dir === 1 ? q.lo < dp.lo : q.hi > dp.hi) return q;
+    }
+    return null;
+  };
+  let d = trend, list = [], last = null, saved = null, pb = null; // current flow: its direction and its valid BOS (oldest first); last = latest invalidation; saved = the flow that was broken and is not final yet; pb = pullback at the inducement
   for (let i = 0; i < h1.length; i++) {
     const c = h1[i];
-    // After the disruption POI is invalidated there are 3 outcomes:
-    //  1. pullback / reversal: the trend has changed and the new flow forms the other way (once it has both an inducement and a disruption it is final);
-    //  2. reclamation of the disruption: the trend is still valid and its order flow is kept;
-    //  3. break out: price returns to the trend side of the disruption POI and carries on: the order flow is kept, but the first valid key level
-    //     after it is not traded (we wait for the second one).
-    // 2 and 3 are only possible while the new flow has no disruption yet (list < 2), by an H1 body close back beyond the disruption POI.
-    if (saved !== null && list.length < 2) {
+    // a body close back beyond the disruption POI (trend side) before the flip is official: the old order flow is restored
+    if (saved !== null) {
       const dp = saved.poi;
       if ((saved.dir === 1 && c.c > dp.hi) || (saved.dir === -1 && c.c < dp.lo)) {
         const rc = reclamation(h1.slice(0, i + 1), dp, p).last_complete;
         res.recovered = { kind: rc !== null && rc > saved.t ? 'reclamation' : 'breakout', dir: saved.dir, invalidated_t: saved.t, t: c.t, idx: i };
-        d = saved.dir; list = saved.list; last = saved.prev; saved = null;
+        d = saved.dir; list = saved.list; last = saved.prev; saved = null; pb = null;
       }
     }
-    if (list.length >= 2) {                           // step 1: is the disruption POI of the flow broken by a body close?
+    if (saved === null && list.length >= 2) {         // is the disruption POI of the flow broken by a body close?
       const dp = disPoi(list[list.length - 2]);
       if ((d === 1 && c.c < dp.lo) || (d === -1 && c.c > dp.hi)) {
-        saved = { dir: d, t: c.t, poi: dp, list: list.slice(), prev: last };   // prev = the invalidation before this one (if the flow was itself a flipped one)
+        saved = { dir: d, t: c.t, poi: dp, list: list.slice(), prev: last, plq: nextPlq(list, dp, d) };   // prev = the invalidation before this one (if the flow was itself a flipped one)
         last = { dir: d, t: c.t, idx: i, poi: dp };
-        res.recovered = null;
-        d = -d;                                       // step 2: the new flow starts here, in the opposite direction
+        res.recovered = null; res.official = null; pb = null;
+        d = -d;                                       // the new flow is mapped the other way, but it is not official yet
         list = valid.filter((b) => b.dir === d && b.idx >= i - 3 && b.idx < i);
       }
     }
-    if (saved !== null && list.length >= 2) saved = null;   // the new order flow has both an inducement and a disruption: the reversal is final
+    if (saved !== null) {                             // the flip becomes official when the next point of liquidity is invalidated by a wick
+      const q = saved.plq;
+      if (q ? (saved.dir === 1 ? c.l < q.lo : c.h > q.hi) : list.length >= 2) {
+        res.official = { dir: d, invalidated_t: saved.t, t: c.t, idx: i, plq: q ? { lo: q.lo, hi: q.hi } : null };
+        saved = null;
+      }
+    }
+    // pullback at the inducement: price comes back into the inducement POI (it does not change the trend direction)
+    if (saved === null && list.length >= 2 && (pb === null || pb.resume_t)) {
+      const ind = list[list.length - 1];
+      if (i > ind.idx) {
+        const q = poiOf(h1, ind, 'inducement', p);
+        if (d === 1 ? c.l <= q.hi : c.h >= q.lo) pb = { dir: d, t: c.t, idx: i, resume_t: null };
+      }
+    }
     for (const b of at.get(i) || []) {
-      if (b.dir === d) list.push(b);
-      else if (last !== null && list.length < 2) { d = b.dir; list = [b]; }       // no disruption yet: follow the latest valid BOS
+      if (b.dir === d) {
+        list.push(b);
+        if (pb !== null && !pb.resume_t) pb.resume_t = c.t;   // the first valid BOS in the trend direction after the pullback = the trend resumes
+      } else if (last !== null && saved === null && list.length < 2) { d = b.dir; list = [b]; pb = null; }   // flipped for good, no disruption yet: follow the latest valid BOS
     }
   }
   res.dir = d; res.invalidated = last; res.remapped = last !== null;
+  if (saved !== null) res.pending_flip = { old_dir: saved.dir, t: saved.t, plq: saved.plq ? { lo: saved.plq.lo, hi: saved.plq.hi } : null };
+  res.pullback = pb;
   if (list.length === 1) { res.pending = { dir: d, bos_t: list[0].t, bos_idx: list[0].idx }; return res; }
   if (list.length < 2) return res;
   const ind = list[list.length - 1], dis = list[list.length - 2];
@@ -479,29 +507,28 @@ export function evaluate(h4Live, h1Live, m5, p = defaultParams, digits = 3) {
   const m5c = closedOnly(m5);                  // closed M5 candles: confirmation patterns wait for the candle to close
   const atr1 = atr(h1, p.atrLen), atr5 = atrM5(m5, p);
 
-  // ---- S: market structure on H4
-  const ms = marketStructure(h4, p), anc = ms.anchor;
-  // The old trend is also invalidated when its disruption POI is invalidated (an H1 body closes beyond it).
-  const of = orderFlow(h1, ms.trend, p);
-  const flipped = ms.trend !== 0 && of.dir !== ms.trend;      // order flow ended up against the H4 bias (it can flip back to the bias direction)
-  const trend = flipped ? of.dir : ms.trend;
-  // H4 directional bias: read from the H4 market structure ONLY (latest valid BOS), so it does not change when an H1 disruption POI breaks.
-  // bias_shift = a newer H4 BOS the other way exists but is not valid yet (the bias may be about to change).
+  // ---- S: trend = internal order flow (H1). The H4 structure is only drawn on the H4 chart (neutral BOS lines); it is never shown as a bias.
+  const ms = marketStructure(h4, p);
+  const of = orderFlow(h1, null, p);
+  const trend = of.dir;
+  const sInd = of.pois.find((x) => x.role === 'inducement');
+  const pf = of.pending_flip;
   state.s = {
-    bias: ms.trend, bias_shift: ms.shift_pending, bias_t: anc ? anc.t : null, bias_level: anc ? anc.level : null,
-    trend, shift_pending: flipped ? false : ms.shift_pending, valid: anc !== null,
-    trend_invalidated: flipped ? { by: 'disruption', old_dir: ms.trend, t: of.invalidated.t + H1 } : null, anchor_t: anc ? anc.t : null, level: anc ? anc.level : null,
-    slq: anc ? anc.slq : null, swings: ms.swings,
+    bias: trend, bias_shift: false, bias_t: sInd ? sInd.bos_t : null, bias_level: sInd ? sInd.bos_level : null,
+    trend, shift_pending: false, valid: trend !== 0 && (of.pois.length > 0 || !!of.pending),
+    trend_invalidated: pf ? { by: 'disruption', old_dir: pf.old_dir, t: pf.t + H1, plq: pf.plq } : null,
+    official: of.official ? { t: of.official.t + H1, dir: of.official.dir } : null,
+    anchor_t: sInd ? sInd.bos_t : null, level: sInd ? sInd.bos_level : null, slq: sInd ? true : null,
+    swings: ms.swings,
     bos: ms.bos.map((b) => ({ dir: b.dir, t: b.t, level: b.level, valid: b.valid, slq: b.slq })),
   };
-  if (anc && !flipped) {
-    const how = 'liquidity (SLQ) + BOS';
-    events.push(ev('S', 'trend_valid', anc.dir, anc.t + H4, H4, `S: H4 ${anc.dir === 1 ? 'uptrend' : 'downtrend'} is valid`,
-      `Valid through ${how}. BOS broke ${f(anc.level)}. Look for ${side(anc.dir)} setups on H1.`, anc.t));
+  if (sInd && !pf) {
+    events.push(ev('S', 'trend_valid', trend, sInd.bos_t + H1, H1, `S: H1 ${trend === 1 ? 'uptrend' : 'downtrend'} is valid`,
+      `Internal order flow is ${trend === 1 ? 'bullish' : 'bearish'}: valid BOS (liquidity + BOS) broke ${f(sInd.bos_level)}. Look for ${side(trend)} setups on H1.`, sInd.bos_t));
   }
   for (const b of ms.valid_bos) {
     // the label carries the current H4 bias (not the direction of that single break)
-    overlays.push({ type: 'line', tf: 'h4', y: b.level, t0: h4[b.broken_idx].t, label: ms.trend === 1 ? 'BULLISH BOS' : ms.trend === -1 ? 'BEARISH BOS' : 'BOS', tone: 's' });
+    overlays.push({ type: 'line', tf: 'h4', y: b.level, t0: h4[b.broken_idx].t, label: 'BOS', tone: 's' });
   }
 
   // ---- O: order flow on H1
@@ -519,7 +546,12 @@ export function evaluate(h4Live, h1Live, m5, p = defaultParams, digits = 3) {
   if (of.invalidated) {
     const iv = of.invalidated;
     events.push(ev('O', 'invalidated', iv.dir, iv.t + H1, H1, 'O: inducement and disruption invalidated',
-      `An H1 body closed beyond the disruption POI, so the old trend is invalidated. The trend has changed to ${iv.dir === 1 ? 'down' : 'up'}. A new inducement and disruption are mapped only once both have formed. If price comes back past the disruption POI first (reclamation or break out), the old order flow is restored.`, `inv-${iv.t}`));
+      `An H1 body closed beyond the disruption POI (a pullback at the disruption). The new order flow is now mapped ${iv.dir === 1 ? 'down' : 'up'}. If price comes back past the disruption POI first (reclamation or break out), the old order flow is restored.`, `inv-${iv.t}`));
+  }
+  if (of.official) {
+    const ofc = of.official;
+    events.push(ev('O', 'official', ofc.dir, ofc.t + H1, H1, `O: new ${ofc.dir === 1 ? 'uptrend' : 'downtrend'} is official`,
+      `A wick invalidated the next point of liquidity${ofc.plq ? ` (POI ${f(ofc.plq.lo)} to ${f(ofc.plq.hi)})` : ''}, so the internal order flow flip is official.`, `official-${ofc.invalidated_t}-${ofc.t}`));
   }
 
   if (rec) {
@@ -545,17 +577,24 @@ export function evaluate(h4Live, h1Live, m5, p = defaultParams, digits = 3) {
 
   // ---- K: key levels on H1
   const vk = validateKls(h1, findKls(h1, p, atr1, h1.length), p);
-  // Trend continuation model: the key level must agree with the H4 bias (no bias = no key level). A QML is built from an invalidated key level and may go against it.
+  // Trend continuation model: the key level must agree with the internal (H1) order flow (no order flow = no key level). A QML is built from an invalidated key level and may go against it.
   const livePx = m5.length ? m5[m5.length - 1].c : null;
   // No valid order flow (inducement AND disruption both mapped) = no valid key level, so nothing is drawn, alerted or marked ready.
   const hasFlow = ['inducement', 'disruption'].every((r) => of.pois.some((x) => x.role === r));
-  let valid = !hasFlow ? [] : vk.filter((k) => k.status === 'valid' && (!p.klWithBias || (ms.trend !== 0 && k.dir === ms.trend)) && klFitsOrderFlow(k, of, livePx));
+  let valid = !hasFlow ? [] : vk.filter((k) => k.status === 'valid' && (!p.klWithBias || (of.dir !== 0 && k.dir === of.dir)) && klFitsOrderFlow(k, of, livePx));
   // Break out (disruption invalidated, then price returned and carried on): the trend is not proven yet, so the FIRST valid key level after
   // the return is not traded. Only the second valid key level (and later ones) counts.
   if (rec && rec.kind === 'breakout') {
     const after = valid.filter((k) => k.t_valid > rec.t).sort((a, b) => a.t_valid - b.t_valid);
     rec.first_kl_t = after.length ? after[0].t_valid : null;
     rec.waiting = after.length < 2;
+    valid = after.slice(1);
+  }
+  // Pullback at the inducement, then the trend resumes: the FIRST valid key level after the resume is not traded, trading starts from the second.
+  const pbk = of.pullback;
+  if (pbk && !rec) {
+    const after = pbk.resume_t ? valid.filter((k) => k.t_valid > pbk.resume_t).sort((a, b) => a.t_valid - b.t_valid) : [];
+    state.pullback = { t: pbk.t, resumed: !!pbk.resume_t, resume_t: pbk.resume_t, waiting: after.length < 2 };
     valid = after.slice(1);
   }
   const kState = { active: null, pending: [] };      // RKL/SKL (levels not yet valid) are not shown or alerted
