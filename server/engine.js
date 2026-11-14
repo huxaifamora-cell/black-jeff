@@ -173,6 +173,9 @@ function poiOf(cs, b, role, p) {
 //  2. Look for the NEW order flow only among the breaks of structure that come after that break. Only VALID breaks of structure
 //     count (structural liquidity, via markValid), so a small break with no liquidity behind it never becomes an inducement.
 // Inducement = the latest valid BOS of the flow, disruption = the valid BOS before it, the older ones are points of liquidity.
+// Only a pullback at the disruption (an H1 body closing beyond its POI) cancels a disruption; nothing else does (an opposite-direction rally in between does not).
+// Uptrend: the inducement POI is above the disruption POI. Downtrend: it is below. A new BOS that breaks this order is skipped as an inducement.
+// The POI of every inducement, disruption and point of liquidity sits at the BOS's point of liquidity: one band over A and B (see obPair).
 // A flow needs BOTH an inducement and a disruption; with a single valid BOS nothing is marked (it is kept in `pending`, never drawn).
 // The flow is seeded from the first valid H1 BOS in the window (or from `trend` when a direction is passed in, as the tests do).
 //
@@ -240,6 +243,12 @@ export function orderFlow(h1, trend, p) {
     }
     for (const b of at.get(i) || []) {
       if (b.dir === d) {
+        // Order of the pair: in an uptrend the inducement is above the disruption, in a downtrend it is below. A new BOS whose POI is at or
+        // beyond the current disruption POI (price only wicked through the disruption, no body close) is skipped as an inducement; the current pair is kept.
+        if (list.length >= 2) {
+          const dp = disPoi(list[list.length - 2]), np = poiOf(h1, b, 'inducement', p);
+          if (d === 1 ? np.lo <= dp.hi : np.hi >= dp.lo) continue;
+        }
         list.push(b);
         if (pb !== null && !pb.resume_t) pb.resume_t = c.t;   // the first valid BOS in the trend direction after the pullback = the trend resumes
       } else if (last !== null && saved === null && list.length < 2) { d = b.dir; list = [b]; pb = null; }   // flipped for good, no disruption yet: follow the latest valid BOS
