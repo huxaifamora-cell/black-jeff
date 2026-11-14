@@ -155,18 +155,18 @@ function box(b, d) { return `${P(b.lo, d)} to ${P(b.hi, d)}`; }
 function cards(s, d) {
   let h = '';
   const S = s.s;
-  h += `<div class="card"><h4>S &middot; Market structure (H4)</h4>` + (S ? (S.trend_invalidated
+  h += `<div class="card"><h4>S &middot; Trend (H1 order flow)</h4>` + (S ? (S.trend_invalidated
     ? `<p><b class="${S.trend === 1 ? 'up' : 'down'}">${S.trend === 1 ? 'Uptrend' : 'Downtrend'}</b> <span class="small">(old ${S.trend_invalidated.old_dir === 1 ? 'uptrend' : 'downtrend'} invalidated)</span></p>
-       <p class="small">An H1 body closed beyond the disruption POI ${T(S.trend_invalidated.t)}, so the old trend is over.</p>`
+       <p class="small">An H1 body closed beyond the disruption POI ${T(S.trend_invalidated.t)}. The new order flow is mapped. If price returns past the disruption POI first, the old order flow is restored.</p>`
     : S.valid
-    ? `<p><b class="${S.trend === 1 ? 'up' : 'down'}">${S.trend === 1 ? 'Uptrend' : 'Downtrend'} is valid</b></p>
-       <p class="small">Valid BOS ${T(S.anchor_t)} at ${P(S.level, d)}. Liquidity (SLQ) present.${S.shift_pending ? ' A newer BOS the other way is not valid yet.' : ''}</p>`
+    ? `<p><b class="${S.trend === 1 ? 'up' : 'down'}">${S.trend === 1 ? 'Uptrend' : 'Downtrend'} is valid</b>${S.official ? ' <span class="small">(official)</span>' : ''}</p>
+       <p class="small">${S.anchor_t ? `Valid BOS ${T(S.anchor_t)} at ${P(S.level, d)}. ` : ''}Liquidity (SLQ) present.</p>`
     : '<p class="mut">No valid structure yet.</p>') : '<p class="mut">No data.</p>') + '</div>';
   const O = s.o;
   h += `<div class="card"><h4>O &middot; Order flow (H1)</h4>` + (O && O.pois.some(p => p.role !== 'plq') ? O.pois.filter(p => p.role !== 'plq').map(p =>
     `<p><b>${p.role === 'plq' ? 'Point of liquidity' : p.role}</b> (${p.dir === 1 ? 'bullish' : 'bearish'}) POI ${box(p, d)}</p>`).join('')
     : '<p class="mut">Nothing mapped yet.</p>') +
-    (O && O.recovered ? `<p class="small">${O.recovered.kind === 'reclamation' ? 'The disruption was invalidated and then reclaimed: the trend and its order flow are kept.' : 'Break out: the disruption was invalidated, then price returned and carried on. Skip the first valid key level and trade from the second.' + (O.recovered.waiting ? ' <b>Waiting for the 2nd key level.</b>' : '')}</p>` : '') + (O && O.invalidated ? `<p class="down small">Inducement and disruption were invalidated ${T(O.invalidated.t)}; the trend changed direction and the order flow was re-mapped.</p>` : '') + '</div>';
+    (O && O.recovered ? `<p class="small">${O.recovered.kind === 'reclamation' ? 'The disruption was invalidated and then reclaimed: the trend and its order flow are kept.' : 'Break out: the disruption was invalidated, then price returned and carried on. Skip the first valid key level and trade from the second.' + (O.recovered.waiting ? ' <b>Waiting for the 2nd key level.</b>' : '')}</p>` : '') + (O && O.pending_flip ? `<p class="down small">The disruption POI was broken ${T(O.invalidated.t)}; the new order flow is mapped.</p>` : O && O.official ? `<p class="small">The flip is official: a wick invalidated the next point of liquidity ${T(O.official.t)}.</p>` : '') + (O && O.pullback ? `<p class="small">Pullback at the inducement ${T(O.pullback.t)}. ${O.pullback.resume_t ? 'The trend resumed. Skip the first valid key level and trade from the second.' + (s.pullback && s.pullback.waiting ? ' <b>Waiting for the 2nd key level.</b>' : '') : '<b>Waiting for the trend to resume.</b> The trend direction is unchanged.'}</p>` : '') + '</div>';
   h += `<div class="card"><h4>R &middot; Reclamation (H1)</h4>` + (s.r.some(r => r.role !== 'plq') ? s.r.filter(r => r.role !== 'plq').map(r =>
     `<p>${r.role === 'plq' ? 'Point of liquidity' : r.role}: ${r.state ? 'in progress, step ' + r.state + ' of 5' : 'waiting'}${r.last_complete ? ` <span class="small">last complete ${T(r.last_complete)}</span>` : ''}</p>`).join('')
     : '<p class="mut">No POI to watch.</p>') + '<p class="small">A reclamation is a confirmation, not an entry.</p></div>';
@@ -260,9 +260,8 @@ function chart(cv, s, tf, name) {
   // The right-hand space after the live candle is also where zone labels sit (inside their box), so it is as wide as the widest label.
   const gutter = Math.min(Math.ceil(W * .4), Math.max(priceTxt ? tw(priceTxt) : 0, ...lines.map(o => tw(o.label)), ...boxes.map(o => tw(o.label) + 6)) + 8);
   const titleTxt = (name ? name + '  ' : '') + tf.toUpperCase();
-  // every timeframe also shows the current H4 trend
-  // H4 bias comes from the H4 market structure alone (s.s.bias); '?' means a newer opposite H4 BOS is not valid yet
-  const tr = s.s ? (s.s.bias ?? s.s.trend) : 0, sh = !!(s.s && s.s.bias_shift), trTxt = (tr === 1 ? 'H4 \u25B2 BULLISH BIAS' : tr === -1 ? 'H4 \u25BC BEARISH BIAS' : 'H4 NO BIAS') + (tr && sh ? ' (SHIFT?)' : ''), trCol = tr === 1 ? '#5AFF64' : tr === -1 ? '#FF6955' : '#8A94A6';
+  // every timeframe shows the H1 trend (internal order flow); H4 is never shown as a bias
+  const tr = s.s ? (s.s.trend || 0) : 0, trTxt = tr === 1 ? 'H1 \u25B2 BULLISH' : tr === -1 ? 'H1 \u25BC BEARISH' : 'H1 NO TREND', trCol = tr === 1 ? '#5AFF64' : tr === -1 ? '#FF6955' : '#8A94A6';
   g.font = `700 ${FS + 1}px ${MONO}`; const titleW = Math.ceil(g.measureText(titleTxt).width) + 14, trW = Math.ceil(g.measureText(trTxt).width) + 14;
   g.font = `${FS}px ${MONO}`;
   const bandW = Math.max(40, W - 14 - titleW - trW), need = boxes.reduce((n, o) => n + tw(o.label) + 3, 0);

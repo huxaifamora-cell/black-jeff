@@ -19,7 +19,7 @@ function symMap(v) {
     zones.push({ id: 'a', lo: s.adv.half[0], hi: s.adv.half[1], col: COL.gold, title: '50% POI', sub: s.adv.entered_t ? 'PRICE ENTERED' : 'ADVANCED KL', dash: true });
     s.adv.zones.forEach((z, i) => zones.push({ id: 'b' + i, lo: z.lo, hi: z.hi, col: COL.bj, title: 'BJEFF ZONE', sub: z.active_t ? 'ACTIVE' : 'WAITING', dash: false }));
   }
-  if (S && S.valid && S.level != null) lines.push({ id: 's', y: S.level, col: S.trend === 1 ? COL.up : COL.dn, title: `S  H4 BOS ${S.trend === 1 ? '▲' : '▼'}`, sub: S.slq ? 'SLQ' : 'NO SLQ', dash: '5 4', step: 'S' });
+  if (S && S.valid && S.level != null) lines.push({ id: 's', y: S.level, col: S.trend === 1 ? COL.up : COL.dn, title: `S  H1 BOS ${S.trend === 1 ? '▲' : '▼'}`, sub: S.slq ? 'SLQ' : 'NO SLQ', dash: '5 4', step: 'S' });
   const pl = kLive && K.high_prob && K.plan ? K.plan : null;
   if (pl) {
     lines.push({ id: 'tp', y: pl.tp, col: COL.up, title: `TP 1:${pl.rr}`, sub: '', dash: '2 4' });
