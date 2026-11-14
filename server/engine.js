@@ -10,7 +10,6 @@ export const defaultParams = {
   atrLen: 14,
   longBodyMult: 1.5,    // "longer than average" body = more than this x the average body
   avgBodyLen: 20,
-  obScanBack: 6,        // how far back from the V tip to look for the order block candle
   klTolAtr: 0.10,       // "equal / almost identical" edges = within this x ATR
   h1Days: 180,          // H1 candles used everywhere: the last 6 months (key levels, order flow, reclamation, QML liquidity)
   maxKlWicks: 2,        // high probability key level: no more than this many wicks in the POI
@@ -126,16 +125,27 @@ export function marketStructure(h4, p) {
 }
 
 // ---------------------------------------------------------------- order flow
-export function orderBlock(cs, b, p) {
-  const wantBear = b.dir === 1, start = b.tip_idx;
-  for (let j = start; j > Math.max(-1, start - p.obScanBack - 1); j--) {
+export function orderBlock(cs, b) {
+  // A = the candle at the point of liquidity: the last bearish candle (HH BOS) / last bullish candle (LL BOS) at or before the tip of the
+  // higher low / lower high. There is no limit on how far back it looks: it keeps going until it finds a true order block at the POL.
+  const wantBear = b.dir === 1;
+  for (let j = b.tip_idx; j >= 0; j--) {
     if (wantBear ? bear(cs[j]) : bull(cs[j])) return j;
   }
-  return start;
+  return b.tip_idx;
 }
 
-// POI box (inducement, disruption and points of liquidity), as in the study guide: the ORDER BLOCK CANDLE ONLY, from body to body.
-// Wicks are left out and the box never extends to the candle after the order block (that candle is often the BOS candle itself).
+// A and B of a point of liquidity. HH BOS: A = last bearish candle, B = first bullish candle after it. LL BOS: A = last bullish candle,
+// B = first bearish candle after it. B is null only if no such candle exists before the BOS candle.
+export function obPair(cs, b) {
+  const a = orderBlock(cs, b), wantBull = b.dir === 1;
+  let bi = null;
+  for (let j = a + 1; j <= b.idx; j++) { if (wantBull ? bull(cs[j]) : bear(cs[j])) { bi = j; break; } }
+  return { a, b: bi };
+}
+
+// POI box (inducement, disruption and points of liquidity): one band over the A and B candles at the POL, from body to body (see poiOf).
+// Wicks are left out.
 // Exception: a LONG order block body uses only 50% of its body (bullish: the bottom half, bearish: the top half).
 export function poiFromOb(cs, j, d, p) {
   const c = cs[j];
@@ -151,9 +161,10 @@ export function poiFromOb(cs, j, d, p) {
 }
 
 function poiOf(cs, b, role, p) {
-  const j = orderBlock(cs, b, p);
-  const [lo, hi] = poiFromOb(cs, j, b.dir, p);
-  return { role, dir: b.dir, lo, hi, line: b.tip_price, bos_t: b.t, bos_idx: b.idx, ob_t: cs[j].t, bos_level: b.level, broken_t: cs[b.broken_idx].t };
+  const pr = obPair(cs, b);
+  let [lo, hi] = poiFromOb(cs, pr.a, b.dir, p);
+  if (pr.b !== null) { const [l2, h2] = poiFromOb(cs, pr.b, b.dir, p); lo = Math.min(lo, l2); hi = Math.max(hi, h2); }   // one band over A and B, body to body
+  return { role, dir: b.dir, lo, hi, line: b.tip_price, bos_t: b.t, bos_idx: b.idx, ob_t: cs[pr.a].t, ob_b_t: pr.b !== null ? cs[pr.b].t : null, bos_level: b.level, broken_t: cs[b.broken_idx].t };
 }
 
 // Internal order flow (H1) is the trend. It is read in two steps, walking the H1 candles in time order.
