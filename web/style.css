@@ -315,3 +315,37 @@ canvas{touch-action:pan-y;user-select:none;-webkit-user-select:none}
 .pplan .pp-go{flex:1;background:var(--btn);border-color:var(--tan);color:var(--btnfg);letter-spacing:.06em}
 .pplan .pp-del{margin-left:auto;color:var(--down)}
 .ctl-g .zbtns{margin-left:0}
+
+/* ALIVE XP bar. Fill + a head at the leading edge. Army: bullet and fire. Air Force: jet and contrail. Navy: warship on waves. */
+.xpbar.big div{transition:width .9s cubic-bezier(.2,.7,.2,1)}
+.xpbar.big{height:46px}
+.xpbar.big .hd{position:absolute;top:0;bottom:0;left:max(72px,var(--p,0%));transform:translateX(calc(-100% + 4px));width:72px;display:flex;align-items:center;pointer-events:none;z-index:1}
+.xpbar.big .hd svg{width:72px;height:36px;overflow:visible;filter:drop-shadow(0 1px 1px rgba(0,0,0,.35))}
+.xpbar.big span{z-index:2;text-shadow:0 0 3px rgba(255,255,255,.55)}
+.xpbar.big::after{content:"";position:absolute;inset:0;pointer-events:none;background:linear-gradient(90deg,transparent 40%,rgba(255,255,255,.55) 50%,transparent 60%) -120% 0/60% 100% no-repeat;animation:xpsweep 3.2s ease-in-out infinite}
+@keyframes xpsweep{to{background-position:220% 0}}
+.xpbar.big.br-none div{background:repeating-linear-gradient(115deg,#8FD14F 0 14px,#A7E066 14px 28px);background-size:40px 100%;animation:xpstripe 1s linear infinite}
+@keyframes xpstripe{to{background-position:40px 0}}
+.xpbar.big.br-army div{background:linear-gradient(90deg,#FF3D12,#FF7A1A 55%,#FFC83A);animation:xpfire .35s ease-in-out infinite alternate}
+@keyframes xpfire{from{filter:brightness(1) saturate(1)}to{filter:brightness(1.22) saturate(1.25)}}
+.xpbar.big.br-army .fl{transform-origin:22px 14px;animation:xpflick .12s ease-in-out infinite alternate}
+@keyframes xpflick{from{transform:scale(1,.9) skewY(-3deg)}to{transform:scale(1.18,1.08) skewY(3deg)}}
+.xpbar.big.br-army .hd svg{animation:xpjit .15s linear infinite alternate}
+@keyframes xpjit{from{transform:translateY(-.8px)}to{transform:translateY(.8px)}}
+.xpbar.big.br-air div{background:linear-gradient(90deg,#9ED0F5,#D4EBFF)}
+.xpbar.big.br-air div:after{content:"";position:absolute;inset:0;background:linear-gradient(rgba(255,255,255,.9),rgba(255,255,255,.9)) 0 30%/100% 2px no-repeat,linear-gradient(rgba(255,255,255,.7),rgba(255,255,255,.7)) 0 66%/100% 2px no-repeat;-webkit-mask:repeating-linear-gradient(90deg,#000 0 22px,transparent 22px 60px);mask:repeating-linear-gradient(90deg,#000 0 22px,transparent 22px 60px);-webkit-mask-size:60px 100%;mask-size:60px 100%;animation:xpstreak .7s linear infinite}
+@keyframes xpstreak{from{-webkit-mask-position:0 0;mask-position:0 0}to{-webkit-mask-position:-60px 0;mask-position:-60px 0}}
+.xpbar.big.br-air .ct{animation:xpct .5s ease-in-out infinite alternate;transform-origin:24px 13px}
+@keyframes xpct{from{opacity:.75;transform:scaleX(.85)}to{opacity:1;transform:scaleX(1.05)}}
+.xpbar.big.br-air .hd svg{animation:xpbank 2.4s ease-in-out infinite}
+@keyframes xpbank{0%,100%{transform:translateY(-2px) rotate(-1.5deg)}50%{transform:translateY(2px) rotate(1.5deg)}}
+.xpbar.big.br-navy div{overflow:hidden;background:linear-gradient(#8ED3F4,#3C97D6)}
+.xpbar.big.br-navy div:before,.xpbar.big.br-navy div:after{content:"";position:absolute;left:0;right:0;bottom:0;background-repeat:repeat-x;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='12' viewBox='0 0 40 12'%3E%3Cpath d='M0 6Q10 0 20 6T40 6V12H0Z' fill='%23fff' fill-opacity='.5'/%3E%3C/svg%3E")}
+.xpbar.big.br-navy div:before{height:12px;background-size:40px 12px;animation:xpwave 1.6s linear infinite}
+.xpbar.big.br-navy div:after{height:9px;bottom:-2px;opacity:.7;background-size:28px 9px;animation:xpwave 1s linear infinite reverse}
+@keyframes xpwave{to{background-position-x:40px}}
+.xpbar.big.br-navy .ship{transform-origin:34px 23px;animation:xpbob 1.8s ease-in-out infinite}
+@keyframes xpbob{0%,100%{transform:translateY(0) rotate(-2deg)}50%{transform:translateY(-1.8px) rotate(2deg)}}
+.xpbar.big.br-navy .wk{animation:xpwake .9s linear infinite}
+@keyframes xpwake{from{transform:translateX(0);opacity:1}to{transform:translateX(-8px);opacity:.4}}
+@media (prefers-reduced-motion:reduce){.xpbar.big::after,.xpbar.big div,.xpbar.big div:before,.xpbar.big div:after,.xpbar.big .hd svg,.xpbar.big .hd svg *{animation:none!important}}
