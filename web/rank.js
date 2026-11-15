@@ -460,7 +460,7 @@ async function renderRank() {
     rank: `<h3 class="ctr" style="margin-top:0">Service record</h3>
       <div class="card prof">${insignia(i, 56, s.branch)}<div style="flex:1"><div class="small">RANK AND CALLSIGN</div><div class="rname">${rankName(i, s)}</div><div class="callsign">${esc(name)}</div>${br ? `<div class="svc">${ico(br.ico)}${br.name}</div>` : ''}</div></div>
       <div class="xpbar big" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct}" aria-label="XP progress"><div style="width:${pct}%"></div><span class="xl">${rankName(i, s)}</span><span class="xc">${pct}%</span><span class="xr">${s.xp} XP</span></div>
-      <div class="small xpl">${nx ? `next: ${nxName} at ${nx[1]} XP` : 'highest rank'}</div>${gate ? `<div class="card req"><small>PROMOTION REQUIREMENT${held ? ' &middot; XP TARGET REACHED' : ''}</small>${esc(gate.text(s))}${gate.pick ? '<br><button class="btn" id="g6" style="margin-top:8px">Choose service</button>' : ''}</div>` : ''}`,
+      <div class="small xpl">${nx ? `next: ${nxName} at ${nx[1]} XP` : 'highest rank'}</div>${gate ? `<div class="card req tap" id="reqgo" role="button" tabindex="0" aria-label="Open the promotion requirement: ${esc(gate.short)}"><small>PROMOTION REQUIREMENT${held ? ' &middot; XP TARGET REACHED' : ''}</small>${esc(gate.text(s))}<span class="reqgo">${gate.pick ? 'Tap to choose your service' : 'Tap to open this mission'} &rsaquo;</span></div>` : ''}`,
     missions: `<h3 class="ctr" style="margin-top:0">Missions</h3>
       <div class="plan"><div><small>ROLL CALL STREAK</small><span class="px">${s.streak} d</span></div><div><small>CHAPTERS</small><span class="px">${s.ch.length}/${CHAPTERS.length}</span></div><div><small>EXAMS</small><span class="px">${examsPassed}/${CHAPTERS.length}</span></div></div>
       ${m('Roll Call', 'Report in once a day. 7, 30 and 90 days earn a medal and bonus XP.', `best ${s.best} d`, null, null, 'roll')}
@@ -475,6 +475,10 @@ async function renderRank() {
   view.querySelectorAll('[data-sub]').forEach(b => b.onclick = () => { rkSub = b.dataset.sub; renderRank(); });
   view.querySelectorAll('[data-ld]').forEach(b => b.onclick = () => { ldSub = b.dataset.ld; renderRank(); });
   const on = (id, f) => { const e = document.getElementById(id); if (e) e.onclick = f; };
+  // the promotion requirement card opens its mission directly: the Field guide, the drills, the Proficiency Exam, the Intercept Analysis or the service picker
+  const gateGo = [() => setTab('guide'), renderDrill, renderQuizMenu, renderAnalysis, () => askBranch(true)];
+  const rq = document.getElementById('reqgo');
+  if (rq && gateGo[i]) { rq.onclick = () => gateGo[i](); rq.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); gateGo[i](); } }; }
   on('g1', () => setTab('guide')); on('g2', renderQuizMenu); on('g3', renderDrill); on('g5', renderAnalysis); on('g6', () => askBranch(true));
 }
 

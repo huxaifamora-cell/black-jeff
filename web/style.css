@@ -233,6 +233,7 @@ main > .xpl{display:block;text-align:center;font-size:12px;margin:6px 0 10px}
 
 /* promotion requirements */
 .rl{flex-wrap:wrap}.rl .rq{flex-basis:100%;padding-left:36px;font:500 11px var(--mono);color:var(--hint);margin-top:-2px}
+.req.tap{cursor:pointer}.req.tap:active{filter:brightness(.9)}.req .reqgo{display:block;margin-top:6px;font:700 11px var(--head);letter-spacing:1px;color:var(--gold)}
 .req{margin:0 0 10px;border-left:3px solid var(--gold);font-size:13px}.req small{display:block;font:700 10px var(--head);letter-spacing:1.2px;color:var(--gold);margin-bottom:3px}
 
 /* Choose your service (Lieutenant): full-screen picker with the Army, Navy and Air Force */
