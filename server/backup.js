@@ -1,6 +1,9 @@
 // Keeps alert recipients across restarts WITHOUT a database or disk.
 // The user list is saved as a small JSON file that the bot sends to a Telegram chat of yours and pins.
 // On start the bot reads the pinned file back. Telegram is the storage; nothing extra to set up or pay for.
+export const BACKUP_FILE = 'Bjeff-users.json';
+const LEGACY_FILE = 'sork-users.json';          // older backups are still read; the next save replaces them with the new name
+
 export class TelegramBackup {
   constructor(bot, chatId, log = console, delayMs = 5000) {
     this.bot = bot; this.chatId = chatId; this.log = log; this.delayMs = delayMs;
@@ -11,7 +14,7 @@ export class TelegramBackup {
   async load() {
     const chat = await this.bot.call('getChat', { chat_id: this.chatId });
     const pin = chat.pinned_message;
-    if (!pin || !pin.document || pin.document.file_name !== 'sork-users.json') return [];
+    if (!pin || !pin.document || ![BACKUP_FILE, LEGACY_FILE].includes(pin.document.file_name)) return [];
     this.lastMsgId = pin.message_id;
     const file = await this.bot.call('getFile', { file_id: pin.document.file_id });
     const r = await fetch(`https://api.telegram.org/file/bot${this.bot.token}/${file.file_path}`, { signal: AbortSignal.timeout(20000) });
@@ -42,8 +45,8 @@ export class TelegramBackup {
     const form = new FormData();
     form.append('chat_id', String(this.chatId));
     form.append('disable_notification', 'true');
-    form.append('caption', `SORK user backup: ${users.length} users`);
-    form.append('document', new Blob([JSON.stringify({ saved: new Date().toISOString(), users, ...extra })], { type: 'application/json' }), 'sork-users.json');
+    form.append('caption', `BJeff user backup: ${users.length} users`);
+    form.append('document', new Blob([JSON.stringify({ saved: new Date().toISOString(), users, ...extra })], { type: 'application/json' }), BACKUP_FILE);
     const r = await fetch(this.bot.base + 'sendDocument', { method: 'POST', body: form, signal: AbortSignal.timeout(30000) });
     const data = await r.json();
     if (!data.ok) throw new Error(`telegram sendDocument: ${data.description}`);
