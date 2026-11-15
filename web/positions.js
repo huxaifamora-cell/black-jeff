@@ -51,9 +51,9 @@ const Pos = (() => {
     eye: 'M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12zM12 9a3 3 0 100 6 3 3 0 000-6z', eyeoff: 'M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12zM3 3l18 18',
   };
   const field = (f, label, hint) => `<label class="pf"><span>${label}<small>${hint}</small></span><input data-f="${f}" type="number" inputmode="decimal" step="any" autocomplete="off"></label>`;
-  const toolsHtml = () => `<div class="pills ptools"><button data-p="panel" class="planbtn" aria-label="Open the battle plan card">${svg(IC.aim)}BATTLE PLAN</button><span class="pinfo"></span><button data-p="eye" aria-label="Show or hide all plan boxes"></button></div>
-    <div class="pplan" hidden>
-      <div class="pp-head"><b>BATTLE PLAN</b><span class="pp-mode"></span></div>
+  // the BATTLE PLAN button itself lives in the mini menu that app.js draws (.tmenu); this is the card it opens
+  const toolsHtml = () => `<div class="pplan" hidden>
+      <div class="pp-head"><b>BATTLE PLAN</b><span class="pp-mode"></span><span class="pinfo"></span><button data-p="eye" aria-label="Show or hide all plan boxes"></button></div>
       <div class="pp-dir"><button data-p="long">&#9650; LONG <small>buy</small></button><button data-p="short">&#9660; SHORT <small>sell</small></button></div>
       <div class="pp-grid">${field('entry', 'ENTRY', 'where you get in')}${field('sl', 'STOP LOSS', 'where you admit you are wrong')}${field('tp', 'TAKE PROFIT', 'where you cash out')}
         <label class="pf pf-rr"><span>RISK : REWARD<small>follows the prices above</small></span><em>1 :</em><input data-f="rr" type="number" inputmode="decimal" step="any" autocomplete="off"></label></div>
@@ -63,10 +63,10 @@ const Pos = (() => {
 
   function sync() {
     const root = document.querySelector('.pplan'); if (!root) return;
-    const w = work(), q = s => root.querySelector(s), tb = document.querySelector('.ptools');
-    root.hidden = !panel; tb.querySelector('.planbtn').classList.toggle('on', panel);
-    tb.querySelector('.pinfo').textContent = items.length ? `${items.length} on chart` : '';
-    const eye = tb.querySelector('[data-p=eye]'); eye.innerHTML = svg(hidden ? IC.eyeoff : IC.eye); eye.classList.toggle('on', hidden); eye.disabled = !items.length;
+    const w = work(), q = s => root.querySelector(s), tb = document.querySelector('.tmenu');
+    root.hidden = !panel; if (tb) tb.querySelector('.planbtn').classList.toggle('on', panel);
+    root.querySelector('.pinfo').textContent = items.length ? `${items.length} on chart` : '';
+    const eye = root.querySelector('[data-p=eye]'); eye.innerHTML = svg(hidden ? IC.eyeoff : IC.eye); eye.classList.toggle('on', hidden); eye.disabled = !items.length;
     if (!panel || !w) return;
     q('.pp-mode').textContent = sel ? 'plan on the chart' : 'new plan';
     q('[data-p=long]').classList.toggle('on', w.dir === 1); q('[data-p=short]').classList.toggle('on', w.dir === -1);
@@ -121,7 +121,7 @@ const Pos = (() => {
     const cv = canvas(); if (cv && cv.scrollIntoView) cv.scrollIntoView({ block: 'center', behavior: 'smooth' });
   }
   function bind() {
-    const bar = document.querySelector('.ptools'), root = document.querySelector('.pplan'); if (!bar || !root) return;
+    const bar = document.querySelector('.tmenu'), root = document.querySelector('.pplan'); if (!bar || !root) return;
     if (panel && !cur() && !draft) draft = suggest(1);
     [bar, root].forEach(el => el.addEventListener('click', e => { const b = e.target.closest('button[data-p]'); if (b && !b.disabled) act(b.dataset.p); }));
     root.querySelectorAll('input[data-f]').forEach(i => {
@@ -256,5 +256,6 @@ const Pos = (() => {
     cv.style.cursor = !h ? 'grab' : h.k === 'move' ? 'move' : h.k === 'width' ? 'ew-resize' : 'ns-resize';
   }
 
-  return { open, toolsHtml, bind, sync, extent, draw, down, move, up, hover, near };
+  const isOpen = () => panel;
+  return { open, isOpen, toolsHtml, bind, sync, extent, draw, down, move, up, hover, near };
 })();

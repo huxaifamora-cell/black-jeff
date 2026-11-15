@@ -77,10 +77,11 @@ async function renderSymbols() {
 
 // ------------------------------------------------------------ symbol page
 function openSymbol(id) {
-  Radar.unmount(); current = id; tf = 'h1'; ZOOM = {}; liveCtx = null; clearInterval(timer); Pos.open(id);
+  Radar.unmount(); current = id; tf = 'h1'; ZOOM = {}; liveCtx = null; showAlerts = showDetails = false; clearInterval(timer); Pos.open(id);
   if (tg) { tg.BackButton.show(); tg.BackButton.onClick(() => setTab(tab === 'alerts' ? 'alerts' : 'symbols')); }
   loadSymbol(); timer = setInterval(loadSymbol, 3000);          // live: the chart refreshes every 3 s
 }
+let showAlerts = false, showDetails = false;          // which sections of the mini menu are open
 let liveCtx = null;                                   // {id, tf, sig} of the page that is currently drawn
 async function loadSymbol() {
   if (!current || loadSymbol.busy) return;
@@ -122,20 +123,27 @@ function symAlerts(alerts) {
 }
 function drawSymbol(v, alerts) {
   const s = v.state, d = s ? s.digits : 3;
-  let h = `<div class="row"><button class="back" id="back">&#8249; ${esc(v.short)}</button><span class="px" id="lvPx">${s && s.price != null ? N(s.price, d) : ''}</span>${arrow(s && s.s ? s.s.trend : null)}</div><div class="small">${esc(v.name)}</div>`;
+  let h = `<div class="row"><button class="back" id="back">&#8249; ${esc(v.short)}</button><span class="px" id="lvPx">${s && s.price != null ? N(s.price, d) : ''}</span>${arrow(s && s.s ? s.s.trend : null)}</div>`;
   if (!v.available) h += '<p class="down">This symbol was not found on Deriv, so it is not monitored.</p>';
   const goBack = () => setTab(tab === 'alerts' ? 'alerts' : 'symbols');
   if (!s) { view.innerHTML = h + '<p class="mut">Waiting for the first data...</p>'; document.getElementById('back').onclick = goBack; return; }
-  const wasOpen = !!view.querySelector('details.more[open]');       // keep "Full details" open across refreshes
   const NAME = { S: 'STRUCTURE', O: 'ORDER FLOW', R: 'RECLAMATION', K: 'KEY LEVEL' }, COL = { done: '#5AFF64', now: '#E3C16A', todo: '#3A4A2A' };
   const done = v.steps.filter(x => x.state === 'done').length, nextWp = v.steps.find(x => x.state !== 'done');
   const stp = v.steps.map(x => `<div class="rt ${x.state}"><i>${x.state === 'done' ? '&#10003;' : x.state === 'now' ? '&#9679;' : '&#9675;'}</i><b>${x.k}</b> ${esc(x.text)}</div>`).join('');
-  const plan = v.plan && v.status === 'ready' ? `<div class="plan"><div><small>${v.plan.dir === 1 ? 'BUY LIMIT' : 'SELL LIMIT'}</small><span class="px">${N(s.k.active.plan.entry, d)}</span></div><div><small>STOP LOSS</small><span class="down">${N(s.k.active.plan.sl, d)}</span></div><div><small>TAKE PROFIT 1:${s.k.active.plan.rr}</small><span class="up">${N(s.k.active.plan.tp, d)}</span></div></div>` : '';
-  h += `<div class="pills">${['m5', 'h1', 'h4'].map(x => `<button data-tf="${x}" class="${x === tf ? 'on' : ''}">${x.toUpperCase()}</button>`).join('')}<span class="zbtns"><button data-z="out" aria-label="Zoom out">&minus;</button><button data-z="in" aria-label="Zoom in">+</button><button data-z="reset" aria-label="Reset zoom">&#8634;</button></span></div>
-    <canvas id="chart"></canvas>${Pos.toolsHtml()}<div class="small"><span class="livedot"></span>LIVE &middot; updated <span id="lvUp">${T(s.updated)}</span></div>` + plan +
-    `<details class="more"${wasOpen ? ' open' : ''}><summary>Full details</summary><div class="small">${done} of 4 steps cleared. ${nextWp ? `Next: <span class="px">${nextWp.k}</span> &middot; ${esc(nextWp.text)}` : 'All steps cleared.'}</div><div class="rts">${stp}</div>` + cards(s, d) + `</details>` +
-    `<h3>Alerts for this symbol</h3>` + symAlerts(alerts) +
-    `<div class="row"><button class="btn" id="mute">Mute alerts for this symbol</button></div>`;
+  const ic = d => `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${d}"/></svg>`;
+  const MENU = [
+    ['panel', 'Battle plan', 'M12 2v5M12 17v5M2 12h5M17 12h5M12 8.5a3.5 3.5 0 100 7 3.5 3.5 0 000-7z', Pos.isOpen()],   // crosshair
+    ['alerts', 'Symbol alerts', 'M12 3l10 17H2zM12 10v4.5M12 17.2v.3', showAlerts],                                      // warning triangle
+    ['details', 'View details', 'M6 3h12v18H6zM9 7h6M9 11h6M9 15h4', showDetails],                                        // field dossier
+  ];
+  const menu = `<div class="tmenu" role="group" aria-label="Symbol tools">${MENU.map(([k, name, d, on]) => k === 'panel'
+    ? `<button data-p="panel" class="planbtn${on ? ' on' : ''}" aria-label="Open the battle plan card">${ic(d)}<span>${name}</span></button>`
+    : `<button data-m="${k}" class="${on ? 'on' : ''}" aria-expanded="${on}">${ic(d)}<span>${name}</span></button>`).join('')}</div>`;
+  h += `<div class="ctl"><div class="ctl-g"><small class="ctl-t">Timeframe</small><div class="pills" role="group" aria-label="Timeframe">${['m5', 'h1', 'h4'].map(x => `<button data-tf="${x}" class="${x === tf ? 'on' : ''}">${x.toUpperCase()}</button>`).join('')}</div></div>
+      <div class="ctl-g zg"><small class="ctl-t">Chart zoom</small><div class="pills zbtns" role="group" aria-label="Chart zoom"><button data-z="out" aria-label="Zoom out">&minus;</button><button data-z="in" aria-label="Zoom in">+</button><button data-z="reset" aria-label="Reset zoom">&#8634;</button></div></div></div>
+    <canvas id="chart"></canvas><div class="small"><span class="livedot"></span>LIVE &middot; updated <span id="lvUp">${T(s.updated)}</span></div>` + menu + Pos.toolsHtml() +
+    (showDetails ? `<div class="dtl"><div class="small">${done} of 4 steps cleared. ${nextWp ? `Next: <span class="px">${nextWp.k}</span> &middot; ${esc(nextWp.text)}` : 'All steps cleared.'}</div><div class="rts">${stp}</div>` + cards(s, d) + `</div>` : '') +
+    (showAlerts ? `<h3>Alerts for this symbol</h3>` + symAlerts(alerts) + `<div class="row"><button class="btn" id="mute">Mute alerts for this symbol</button></div>` : '');
   view.innerHTML = h; Pos.bind();
   document.getElementById('back').onclick = goBack;
   const redraw = () => chart(document.getElementById('chart'), s, tf, v.short);
@@ -143,7 +151,8 @@ function drawSymbol(v, alerts) {
   view.querySelectorAll('.pills button[data-z]').forEach(b => b.onclick = () => { const cv = document.getElementById('chart'); if (b.dataset.z === 'reset') zoomReset(cv); else zoomBy(cv, b.dataset.z === 'in' ? 1 / 1.3 : 1.3); });
   view.querySelectorAll('.snav button').forEach(b => b.onclick = () => { symConcept = b.dataset.sc; drawSymbol(v, alerts); });
   view.querySelectorAll('.ksub button').forEach(b => b.onclick = () => { kSub = b.dataset.ks; drawSymbol(v, alerts); });
-  document.getElementById('mute').onclick = async () => {
+  view.querySelectorAll('.tmenu button[data-m]').forEach(b => b.onclick = () => { if (b.dataset.m === 'alerts') showAlerts = !showAlerts; else showDetails = !showDetails; drawSymbol(v, alerts); });
+  const mute = document.getElementById('mute'); if (mute) mute.onclick = async () => {
     const { me } = await api('/api/me'); const m = new Set(me.muted); m.add(current);
     await api('/api/me/settings', { method: 'POST', body: JSON.stringify({ muted: [...m] }) });
     if (tg) tg.showAlert('Muted. You can unmute in the Alerts tab.'); else alert('Muted.');

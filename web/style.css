@@ -274,15 +274,26 @@ main > .xpl{display:block;text-align:center;font-size:12px;margin:6px 0 10px}
 canvas{touch-action:pan-y;user-select:none;-webkit-user-select:none}
 
 /* BATTLE PLAN: position box button and plan card above the chart */
-.ptools{align-items:center}
-.ptools button{display:inline-flex;align-items:center;justify-content:center;gap:8px}
-.ptools svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
-.ptools .planbtn{font-family:var(--head);font-weight:700;letter-spacing:.08em;font-size:15px}
-.ptools .pinfo{font:500 12px var(--mono);color:var(--hint)}
-.ptools [data-p=eye]{margin-left:auto;min-width:44px}
-.ptools button:disabled{opacity:.4;pointer-events:none}
+/* chart controls: a titled group for the timeframe and one for the zoom */
+.ctl{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin:8px 0}
+.ctl-g{display:flex;flex-direction:column;gap:2px}.ctl-g.zg{margin-left:auto}
+.ctl-g .pills{margin:0}
+.ctl-t{font:700 10px var(--head);letter-spacing:1.5px;text-transform:uppercase;color:var(--gold)}
+/* mini menu under the live line: Battle plan | Symbol alerts | View details */
+.tmenu{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin:8px 0}
+.tmenu button{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;min-height:64px;padding:8px 2px 6px;border:1px solid var(--edge);background:var(--inner);color:var(--hint);font:700 11px var(--head);letter-spacing:.6px;text-transform:uppercase;transition:transform .08s ease,filter .15s ease,background-color .15s ease}
+.tmenu svg{width:24px;height:24px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:square;stroke-linejoin:miter}
+.tmenu button.on{background:var(--chipbg);border-color:var(--tan);color:var(--chipfg);box-shadow:inset 0 -3px 0 var(--gold)}
+@media (hover:hover){.tmenu button:hover{filter:brightness(1.18)}}
+.tmenu button:active{transform:scale(.975)}
+@media (max-width:360px){.tmenu button{font-size:10px;letter-spacing:.3px}}
+.dtl{margin:8px 0}
+.pplan .pinfo{font:500 12px var(--mono);color:var(--hint)}
+.pplan [data-p=eye]{min-width:44px;margin-left:auto;display:inline-flex;align-items:center;justify-content:center}
+.pplan [data-p=eye] svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.pplan button:disabled{opacity:.4;pointer-events:none}
 .pplan[hidden]{display:none}
-.pplan .pp-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px}
+.pplan .pp-head{display:flex;gap:10px;align-items:center;margin-bottom:8px}
 .pplan .pp-head b{font:700 17px var(--head);letter-spacing:.1em;color:var(--gold)}
 .pplan .pp-mode{font:500 12px var(--mono);color:var(--hint);text-transform:uppercase}
 .pplan button{min-height:44px;border:1px solid var(--edge);background:var(--inner);color:var(--fg);padding:6px 12px;font:600 13px var(--mono)}
@@ -303,3 +314,4 @@ canvas{touch-action:pan-y;user-select:none;-webkit-user-select:none}
 .pplan .pp-act button[hidden]{display:none}
 .pplan .pp-go{flex:1;background:var(--btn);border-color:var(--tan);color:var(--btnfg);letter-spacing:.06em}
 .pplan .pp-del{margin-left:auto;color:var(--down)}
+.ctl-g .zbtns{margin-left:0}
