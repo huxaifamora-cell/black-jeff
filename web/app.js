@@ -184,13 +184,13 @@ function cards(s, d) {
   return h;
 }
 // Zone colours avoid the candle colours (green up, red-orange down) and the cyan live-price line.
-const TONE = { s: '#8A94A6', o: '#8E6BFF', k: '#8DC3FF', qml: '#E58FD0', pending: '#5d6875', dead: '#6B7480', adv: '#E3C16A', adv2: '#4A7CFF', dis: '#F5D547', bos: '#9AA3B2' };   // dis = disruption POI, yellowish
+const TONE = { s: '#8A94A6', o: '#FFFFFF', k: '#8DC3FF', qml: '#A9B1BD', pending: '#5d6875', dead: '#6B7480', adv: '#E3C16A', adv2: '#4A7CFF', dis: '#F5D547', bos: '#9AA3B2' };   // dis = disruption POI, yellowish
 // Which overlays each timeframe shows (everything else is hidden, not deleted: the engine still computes and alerts on it).
 //  H4: BOS lines.  H1: inducement, disruption, key level POI, QML POI.  M5: key level POI with its 50% POI, and the bjeff zone.
 const SHOW = {
   h4: o => o.type === 'line' && /BOS$/.test(o.label),
   h1: o => o.grp === 'o' || o.grp === 'k' || o.label === 'QML',
-  m5: o => o.grp === 'k' || o.tone === 'adv' || o.tone === 'adv2',
+  m5: o => o.grp === 'k5' || o.tone === 'adv' || o.tone === 'adv2',
 };
 // ---- zoom and pan. Per timeframe: n = candles on screen, off = candles hidden on the right (0 = the live edge). Kept across the 3 s refreshes.
 const ZOOM_DEF = 80, ZOOM_MIN = 12;
@@ -342,8 +342,8 @@ function chart(cv, s, tf, name) {
       g.fillStyle = l.col; g.font = `600 ${FS}px ${MONO}`; g.textBaseline = 'middle'; g.fillText(l.text, r.x + 5, r.y + r.h / 2 + .5); g.textBaseline = 'alphabetic'; g.font = `${FS}px ${MONO}`;
       return;
     }
-    g.fillStyle = l.col; g.globalAlpha = .95; g.beginPath(); g.roundRect ? g.roundRect(r.x, r.y, r.w, r.h, 3) : g.rect(r.x, r.y, r.w, r.h); g.fill(); g.globalAlpha = 1;
-    g.fillStyle = ['#8DC3FF', '#E3C16A', '#5CC8E6', '#E58FD0', '#8A94A6', '#F5D547'].includes(l.col) ? '#10150C' : '#F4F2E2'; g.textBaseline = 'middle'; g.fillText(l.text, r.x + 5, r.y + r.h / 2 + .5); g.textBaseline = 'alphabetic';
+    // labels have no background: just text in the colour of what they name
+    g.fillStyle = l.col; g.font = `600 ${FS}px ${MONO}`; g.textBaseline = 'middle'; g.fillText(l.text, r.x + 5, r.y + r.h / 2 + .5); g.textBaseline = 'alphabetic'; g.font = `${FS}px ${MONO}`;
   });
   cv._geom = { plotW, step };
   return { toPrice: y => lo + (Hh - 14 - y) / (Hh - 14 - TOP) * (hi - lo), xOf: X, step, lo, hi };
