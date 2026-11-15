@@ -108,8 +108,9 @@ Set `ALERT_DMS=0`. The bot then posts alerts only to `ALERT_CHATS` and never as 
 Without a database or disk, the user list would be lost on every restart or deploy. Two options, usable together:
 
 - `STATE_CHAT_ID` (automatic): the bot saves every user and their settings (alerts on/off, concepts, muted symbols) as a
-  small `sork-users.json` file, sent to that chat and **pinned**. On start it reads the pinned file back.
-  Use your own Telegram id (the chat must already have been started with `/start`). Do not unpin or delete that file.
+  small `Bjeff-users.json` file (caption "BJeff user backup"), sent to that chat and **pinned**. On start it reads the pinned file back.
+  Set it to the Telegram id you want the backup saved to (that chat must already have been started with `/start`). Do not unpin or delete that file.
+  An older `sork-users.json` pin in the same chat is still read and is replaced by the new file on the next save.
   A private channel or group where the bot is an admin also works.
 - `ALERT_CHAT_IDS` (fixed list): comma separated Telegram ids that always get alerts, e.g. `ALERT_CHAT_IDS=123456789,987654321`.
   Good for a small private group; it needs no backup at all.
@@ -154,7 +155,8 @@ Telegram only opens mini apps over HTTPS, so to test inside Telegram locally use
   reclamation and the QML liquidity check all use that window.
 - Trend continuation: a key level only counts when it agrees with the internal (H1) order flow (RBS when it is bullish, SBR when it is bearish, none when there is no order flow). The QML is the exception, because it is built from an invalidated key level and trades the other way. `klWithBias: false` turns the filter off.
 - Order flow (`orderFlow`): the H1 candles are walked in time order. First the previous INVALIDATED order flow is found (an H1 body closed beyond its disruption POI); then the new order flow is looked for only among the breaks of structure after that point. Only VALID breaks of structure count (structural liquidity, same rule as H4), so a small break with no liquidity never becomes an inducement. Inducement = latest valid BOS of the flow, disruption = the valid BOS before it, and both must exist or nothing is marked.
-- Inducement, disruption and point-of-liquidity POIs: the order block candle only, body to body (no wicks, never extended to the next candle); a long body uses only 50% of the body.
+- Inducement, disruption and point-of-liquidity POIs: one band over the A and B candles at the BOS's point of liquidity, body to body (no wicks). HH BOS: A = last bearish candle, B = first bullish candle after it; LL BOS: A = last bullish candle, B = first bearish candle after it. The search for A has no candle limit. A long body uses only 50% of the body.
+- A disruption is cancelled only by a pullback at it (a body close beyond its POI). Inducement is above the disruption in an uptrend and below it in a downtrend; a new BOS at or beyond the current disruption POI is skipped as an inducement.
 - Key levels vs order flow: in an uptrend, once price is above the inducement (or the disruption) POI, a key level only counts when it formed after that POI's BOS and sits entirely above the POI box. Downtrend is the inverse. Each POI is checked on its own (`klFitsOrderFlow`).
 - Key level edges: a resistant key level needs equal (or almost equal) body TOPS, a support key level needs equal body BOTTOMS; the other edge can be any length.
   RBS follows the resistant rule and SBR the support rule. Key level POI boxes start at the left edge of the first candle of the key level.
