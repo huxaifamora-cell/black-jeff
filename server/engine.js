@@ -727,9 +727,10 @@ export function evaluate(h4Live, h1Live, m5, p = defaultParams, digits = 3) {
           `${cap(nice(cf.type, act.dir))} inside the POI. ${cap(side(act.dir))} limit ${f(plan.entry)}, SL ${f(plan.sl)}, TP ${f(plan.tp)}.`,
           `${uid}-${cf.t}-${cf.type}`, { lo: act.lo, hi: act.hi, ...plan, sub: act.type, conf: nice(cf.type, act.dir) }));
       }
-      const adv = advanced(act, m5, p, null);
+      // The 50% POI sits inside the key level POI box DRAWN ON M5 (the M5 order block box; the H1 box when there is no M5 order block).
+      const adv = advanced(mp ? { ...act, lo: mp.lo, hi: mp.hi } : act, m5, p, null);
       state.adv = adv;
-      overlays.push({ type: 'box', lo: adv.half[0], hi: adv.half[1], t0: act.t0, label: '50% POI', tone: 'adv' });
+      overlays.push({ type: 'box', lo: adv.half[0], hi: adv.half[1], t0: mp ? mp.t : act.t0, label: '50% POI', tone: 'adv' });
       for (const z of adv.zones) {
         overlays.push({ type: 'box', lo: z.lo, hi: z.hi, t0: z.t0, label: 'bjeff zone', tone: 'adv2' });
         if (z.active_t) {
