@@ -19,6 +19,8 @@ export const defaultParams = {
   liveM5: true,         // the M5 candle still forming is used (live price)
   liveHtf: true,        // H1 and H4 charts show the forming candle too; the H1 / H4 rules still only use closed candles
   klWithBias: true,     // trend continuation: only key levels in the direction of the internal (H1) order flow count (RBS when it is bullish, SBR when it is bearish). QML is the exception.
+  m5PoiNearAtr: 2.0,    // an unmitigated M5 order block is "close to" the original M5 order block when the gap between the two boxes is at most this x the M5 ATR
+  m5PoiLongMult: 1.5,   // an M5 order block candle is "too long" when its full range (wick + body) is more than this x the average M5 range
   maxScanH1: 4320,      // H1 candles scanned for reclamations (after the inducement / disruption BOS); 6 months of H1
 };
 
@@ -481,6 +483,62 @@ export function reversalSignals(m5, d, sinceT) {
   return out;
 }
 
+// ---------------------------------------------------------------- M5 POI (refines the H1 key level POI)
+// M5 order blocks around an H1 key level POI. Buy (d = 1): the last BEARISH candle before a breakout up; sell (d = -1): the last BULLISH candle
+// before a breakout down. The breakout candle is the first candle after it that closes beyond the order block candle's far side, and every
+// candle between the two is not of the order block's colour (so each breakout gives exactly one order block).
+// POI box: the WHOLE candle (wick and body); when the candle is too long (range > m5PoiLongMult x the average M5 range) only the BODY.
+export function m5ObBox(cs, j, p) {
+  const c = cs[j];
+  const prev = cs.slice(Math.max(0, j - p.avgBodyLen), j);
+  const avg = prev.length ? prev.reduce((a, x) => a + (x.h - x.l), 0) / prev.length : (c.h - c.l);
+  const tooLong = avg > 0 && (c.h - c.l) > p.m5PoiLongMult * avg;
+  return tooLong ? { lo: bot(c), hi: top(c), part: 'body' } : { lo: c.l, hi: c.h, part: 'full' };
+}
+
+// Mitigated = after the order block a wick pulls back into its POI box. The breakout candle itself is left out (it leaves the box).
+// Unmitigated = nothing came back into the box (buy: no low at or below the top of the box; sell: no high at or above the bottom of it).
+// `all` may include the candle still forming, so a touch counts at once.
+export function m5Obs(all, closed, d, fromT, p) {
+  const out = [];
+  for (let j = 0; j < closed.length; j++) {
+    const c = closed[j];
+    if (c.t < fromT || (d === 1 ? !bear(c) : !bull(c))) continue;
+    let k = null;
+    for (let x = j + 1; x < closed.length; x++) {
+      const y = closed[x];
+      if (d === 1 ? bear(y) : bull(y)) break;                                  // a newer order block candle: this one is not the last before the breakout
+      if (d === 1 ? y.c > c.h : y.c < c.l) { k = x; break; }
+    }
+    if (k === null) continue;
+    const box = m5ObBox(closed, j, p);
+    let mitigated = false;
+    for (const y of all) {
+      if (y.t <= c.t || y.t === closed[k].t) continue;
+      if (d === 1 ? y.l <= box.hi : y.h >= box.lo) { mitigated = true; break; }
+    }
+    out.push({ ...box, t: c.t, break_t: closed[k].t, mitigated });
+  }
+  return out;
+}
+
+// The M5 POI. Step 1: the ORIGINAL M5 order block = the M5 order block at the H1 key level POI (the closest one to it; this only locates it).
+// Step 2: everything is then measured on M5 from that original order block's box: the unmitigated order block CLOSEST TO IT wins. When the
+// closest unmitigated one is too far away (the gap between the two M5 boxes is more than m5PoiNearAtr x the M5 ATR), the original order block
+// is the M5 POI. The original itself counts when it is unmitigated (gap 0). Returns null when there is no M5 order block at all.
+export function m5Poi(kl, m5, atr5, p) {
+  const d = kl.dir, closed = closedOnly(m5);
+  const obs = m5Obs(m5, closed, d, kl.t0, p);
+  const gapTo = (r) => (o) => Math.max(0, o.lo - r.hi, r.lo - o.hi);
+  const best = (arr, g) => arr.reduce((a, o) => (a === null || g(o) < g(a) || (g(o) === g(a) && o.t > a.t) ? o : a), null);
+  const orig = best(obs, gapTo(kl));
+  if (orig === null) return null;
+  const g = gapTo(orig);
+  const un = best(obs.filter((o) => !o.mitigated), g);
+  if (un !== null && g(un) <= p.m5PoiNearAtr * atr5) return { ...un, source: un === orig ? 'original' : 'unmitigated', gap: g(un), orig_t: orig.t };
+  return { ...orig, source: 'original', gap: 0, orig_t: orig.t };
+}
+
 export function advanced(kl, m5, p, invT) {
   const { lo, hi, dir: d } = kl, mid = (lo + hi) / 2;
   const [zl, zh] = d === 1 ? [lo, mid] : [mid, hi];     // RBS: bottom half, SBR: top half
@@ -634,6 +692,11 @@ export function evaluate(h4Live, h1Live, m5, p = defaultParams, digits = 3) {
     kState.active = { type: act.type, dir: act.dir, lo: act.lo, hi: act.hi, t0: act.t0, t_valid: act.t_valid, wicks: act.wicks,
       high_prob: act.high_prob, invalidated: inv, plan };
     overlays.push({ type: 'box', grp: 'k', lo: act.lo, hi: act.hi, t0: act.t0, label: act.type + ' Key Level' + (act.high_prob ? '' : ' (low probability)'), tone: inv ? 'dead' : 'k' });
+    // The key level POI box on the M5 chart (grp 'k5', same label and colour as the H1 one) is marked from the M5 order block (see m5Poi).
+    // With no M5 order block it falls back to the H1 box.
+    const mp = m5Poi(act, m5, atr5, p);
+    state.m5poi = mp;
+    overlays.push({ type: 'box', grp: 'k5', lo: mp ? mp.lo : act.lo, hi: mp ? mp.hi : act.hi, t0: mp ? mp.t : act.t0, label: act.type + ' Key Level' + (act.high_prob ? '' : ' (low probability)'), tone: inv ? 'dead' : 'k' });
     const uid = `${act.type}-${act.t_valid}`;
     if (inv) {
       events.push(ev('K', 'kl_invalid', act.dir, inv.t, M5, `K: ${act.type} invalidated`,
