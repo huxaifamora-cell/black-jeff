@@ -691,12 +691,12 @@ export function evaluate(h4Live, h1Live, m5, p = defaultParams, digits = 3) {
     const plan = tradePlan(act.lo, act.hi, act.dir, atr5, p);
     kState.active = { type: act.type, dir: act.dir, lo: act.lo, hi: act.hi, t0: act.t0, t_valid: act.t_valid, wicks: act.wicks,
       high_prob: act.high_prob, invalidated: inv, plan };
-    overlays.push({ type: 'box', grp: 'k', lo: act.lo, hi: act.hi, t0: act.t0, label: act.type + ' Key Level' + (act.high_prob ? '' : ' (low probability)'), tone: inv ? 'dead' : 'k' });
+    overlays.push({ type: 'box', grp: 'k', lo: act.lo, hi: act.hi, t0: act.t0, label: (act.dir === 1 ? 'Bullish KeyLevel' : 'Bearish KeyLevel') + (act.high_prob ? '' : ' (low probability)'), tone: inv ? 'dead' : 'k' });
     // The key level POI box on the M5 chart (grp 'k5', same label and colour as the H1 one) is marked from the M5 order block (see m5Poi).
     // With no M5 order block it falls back to the H1 box.
     const mp = m5Poi(act, m5, atr5, p);
     state.m5poi = mp;
-    overlays.push({ type: 'box', grp: 'k5', lo: mp ? mp.lo : act.lo, hi: mp ? mp.hi : act.hi, t0: mp ? mp.t : act.t0, label: act.type + ' Key Level' + (act.high_prob ? '' : ' (low probability)'), tone: inv ? 'dead' : 'k' });
+    overlays.push({ type: 'box', grp: 'k5', lo: mp ? mp.lo : act.lo, hi: mp ? mp.hi : act.hi, t0: mp ? mp.t : act.t0, label: (act.dir === 1 ? 'Bullish KeyLevel' : 'Bearish KeyLevel') + (act.high_prob ? '' : ' (low probability)'), tone: inv ? 'dead' : 'k' });
     const uid = `${act.type}-${act.t_valid}`;
     if (inv) {
       events.push(ev('K', 'kl_invalid', act.dir, inv.t, M5, `K: ${act.type} invalidated`,
