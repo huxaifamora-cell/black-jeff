@@ -54,10 +54,10 @@ const Pos = (() => {
   // the BATTLE PLAN button itself lives in the mini menu that app.js draws (.tmenu); this is the card it opens
   const toolsHtml = () => `<div class="pplan" hidden>
       <div class="pp-head"><b>BATTLE PLAN</b><span class="pp-mode"></span><span class="pinfo"></span><button data-p="eye" aria-label="Show or hide all plan boxes"></button></div>
-      <div class="pp-dir"><button data-p="long">&#9650; LONG <small>buy</small></button><button data-p="short">&#9660; SHORT <small>sell</small></button></div>
+      <div class="pp-dir"><button data-p="long">&#9650; BULLISH <small>(buy)</small></button><button data-p="short">&#9660; BEARISH <small>(sell)</small></button></div>
       <div class="pp-grid">${field('entry', 'ENTRY', 'where you get in')}${field('sl', 'STOP LOSS', 'where you admit you are wrong')}${field('tp', 'TAKE PROFIT', 'where you cash out')}
         <label class="pf pf-rr"><span>RISK : REWARD<small>follows the prices above</small></span><em>1 :</em><input data-f="rr" type="number" inputmode="decimal" step="any" autocomplete="off"></label></div>
-      <div class="pp-sum"></div><div class="pp-msg" role="alert"></div>
+      <div class="pp-msg" role="alert"></div>
       <div class="pp-act"><button data-p="deploy" class="pp-go">DEPLOY ON CHART</button><button data-p="new">NEW PLAN</button><button data-p="lock"></button><button data-p="del" class="pp-del">REMOVE</button></div>
     </div>`;
 
@@ -72,7 +72,6 @@ const Pos = (() => {
     q('[data-p=long]').classList.toggle('on', w.dir === 1); q('[data-p=short]').classList.toggle('on', w.dir === -1);
     const vals = { entry: w.entry, sl: w.sl, tp: w.tp, rr: num(w.entry + w.sl + w.tp) ? r2(rrOf(w)) : NaN };
     root.querySelectorAll('input[data-f]').forEach(i => { if (document.activeElement !== i) { const v = vals[i.dataset.f]; i.value = num(v) ? (i.dataset.f === 'rr' ? String(v) : v.toFixed(digits)) : ''; } });
-    q('.pp-sum').innerHTML = num(vals.rr) ? `If it fails you lose <b class="down">${riskOf(w).toFixed(digits)}</b> &middot; if it works you gain <b class="up">${rewardOf(w).toFixed(digits)}</b> &middot; <b>1 : ${vals.rr}</b>` : '';
     q('[data-p=deploy]').hidden = !!sel;
     ['new', 'lock', 'del'].forEach(k => { q(`[data-p=${k}]`).hidden = !sel; });
     q('[data-p=lock]').textContent = cur() && cur().locked ? 'UNLOCK' : 'LOCK';
@@ -88,8 +87,8 @@ const Pos = (() => {
   }
   function problem(n) {
     if (![n.entry, n.sl, n.tp].every(num)) return 'Fill in all three prices.';
-    if (!(n.dir * (n.entry - n.sl) > 0)) return n.dir > 0 ? 'For a LONG the stop loss must be below the entry.' : 'For a SHORT the stop loss must be above the entry.';
-    if (!(n.dir * (n.tp - n.entry) > 0)) return n.dir > 0 ? 'For a LONG the take profit must be above the entry.' : 'For a SHORT the take profit must be below the entry.';
+    if (!(n.dir * (n.entry - n.sl) > 0)) return n.dir > 0 ? 'For a BULLISH plan the stop loss must be below the entry.' : 'For a BEARISH plan the stop loss must be above the entry.';
+    if (!(n.dir * (n.tp - n.entry) > 0)) return n.dir > 0 ? 'For a BULLISH plan the take profit must be above the entry.' : 'For a BEARISH plan the take profit must be below the entry.';
     return '';
   }
   function onField(f, raw) {
@@ -257,5 +256,6 @@ const Pos = (() => {
   }
 
   const isOpen = () => panel;
-  return { open, isOpen, toolsHtml, bind, sync, extent, draw, down, move, up, hover, near };
+  const close = () => { panel = false; };
+  return { open, isOpen, close, toolsHtml, bind, sync, extent, draw, down, move, up, hover, near };
 })();

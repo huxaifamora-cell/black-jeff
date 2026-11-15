@@ -151,7 +151,8 @@ function drawSymbol(v, alerts) {
   view.querySelectorAll('.pills button[data-z]').forEach(b => b.onclick = () => { const cv = document.getElementById('chart'); if (b.dataset.z === 'reset') zoomReset(cv); else zoomBy(cv, b.dataset.z === 'in' ? 1 / 1.3 : 1.3); });
   view.querySelectorAll('.snav button').forEach(b => b.onclick = () => { symConcept = b.dataset.sc; drawSymbol(v, alerts); });
   view.querySelectorAll('.ksub button').forEach(b => b.onclick = () => { kSub = b.dataset.ks; drawSymbol(v, alerts); });
-  view.querySelectorAll('.tmenu button[data-m]').forEach(b => b.onclick = () => { if (b.dataset.m === 'alerts') showAlerts = !showAlerts; else showDetails = !showDetails; drawSymbol(v, alerts); });
+  view.querySelectorAll('.tmenu button[data-m]').forEach(b => b.onclick = () => { Pos.close(); if (b.dataset.m === 'alerts') { showAlerts = !showAlerts; showDetails = false; } else { showDetails = !showDetails; showAlerts = false; } drawSymbol(v, alerts); });   // one section open at a time
+  const pb = view.querySelector('.tmenu .planbtn'); if (pb) pb.addEventListener('click', () => { if (showAlerts || showDetails) { showAlerts = showDetails = false; drawSymbol(v, alerts); } });   // opening the plan closes the other two
   const mute = document.getElementById('mute'); if (mute) mute.onclick = async () => {
     const { me } = await api('/api/me'); const m = new Set(me.muted); m.add(current);
     await api('/api/me/settings', { method: 'POST', body: JSON.stringify({ muted: [...m] }) });
