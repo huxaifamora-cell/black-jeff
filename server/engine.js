@@ -174,45 +174,69 @@ function poiOf(cs, b, role, p) {
 }
 
 // Internal order flow (H1) is the trend. It is read walking the H1 candles in time order.
-// Flow = a direction d plus its valid BOS (structural liquidity, via markValid). The MOST CURRENT valid BOS is always the inducement, the nearest
-// earlier valid BOS whose POI sits on the right side of it is the disruption, older ones are points of liquidity (see addBos).
+// Flow = a direction d plus its BOS, valid and invalid ones (markValid = structural liquidity). The inducement is the most current BOS that sits BEYOND the previous
+// inducement (above it in an uptrend, below it in a downtrend); a BOS between the inducement and the disruption changes nothing. An invalid
+// NEWEST BOS cannot be the inducement (then the one before it is). The nearest earlier BOS whose POI sits on the right side of it is the disruption, older ones are points of liquidity (see addBos).
 // A new BOS never flips the trend by itself, and neither does a key level invalidation (that only changes which key levels to look for, see
 // evaluate). The trend flips ONLY when the disruption POI is invalidated: an H1 candle (a WICK is enough) goes beyond the disruption POI.
 // The flip is immediate and official. As soon as it happens the new order flow is mapped from the most current valid BOS: every valid BOS in the
 // new direction since the last valid BOS of the old direction (the current leg), plus the ones that follow.
-// A flow needs BOTH an inducement and a disruption; with a single valid BOS nothing is marked (it is kept in `pending`, never drawn).
-// The flow is seeded from the first valid H1 BOS in the window (or from `trend` when a direction is passed in, as the tests do).
+// A flow needs BOTH an inducement and a disruption; with a single BOS nothing is marked (it is kept in `pending`, never drawn).
+// The flow is seeded from the first H1 BOS in the window (or from `trend` when a direction is passed in, as the tests do).
 //
 // Pullback at the inducement: price comes back to the inducement POI. It never changes the trend. It has resumed once a valid BOS forms in the
 // trend direction (`pullback.resume_t`); trading then starts from the second valid key level after that (the first one is not traded).
 export function orderFlow(h1, trend, p) {
   const res = { dir: trend || 0, pois: [], pending: null, invalidated: null, remapped: false, recovered: null, pending_flip: null, official: null, pullback: null };
   if (trend === 0) return res;
-  const valid = markValid(h1, findBos(h1, p.swingK)).filter((b) => b.valid);
-  if (trend == null) { if (!valid.length) return res; trend = valid[0].dir; res.dir = trend; }
+  const bosAll = markValid(h1, findBos(h1, p.swingK));   // every BOS counts, valid or not (a BOS with no structural liquidity is still a point of liquidity)
+  if (trend == null) { if (!bosAll.length) return res; trend = bosAll[0].dir; res.dir = trend; }
   const at = new Map();
-  for (const b of valid) { if (!at.has(b.idx)) at.set(b.idx, []); at.get(b.idx).push(b); }
+  for (const b of bosAll) { if (!at.has(b.idx)) at.set(b.idx, []); at.get(b.idx).push(b); }
   const dpCache = new Map(), disPoi = (b) => { if (!dpCache.has(b.idx)) dpCache.set(b.idx, poiOf(h1, b, 'disruption', p)); return dpCache.get(b.idx); };
   let d = trend, list = [], last = null, pb = null; // current flow: its direction and its valid BOS (oldest first); last = latest flip; pb = pullback at the inducement
-  // The MOST CURRENT valid BOS is always the inducement; the disruption is the nearest earlier valid BOS whose POI sits on the right side of it
+  // The inducement is the most current BOS BEYOND the previous inducement (see addBos / eff); the disruption is the nearest earlier BOS whose POI sits on the right side of it
   // (uptrend: below, downtrend: above, no overlap). Older BOS that the newest one has passed (price wicked through them, no body close) are
   // dropped from the chain instead of the newest BOS being skipped, so a stale inducement / disruption can never stay on the chart.
-  const addBos = (b) => {
-    const np = disPoi(b);
-    while (list.length) {
-      const q = disPoi(list[list.length - 1]);
-      const stale = d === 1 ? ((np.lo + np.hi) <= (q.lo + q.hi) || np.lo <= q.hi) : ((np.lo + np.hi) >= (q.lo + q.hi) || np.hi >= q.lo);
-      if (!stale) break;
-      list.pop();
+  // All BOS of the flow are kept in `list` (oldest first). The chain used for the POIs (eff) is read from it:
+  //  - the NEWEST BOS is left out while it is invalid (no structural liquidity yet, so it cannot be the inducement). Then the second newest BOS
+  //    (valid or invalid) is the inducement and the BOS before it is the disruption;
+  //  - going back from the newest, a BOS whose POI is not on the right side of the newer one (uptrend: below it, downtrend: above it, no overlap)
+  //    is skipped, so the inducement is always above the disruption in an uptrend (below it in a downtrend).
+  let effKey = -1, effVal = [];
+  const eff = () => {
+    if (effKey === list.length) return effVal;
+    const arr = list.length && !list[list.length - 1].valid ? list.slice(0, -1) : list, out = [];
+    for (let j = arr.length - 1; j >= 0; j--) {
+      const q = disPoi(arr[j]);
+      if (out.length) {
+        const h = disPoi(out[out.length - 1]);
+        const stale = d === 1 ? ((h.lo + h.hi) <= (q.lo + q.hi) || h.lo <= q.hi) : ((h.lo + h.hi) >= (q.lo + q.hi) || h.hi >= q.lo);
+        if (stale) continue;
+      }
+      out.push(arr[j]);
     }
-    list.push(b);
+    effKey = list.length; effVal = out.reverse();
+    return effVal;
+  };
+  // The inducement only changes for a NEWER BOS beyond it: in an uptrend a new BOS must have its POI ABOVE the current inducement POI, in a downtrend
+  // BELOW it. A new BOS that forms between the inducement and the disruption (price pulled back into / below the inducement and broke structure
+  // there) is ignored: the inducement and the disruption stay where they are. Only a disruption invalidation (an H1 wick beyond it) resets them.
+  const addBos = (b) => {
+    const e = eff();
+    if (e.length) {
+      const h = disPoi(e[e.length - 1]), np = disPoi(b);
+      const beyond = d === 1 ? ((np.lo + np.hi) > (h.lo + h.hi) && np.lo > h.hi) : ((np.lo + np.hi) < (h.lo + h.hi) && np.hi < h.lo);
+      if (!beyond) return false;
+    }
+    list.push(b); return true;
   };
   for (let i = 0; i < h1.length; i++) {
     const c = h1[i];
     // the disruption POI is invalidated (an H1 wick beyond it is enough): flip right away
     let by = null;
-    if (list.length >= 2) {
-      const dp = disPoi(list[list.length - 2]);
+    if (eff().length >= 2) {
+      const dp = disPoi(eff()[eff().length - 2]);
       if ((d === 1 && c.l < dp.lo) || (d === -1 && c.h > dp.hi)) by = 'disruption';
     }
     if (by !== null) {
@@ -220,14 +244,14 @@ export function orderFlow(h1, trend, p) {
       res.official = { dir: -d, invalidated_t: c.t, t: c.t, idx: i, by };
       pb = null;
       d = -d;                                         // flipped right away; map the new flow from the most current BOS
-      list = [];
+      list = []; effKey = -1;
       let lastOld = -1;
-      for (const b of valid) if (b.idx <= i && b.dir === -d && b.idx > lastOld) lastOld = b.idx;
-      for (const b of valid) if (b.dir === d && b.idx > lastOld && b.idx < i) addBos(b);
+      for (const b of bosAll) if (b.idx <= i && b.dir === -d && b.idx > lastOld) lastOld = b.idx;
+      for (const b of bosAll) if (b.dir === d && b.idx > lastOld && b.idx < i) addBos(b);
     }
     // pullback at the inducement: price comes back into the inducement POI (it does not change the trend direction)
-    if (list.length >= 2 && (pb === null || pb.resume_t)) {
-      const ind = list[list.length - 1];
+    if (eff().length >= 2 && (pb === null || pb.resume_t)) {
+      const ind = eff()[eff().length - 1];
       if (i > ind.idx) {
         const q = poiOf(h1, ind, 'inducement', p);
         if (d === 1 ? c.l <= q.hi : c.h >= q.lo) pb = { dir: d, t: c.t, idx: i, resume_t: null };
@@ -236,16 +260,17 @@ export function orderFlow(h1, trend, p) {
     for (const b of at.get(i) || []) {
       if (b.dir === d) {
         addBos(b);
-        if (pb !== null && !pb.resume_t) pb.resume_t = c.t;   // the first valid BOS in the trend direction after the pullback = the trend resumes
+        if (b.valid && pb !== null && !pb.resume_t) pb.resume_t = c.t;   // the first valid BOS in the trend direction after the pullback = the trend resumes
       }
     }
   }
   res.dir = d; res.invalidated = last; res.remapped = last !== null;
   res.pullback = pb;
-  if (list.length === 1) { res.pending = { dir: d, bos_t: list[0].t, bos_idx: list[0].idx }; return res; }
-  if (list.length < 2) return res;
-  const ind = list[list.length - 1], dis = list[list.length - 2];
-  res.pois = [poiOf(h1, ind, 'inducement', p), poiOf(h1, dis, 'disruption', p), ...list.slice(-4, -2).map((b) => poiOf(h1, b, 'plq', p))];
+  const e = eff();
+  if (e.length === 1) { res.pending = { dir: d, bos_t: e[0].t, bos_idx: e[0].idx }; return res; }
+  if (e.length < 2) return res;
+  const ind = e[e.length - 1], dis = e[e.length - 2];
+  res.pois = [poiOf(h1, ind, 'inducement', p), poiOf(h1, dis, 'disruption', p), ...e.slice(-4, -2).map((b) => poiOf(h1, b, 'plq', p))];
   return res;
 }
 
