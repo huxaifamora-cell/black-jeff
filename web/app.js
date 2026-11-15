@@ -77,7 +77,7 @@ async function renderSymbols() {
 
 // ------------------------------------------------------------ symbol page
 function openSymbol(id) {
-  Radar.unmount(); current = id; tf = 'h1'; ZOOM = {}; liveCtx = null; clearInterval(timer);
+  Radar.unmount(); current = id; tf = 'h1'; ZOOM = {}; liveCtx = null; clearInterval(timer); Pos.open(id);
   if (tg) { tg.BackButton.show(); tg.BackButton.onClick(() => setTab(tab === 'alerts' ? 'alerts' : 'symbols')); }
   loadSymbol(); timer = setInterval(loadSymbol, 3000);          // live: the chart refreshes every 3 s
 }
@@ -132,11 +132,11 @@ function drawSymbol(v, alerts) {
   const stp = v.steps.map(x => `<div class="rt ${x.state}"><i>${x.state === 'done' ? '&#10003;' : x.state === 'now' ? '&#9679;' : '&#9675;'}</i><b>${x.k}</b> ${esc(x.text)}</div>`).join('');
   const plan = v.plan && v.status === 'ready' ? `<div class="plan"><div><small>${v.plan.dir === 1 ? 'BUY LIMIT' : 'SELL LIMIT'}</small><span class="px">${N(s.k.active.plan.entry, d)}</span></div><div><small>STOP LOSS</small><span class="down">${N(s.k.active.plan.sl, d)}</span></div><div><small>TAKE PROFIT 1:${s.k.active.plan.rr}</small><span class="up">${N(s.k.active.plan.tp, d)}</span></div></div>` : '';
   h += `<div class="pills">${['m5', 'h1', 'h4'].map(x => `<button data-tf="${x}" class="${x === tf ? 'on' : ''}">${x.toUpperCase()}</button>`).join('')}<span class="zbtns"><button data-z="out" aria-label="Zoom out">&minus;</button><button data-z="in" aria-label="Zoom in">+</button><button data-z="reset" aria-label="Reset zoom">&#8634;</button></span></div>
-    <canvas id="chart"></canvas><div class="small"><span class="livedot"></span>LIVE &middot; updated <span id="lvUp">${T(s.updated)}</span></div>` + plan +
+    ${Pos.toolsHtml()}<canvas id="chart"></canvas><div class="small"><span class="livedot"></span>LIVE &middot; updated <span id="lvUp">${T(s.updated)}</span></div>` + plan +
     `<details class="more"${wasOpen ? ' open' : ''}><summary>Full details</summary><div class="small">${done} of 4 steps cleared. ${nextWp ? `Next: <span class="px">${nextWp.k}</span> &middot; ${esc(nextWp.text)}` : 'All steps cleared.'}</div><div class="rts">${stp}</div>` + cards(s, d) + `</details>` +
     `<h3>Alerts for this symbol</h3>` + symAlerts(alerts) +
     `<div class="row"><button class="btn" id="mute">Mute alerts for this symbol</button></div>`;
-  view.innerHTML = h;
+  view.innerHTML = h; Pos.bind();
   document.getElementById('back').onclick = goBack;
   const redraw = () => chart(document.getElementById('chart'), s, tf, v.short);
   view.querySelectorAll('.pills button[data-tf]').forEach(b => b.onclick = () => { tf = b.dataset.tf; drawSymbol(v, alerts); });
@@ -217,12 +217,15 @@ function bindZoom(cv) {                                   // once per canvas ele
   const frac = x => Math.max(0, Math.min(1, x / Math.max(1, geo().plotW)));
   const pts = new Map(); let lastX = 0, pinch = 0, acc = 0, lastTap = 0;
   cv.addEventListener('wheel', e => { e.preventDefault(); const r = cv.getBoundingClientRect(); zoomBy(cv, e.deltaY > 0 ? 1.15 : 1 / 1.15, frac(e.clientX - r.left)); }, { passive: false });
+  cv.addEventListener('touchstart', e => { if (e.touches.length === 1 && Pos.near(cv, e.touches[0])) e.preventDefault(); }, { passive: false });   // finger on a handle: do not scroll the page
   cv.addEventListener('pointerdown', e => {
+    if (Pos.down(cv, e)) { try { cv.setPointerCapture(e.pointerId); } catch { /* ignore */ } return; }          // grabbed a position box handle
     pts.set(e.pointerId, { x: e.clientX, y: e.clientY }); try { cv.setPointerCapture(e.pointerId); } catch { /* ignore */ }
     lastX = e.clientX; acc = 0; if (pts.size === 2) { const [a, b] = [...pts.values()]; pinch = Math.hypot(a.x - b.x, a.y - b.y); }
     const now = Date.now(); if (pts.size === 1 && now - lastTap < 300) zoomReset(cv); if (pts.size === 1) lastTap = now;
   });
   cv.addEventListener('pointermove', e => {
+    if (Pos.move(cv, e)) return; if (e.pointerType === 'mouse' && !e.buttons) Pos.hover(cv, e);
     if (!pts.has(e.pointerId)) return; pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (pts.size === 2) {                                   // pinch: fingers apart = zoom in
       const [a, b] = [...pts.values()], d = Math.hypot(a.x - b.x, a.y - b.y), r = cv.getBoundingClientRect();
@@ -232,7 +235,7 @@ function bindZoom(cv) {                                   // once per canvas ele
     const stepPx = geo().step || 6, whole = Math.trunc(-acc / stepPx);
     if (whole) { acc += whole * stepPx; panBy(cv, whole); }
   });
-  const up = e => { pts.delete(e.pointerId); pinch = 0; acc = 0; };
+  const up = e => { Pos.up(cv, e); pts.delete(e.pointerId); pinch = 0; acc = 0; };
   cv.addEventListener('pointerup', up); cv.addEventListener('pointercancel', up); cv.addEventListener('pointerleave', up);
 }
 function chart(cv, s, tf, name) {
@@ -245,12 +248,15 @@ function chart(cv, s, tf, name) {
   cv._ctx = { s, tf, name }; bindZoom(cv);
   const zm = zoomOf(tf); zoomSet(tf, all.length, zm.n, zm.off);                 // clamp to what exists
   const cs = all.slice(Math.max(0, all.length - zm.n - zm.off), all.length - zm.off);
+  const main = cv.id === 'chart', ivl = { m5: 300, h1: 3600, h4: 14400 }[tf] || (cs.length > 1 ? cs[1][0] - cs[0][0] : 3600);   // main = the live symbol chart (not a training drill)
   let lo = Math.min(...cs.map(c => c[3])), hi = Math.max(...cs.map(c => c[2]));
   const shown = (s.overlays || []).filter(SHOW[tf] || (() => true));
   const span = hi - lo || 1, ov = shown.filter(o => o.type === 'box' ? (o.hi >= lo - span * .3 && o.lo <= hi + span * .3)
     : (o.tf === tf && o.y >= lo - span * .3 && o.y <= hi + span * .3));
   ov.forEach(o => { lo = Math.min(lo, o.lo ?? o.y); hi = Math.max(hi, o.hi ?? o.y); });
+  if (main) { const pe = Pos.extent(cs[0][0] - ivl, cs[cs.length - 1][0] + ivl * 4); if (pe) { lo = Math.min(lo, pe[0]); hi = Math.max(hi, pe[1]); } }
   const pad = (hi - lo) * .06; lo -= pad; hi += pad;
+  if (main && cv._freeze) { lo = cv._freeze.lo; hi = cv._freeze.hi; }          // a position handle is being dragged: keep the price scale still
   const LH = FS + 4, GAP = 1, TH = FS + 7;
   g.font = `${FS}px ${MONO}`;
   const tw = t => Math.ceil(g.measureText(t).width) + 10;
@@ -306,6 +312,8 @@ function chart(cv, s, tf, name) {
     const t = { x: r.x + r.w + 6, y: 4, w: trW, h: TH }; taken.push(t);
     g.fillStyle = 'rgba(12,17,9,.92)'; g.strokeStyle = trCol; g.lineWidth = 1.5; g.beginPath(); g.roundRect ? g.roundRect(t.x, t.y, t.w, t.h, 3) : g.rect(t.x, t.y, t.w, t.h); g.fill(); g.stroke(); g.lineWidth = 1;
     g.fillStyle = trCol; g.fillText(trTxt, t.x + 7, t.y + t.h / 2 + .5); g.textBaseline = 'alphabetic'; g.font = `${FS}px ${MONO}`; }
+  if (main) Pos.draw(g, cv, { W, Hh, FS, LH, MONO, plotW, step, ivl, cs0: cs[0][0], lo, hi, TOP, tf, taken, tw, Y, digits: s.digits ?? 3, price: s.price, last: cs[cs.length - 1][4], atr: s.atr,
+    rrPlan: s.k && s.k.active && s.k.active.plan && s.k.active.plan.rr, toPrice: y => lo + (Hh - 14 - y) / (Hh - 14 - TOP) * (hi - lo), toTime: x => Math.round(cs[0][0] + (x - step / 2) / step * ivl) });
   const free = r => !taken.some(t => hit(r, t)) && !solid.some(t => hit(r, t));
   const place = (l, w) => {
     const bandTop = 4, ys = [];

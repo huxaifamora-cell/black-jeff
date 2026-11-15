@@ -271,3 +271,14 @@ main > .xpl{display:block;text-align:center;font-size:12px;margin:6px 0 10px}
 .zbtns{margin-left:auto;display:flex;gap:6px}
 .zbtns button{min-width:44px;padding:5px 10px}
 canvas{touch-action:pan-y;user-select:none;-webkit-user-select:none}
+
+/* position boxes (BUY / SELL tool) toolbar above the chart */
+.ptools{flex-wrap:wrap;align-items:center}
+.ptools button{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-width:44px}
+.ptools button svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.ptools .pb-buy svg,.ptools .pb-sell svg{fill:currentColor;stroke:none}
+.ptools .pb-buy{background:#2F5FB3;border-color:#6C98E6;color:#fff}
+.ptools .pb-sell{background:#B03A2E;border-color:#E58272;color:#fff}
+.ptools button:disabled{opacity:.4;pointer-events:none}
+.ptools .prr{margin-left:auto;display:flex;align-items:center;gap:4px;font:500 13px var(--mono);color:var(--hint)}
+.ptools .prr input{width:64px;min-height:44px;text-align:center;background:var(--inner);color:var(--fg);border:1px solid var(--edge);font:500 14px var(--mono)}
