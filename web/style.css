@@ -319,18 +319,18 @@ canvas{touch-action:pan-y;user-select:none;-webkit-user-select:none}
 /* ALIVE XP bar. Fill + a head at the leading edge. Army: bullet and fire. Air Force: jet and contrail. Navy: warship on waves. */
 .xpbar.big div{transition:width .9s cubic-bezier(.2,.7,.2,1)}
 .xpbar.big{height:46px}
-.xpbar.big .hd{position:absolute;top:0;bottom:0;left:max(72px,var(--p,0%));transform:translateX(calc(-100% + 4px));width:72px;display:flex;align-items:center;pointer-events:none;z-index:1}
+.xpbar.big .hd{position:absolute;top:0;bottom:0;left:min(max(72px,var(--p,0%)),calc(100% - 124px));transform:translateX(calc(-100% + 4px));width:72px;display:flex;align-items:center;pointer-events:none;z-index:1}
 .xpbar.big .hd svg{width:72px;height:36px;overflow:visible;filter:drop-shadow(0 1px 1px rgba(0,0,0,.35))}
 .xpbar.big span{z-index:2;text-shadow:0 0 3px rgba(255,255,255,.55)}
 .xpbar.big::after{content:"";position:absolute;inset:0;pointer-events:none;background:linear-gradient(90deg,transparent 40%,rgba(255,255,255,.55) 50%,transparent 60%) -120% 0/60% 100% no-repeat;animation:xpsweep 3.2s ease-in-out infinite}
 @keyframes xpsweep{to{background-position:220% 0}}
 .xpbar.big.br-none div{background:repeating-linear-gradient(115deg,#8FD14F 0 14px,#A7E066 14px 28px);background-size:40px 100%;animation:xpstripe 1s linear infinite}
 @keyframes xpstripe{to{background-position:40px 0}}
-.xpbar.big.br-army div{background:linear-gradient(90deg,#FF3D12,#FF7A1A 55%,#FFC83A);animation:xpfire .35s ease-in-out infinite alternate}
+.xpbar.big.br-army div,.xpbar.big.br-rocket div{background:linear-gradient(90deg,#FF3D12,#FF7A1A 55%,#FFC83A);animation:xpfire .35s ease-in-out infinite alternate}
 @keyframes xpfire{from{filter:brightness(1) saturate(1)}to{filter:brightness(1.22) saturate(1.25)}}
-.xpbar.big.br-army .fl{transform-origin:22px 14px;animation:xpflick .12s ease-in-out infinite alternate}
+.xpbar.big.br-army .fl,.xpbar.big.br-rocket .fl{transform-origin:22px 14px;animation:xpflick .12s ease-in-out infinite alternate}
 @keyframes xpflick{from{transform:scale(1,.9) skewY(-3deg)}to{transform:scale(1.18,1.08) skewY(3deg)}}
-.xpbar.big.br-army .hd svg{animation:xpjit .15s linear infinite alternate}
+.xpbar.big.br-army .hd svg,.xpbar.big.br-rocket .hd svg{animation:xpjit .15s linear infinite alternate}
 @keyframes xpjit{from{transform:translateY(-.8px)}to{transform:translateY(.8px)}}
 .xpbar.big.br-air div{background:linear-gradient(90deg,#9ED0F5,#D4EBFF)}
 .xpbar.big.br-air div:after{content:"";position:absolute;inset:0;background:linear-gradient(rgba(255,255,255,.9),rgba(255,255,255,.9)) 0 30%/100% 2px no-repeat,linear-gradient(rgba(255,255,255,.7),rgba(255,255,255,.7)) 0 66%/100% 2px no-repeat;-webkit-mask:repeating-linear-gradient(90deg,#000 0 22px,transparent 22px 60px);mask:repeating-linear-gradient(90deg,#000 0 22px,transparent 22px 60px);-webkit-mask-size:60px 100%;mask-size:60px 100%;animation:xpstreak .7s linear infinite}
@@ -349,3 +349,7 @@ canvas{touch-action:pan-y;user-select:none;-webkit-user-select:none}
 .xpbar.big.br-navy .wk{animation:xpwake .9s linear infinite}
 @keyframes xpwake{from{transform:translateX(0);opacity:1}to{transform:translateX(-8px);opacity:.4}}
 @media (prefers-reduced-motion:reduce){.xpbar.big::after,.xpbar.big div,.xpbar.big div:before,.xpbar.big div:after,.xpbar.big .hd svg,.xpbar.big .hd svg *{animation:none!important}}
+
+/* percentage and XP live inside the bar, at the right, on a light chip so they read over any fill */
+.xpbar.big .xr{right:8px;top:50%;bottom:auto;transform:translateY(-50%);height:24px;padding:0 8px;background:rgba(255,255,255,.72);border-radius:2px;font:700 12px var(--mono);letter-spacing:0;text-shadow:none}
+.xpbar.big .xr b{font-weight:700;margin-right:4px}.xpbar.big .xr{gap:0}
