@@ -441,7 +441,7 @@ async function renderRank() {
   const s = await rk(), i = rankOf(s), L = ladder(s), nx = L[i + 1], cur = L[i][1], br = BRANCHES[s.branch];
   const nxName = nx ? (i === LIEUTENANT && !s.branch && !s.legacy ? 'your service rank' : rankName(i + 1, s)) : '';
   const held = i < rankIdx(s.xp, s), gate = GATES[i] && !GATES[i].ok(s) ? GATES[i] : null;      // held: enough XP, but the requirement is still open
-  const hk = i <= LIEUTENANT ? 'rocket' : s.branch && XPHEAD[s.branch] ? s.branch : 'army';   // shared ranks (up to Lieutenant) get the rocket; above that, the service's own
+  const hk = 'army';   // every rank gets the fired-bullet bar (fire behind it)
   const pct = nx && !held ? Math.min(100, Math.round((s.xp - cur) / (nx[1] - cur) * 100)) : 100;
   const name = rkName();
   const m = (t, d, p, btn, id, ic) => `<div class="card"><h4>${ic ? ico(ic) : ''}${t} <span class="px">${p}</span></h4><p class="small">${d}</p>${btn ? `<button class="btn" id="${id}">${btn}</button>` : ''}</div>`;

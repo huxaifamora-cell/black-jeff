@@ -348,7 +348,7 @@ canvas{touch-action:pan-y;user-select:none;-webkit-user-select:none}
 @keyframes xpbob{0%,100%{transform:translateY(0) rotate(-2deg)}50%{transform:translateY(-1.8px) rotate(2deg)}}
 .xpbar.big.br-navy .wk{animation:xpwake .9s linear infinite}
 @keyframes xpwake{from{transform:translateX(0);opacity:1}to{transform:translateX(-8px);opacity:.4}}
-@media (prefers-reduced-motion:reduce){.xpbar.big::after,.xpbar.big div,.xpbar.big div:before,.xpbar.big div:after,.xpbar.big .hd svg,.xpbar.big .hd svg *{animation:none!important}}
+/* no reduced-motion switch-off here on purpose: phones with battery saver or reduce motion on were freezing the bar */
 
 /* percentage and XP live inside the bar, at the right, on a light chip so they read over any fill */
 .xpbar.big .xr{right:8px;top:50%;bottom:auto;transform:translateY(-50%);height:24px;padding:0 8px;background:rgba(255,255,255,.72);border-radius:2px;font:700 12px var(--mono);letter-spacing:0;text-shadow:none}
