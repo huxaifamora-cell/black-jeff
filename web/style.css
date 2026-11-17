@@ -371,3 +371,10 @@ canvas{touch-action:pan-y;user-select:none;-webkit-user-select:none}
 .xpg svg{display:block;width:100%;height:auto;overflow:visible}
 .xpg .gp{font:700 26px var(--head);letter-spacing:1px;fill:var(--gold)}
 .xpg .gx{font:700 12px var(--mono);fill:var(--chipfg);letter-spacing:.5px}
+
+.xpg .gn{text-align:center;font:700 19px var(--head);letter-spacing:3px;text-transform:uppercase;color:var(--gold);padding:2px 0 6px}
+.xpg .gh{text-align:center;font:700 12px var(--head);letter-spacing:2.5px;color:var(--tan);padding:0 0 2px}
+.xpg .gs{text-align:center;font:500 11px var(--mono);color:var(--hint);padding:0 0 8px}
+.xpc .gp{font-size:22px}.xpc .gp .gxs{font:700 12px var(--mono);fill:var(--chipfg)}
+.xpc .cl{font:600 7.4px var(--mono);fill:var(--hint)}.xpc .cl.dn{fill:var(--chipfg)}.xpc .cl.on{fill:var(--gold);font-weight:700}
+.xpg .gh{font-size:11px;letter-spacing:1.4px}
