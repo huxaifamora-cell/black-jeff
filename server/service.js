@@ -37,28 +37,24 @@ export function statusOf(a) {
   }
 }
 
-// Telegram text, "signal card" style: alert type, symbol, H1 trend, status, timeframe. Nothing else.
-//   🟢 <b>BUY SETUP · KEY LEVEL</b>
-//   Volatility 75 Index
-//   ┃ H1 trend   Bullish          (a Telegram blockquote, labels and values in monospace)
-//   ┃ Status     Valid RBS (buy setup)
-//   ┃ Timeframe  H1
-// The dot matches the button colour: green buy / bullish, red sell / bearish, white for invalidations and alerts with no direction.
-// Key level, QML and advanced key level alerts are "setups" (BUY / SELL SETUP); structure, order flow and reclamation are BULLISH / BEARISH.
-const SETUP_CONCEPTS = new Set(['K', 'QML', 'ADV']);
+// Telegram text: two lines, the direction and the alert type, then the symbol name.
+//   🟢 <b>BULLISH · RECLAMATION</b>
+//   Volatility 25 Index
+// The dot matches the button colour: green bullish, red bearish, white for invalidations and alerts with no direction.
+// The type is the kind of alert: RECLAMATION, KEY LEVEL, QML, BJEFF ZONE or 50% KEYLEVEL POI (structure and order flow alerts
+// keep their own names). The button under the message is added by the caller and is not part of this text.
+const KIND_TYPE = { reclamation: 'RECLAMATION', kl_valid: 'KEY LEVEL', kl_entry: 'KEY LEVEL', kl_invalid: 'KEY LEVEL',
+  qml_valid: 'QML', qml_entry: 'QML', bjeff_valid: 'BJEFF ZONE', adv_entry: '50% KEYLEVEL POI' };
 const INVALID_KINDS = new Set(['kl_invalid', 'invalidated']);
+export const alertType = (a) => KIND_TYPE[a.kind] || String(TYPE_NAME[a.concept] || a.concept || 'ALERT').toUpperCase();
 export const formatAlert = (a) => {
   const esc = (t) => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  const p = a.payload || {}, type = esc(String(TYPE_NAME[a.concept] || a.concept).toUpperCase());
-  const dir = INVALID_KINDS.has(a.kind) ? 0 : a.dir;
-  const setup = SETUP_CONCEPTS.has(a.concept);
+  const type = esc(alertType(a));
   const head = INVALID_KINDS.has(a.kind) ? `⚪ <b>INVALIDATED · ${type}</b>`
-    : dir === 1 ? `🟢 <b>${setup ? 'BUY SETUP' : 'BULLISH'} · ${type}</b>`
-    : dir === -1 ? `🔴 <b>${setup ? 'SELL SETUP' : 'BEARISH'} · ${type}</b>`
+    : a.dir === 1 ? `🟢 <b>BULLISH · ${type}</b>`
+    : a.dir === -1 ? `🔴 <b>BEARISH · ${type}</b>`
     : `⚪ <b>${type}</b>`;
-  const rows = [['H1 trend', BIAS_NAME[p.bias] || 'None yet'], ['Status', esc(statusOf(a))], ['Timeframe', TF_NAME[p.tf] || '-']];
-  const card = rows.map(([k, v]) => `${k.padEnd(11)}${v}`).join('\n');
-  return `${head}\n${esc(a.symbol_name)}\n\n<blockquote><code>${card}</code></blockquote>`;
+  return `${head}\n${esc(a.symbol_name)}`;
 };
 
 // The SORK checklist for one symbol: S structure, O order flow, R reclamation, K key level.
