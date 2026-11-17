@@ -427,8 +427,8 @@ const SUBTABS = [
 // The living head of the XP bar, one per service (drawn at the end of the fill, pointing right; the motion is in style.css):
 //  Army: a fired bullet with fire behind it. Air Force: a jet with a contrail. Navy: a warship riding the waves, with a wake.
 // XP gauge: a half-dial like a speedometer. Dark gunmetal dial with tick marks, an arc that fills olive -> ember and a brass needle whose
-// tip points at the percentage, which rides on the arc and moves with the needle. Under the dial: the XP on a mileage-counter style
-// odometer (XP [0000]) and below it the rank name. Animated with SVG's own animation (SMIL), which phones run even when CSS animation is
+// tip points at the percentage, which rides on the arc and moves with the needle. The rank name is centred above the dial; under it the XP on a
+// mileage-counter style odometer (XP [0000]). Animated with SVG's own animation (SMIL), which phones run even when CSS animation is
 // switched off by battery saver / reduce motion.
 function xpGauge(pct, xp, rname) {
   const P = Math.max(0, Math.min(100, Number(pct) || 0)), ang = (180 * P / 100).toFixed(2), C = 120, R = 81;
@@ -445,6 +445,7 @@ function xpGauge(pct, xp, rname) {
       <g transform="translate(${C - R} ${C})"><g transform="rotate(${-ang})">${sweep('0', String(-ang))}<text x="0" y="5.5" text-anchor="middle" class="gpt">${Math.round(P)}%</text></g></g></g>`;   // the % turns with the needle and is turned back so it stays upright
   const digits = String(Math.max(0, Math.floor(Number(xp) || 0))).padStart(4, '0').split('');
   return `<div class="xpg" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(P)}" aria-label="XP progress">
+    <div class="gn top">${esc(rname || '')}</div>
     <svg viewBox="0 0 240 134" aria-hidden="true"><defs><linearGradient id="xpgf" gradientUnits="userSpaceOnUse" x1="${C - R}" y1="0" x2="${C + R}" y2="0"><stop offset="0" stop-color="#3F5F27"/><stop offset=".45" stop-color="#6F8030"/><stop offset=".78" stop-color="#C0701E"/><stop offset="1" stop-color="#FF8A1F"/></linearGradient></defs>
       <path d="${arc}" pathLength="100" fill="none" stroke="#0E140A" stroke-width="38"/>
       <path d="M${C - R - 19} ${C}A${R + 19} ${R + 19} 0 0 1 ${C + R + 19} ${C}M${C - R + 19} ${C}A${R - 19} ${R - 19} 0 0 1 ${C + R - 19} ${C}" fill="none" stroke="#C2A06A" stroke-width="1.2" opacity=".75"/>
@@ -452,8 +453,7 @@ function xpGauge(pct, xp, rname) {
       <path d="${arc}" pathLength="100" fill="none" stroke="#FFB347" stroke-width="36" stroke-dasharray="${P} 100" opacity="0"><animate attributeName="opacity" values="0;.22;0" dur=".45s" repeatCount="indefinite"/></path>
       ${ticks}${needle}
       <circle cx="${C}" cy="${C}" r="10" fill="#121A0D" stroke="#C2A06A" stroke-width="2"/><circle cx="${C}" cy="${C}" r="3.5" fill="#E3C16A"/></svg>
-    <div class="gxl">XP</div><div class="odo" aria-label="${digits.join('')} XP">${digits.map((d, k) => `<i style="animation-delay:${k * 90}ms">${d}</i>`).join('')}</div>
-    <div class="gn">${esc(rname || '')}</div></div>`;
+    <div class="gxl">XP</div><div class="odo" aria-label="${digits.join('')} XP">${digits.map((d, k) => `<i style="animation-delay:${k * 90}ms">${d}</i>`).join('')}</div></div>`;
 }
 // Career gauge: the whole road to the final rank (6000 XP). One box per rank on the person's own service ladder, each labelled with the XP that
 // rank starts at. Boxes behind the person are filled, the box they are in fills as they progress, and the needle shows where they stand.
@@ -473,15 +473,15 @@ function xpCareer(s, i, pct) {
     const am = th(k + .5);
     labels += `<text x="${(C + 133 * Math.cos(am)).toFixed(1)}" y="${(CY - 133 * Math.sin(am) + 2.6).toFixed(1)}" text-anchor="middle" class="cl${here ? ' on' : k < i ? ' dn' : ''}">${r[1]}</text>`;
   });
-  const fin = L[n - 1], need = Math.max(0, fin[1] - s.xp), svc = s.branch ? BRANCHES[s.branch].name : 'Army ladder, until you choose your service';
+  const fin = L[n - 1], svc = s.branch ? BRANCHES[s.branch].name + ' · ' : '';
   const needle = `<g transform="rotate(${ang} ${C} ${CY})"><animateTransform attributeName="transform" type="rotate" from="0 ${C} ${CY}" to="${ang} ${C} ${CY}" dur="1.6s" fill="freeze" calcMode="spline" keyTimes="0;1" keySplines=".2 .7 .2 1"/><g><animateTransform attributeName="transform" type="rotate" values="-1.2 ${C} ${CY};1.2 ${C} ${CY};-1.2 ${C} ${CY}" dur=".55s" repeatCount="indefinite"/><path d="M${C} ${CY - 4}L${C - RI - 6} ${CY - .7}L${C - RI - 6} ${CY + .7}L${C} ${CY + 4}Z" fill="#E3C16A" stroke="#0A0E07" stroke-width=".8" stroke-linejoin="round"/></g></g>`;
   return `<div class="xpg xpc" role="img" aria-label="Career progress: ${s.xp} of ${fin[1]} XP, rank ${esc(L[i][0])} of ${n}">
-    <div class="gh">ROAD TO ${esc(fin[0]).toUpperCase()} &middot; ${fin[1]} XP</div>
-    <svg viewBox="0 0 300 198" aria-hidden="true"><defs><linearGradient id="xpcf" gradientUnits="userSpaceOnUse" x1="${C - RO}" y1="0" x2="${C + RO}" y2="0"><stop offset="0" stop-color="#3F5F27"/><stop offset=".45" stop-color="#6F8030"/><stop offset=".78" stop-color="#C0701E"/><stop offset="1" stop-color="#FF8A1F"/></linearGradient></defs>
+    <div class="gh"><span>&#9733;</span> CHAIN OF COMMAND <span>&#9733;</span></div>
+    <svg viewBox="0 0 300 168" aria-hidden="true"><defs><linearGradient id="xpcf" gradientUnits="userSpaceOnUse" x1="${C - RO}" y1="0" x2="${C + RO}" y2="0"><stop offset="0" stop-color="#3F5F27"/><stop offset=".45" stop-color="#6F8030"/><stop offset=".78" stop-color="#C0701E"/><stop offset="1" stop-color="#FF8A1F"/></linearGradient></defs>
       ${boxes}${labels}${needle}
       <circle cx="${C}" cy="${CY}" r="10" fill="#121A0D" stroke="#C2A06A" stroke-width="2"/><circle cx="${C}" cy="${CY}" r="3.5" fill="#E3C16A"/>
-      <text x="${C}" y="${CY + 30}" text-anchor="middle" class="gp">${s.xp} <tspan class="gxs">/ ${fin[1]} XP</tspan></text><text x="${C}" y="${CY + 47}" text-anchor="middle" class="gx">${need ? `${need} XP to ${esc(fin[0])}` : 'Final rank reached'}</text></svg>
-    <div class="gn">${esc(L[i][0])}</div><div class="gs">${esc(svc)} &middot; rank ${i + 1} of ${n}</div></div>`;
+</svg>
+    <div class="gn">${esc(L[i][0])}</div><div class="gs">${esc(svc)}rank ${i + 1} of ${n}</div></div>`;
 }
 const XPHEAD = {
   rocket: '<svg viewBox="0 0 56 28"><g class="fl"><path d="M20 14C13 4 8 10 0 2c3 6 2 9 6 12-4 3-3 6-6 12 8-6 14-1 20-12z" fill="#FF5A1F"/><path d="M20 14C15 9 11 12 5 8c3 4 1 6 4 6-3 2-2 4-4 6 6-3 10 0 15-6z" fill="#FFD23F"/></g><path d="M18 9l-6-6v6zM18 19l-6 6v-6z" fill="#D93A2B"/><path d="M18 8h20c8 0 14 3 17 6-3 3-9 6-17 6H18z" fill="#F2F4F7" stroke="#6B7480" stroke-width="1" stroke-linejoin="round"/><path d="M42 8.6c6 .8 10 3 13 5.4-3 2.4-7 4.6-13 5.4z" fill="#D93A2B"/><circle cx="32" cy="14" r="3.2" fill="#7CC4F2" stroke="#6B7480"/><path d="M24 8v12" stroke="#B9C0C9"/></svg>',

@@ -385,3 +385,9 @@ canvas{touch-action:pan-y;user-select:none;-webkit-user-select:none}
 .xpg .odo{display:flex;justify-content:center;gap:3px;margin:4px 0 6px}
 .xpg .odo i{font:700 22px/30px var(--mono);font-style:normal;width:24px;height:32px;text-align:center;color:var(--gold);background:linear-gradient(#050805,#1A2312 50%,#050805);border:1px solid var(--tan);box-shadow:inset 0 0 6px #000;animation:odoin .7s cubic-bezier(.2,.8,.2,1) both}
 @keyframes odoin{from{transform:translateY(-14px);opacity:0}}
+
+/* rank gauge: name on top; bigger XP label; military title for the career gauge */
+.xpg .gn.top{padding:0 0 6px;font-size:22px}
+.xpg .gxl{font-size:20px;letter-spacing:7px;color:var(--gold);margin-top:4px}
+.xpg .gh{display:flex;align-items:center;justify-content:center;gap:10px;font:700 15px var(--head);letter-spacing:5px;color:var(--gold);padding:0 0 4px;border-bottom:1px solid var(--edge);margin:0 6px 4px}
+.xpg .gh span{font-size:11px;color:var(--tan);letter-spacing:0}
