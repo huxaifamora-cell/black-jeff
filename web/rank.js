@@ -426,8 +426,10 @@ const SUBTABS = [
 ];
 // The living head of the XP bar, one per service (drawn at the end of the fill, pointing right; the motion is in style.css):
 //  Army: a fired bullet with fire behind it. Air Force: a jet with a contrail. Navy: a warship riding the waves, with a wake.
-// XP gauge: a half-dial like a speedometer. Dark gunmetal dial with tick marks, an arc that fills olive -> ember and a brass needle. Animated with SVG's own animation (SMIL), which phones run
-// even when CSS animation is switched off by battery saver / reduce motion.
+// XP gauge: a half-dial like a speedometer. Dark gunmetal dial with tick marks, an arc that fills olive -> ember and a brass needle whose
+// tip points at the percentage, which rides on the arc and moves with the needle. Under the dial: the XP on a mileage-counter style
+// odometer (XP [0000]) and below it the rank name. Animated with SVG's own animation (SMIL), which phones run even when CSS animation is
+// switched off by battery saver / reduce motion.
 function xpGauge(pct, xp, rname) {
   const P = Math.max(0, Math.min(100, Number(pct) || 0)), ang = (180 * P / 100).toFixed(2), C = 120, R = 81;
   let ticks = '';
@@ -436,17 +438,22 @@ function xpGauge(pct, xp, rname) {
     ticks += `<line x1="${(C + r1 * Math.cos(a)).toFixed(1)}" y1="${(C - r1 * Math.sin(a)).toFixed(1)}" x2="${(C + r2 * Math.cos(a)).toFixed(1)}" y2="${(C - r2 * Math.sin(a)).toFixed(1)}" stroke="#C2A06A" stroke-width="${big ? 1.6 : 1}" opacity="${big ? .9 : .5}"/>`;
   }
   const arc = `M${C - R} ${C}A${R} ${R} 0 0 1 ${C + R} ${C}`;
-  const spin = (inner) => `<g transform="rotate(${ang} ${C} ${C})"><animateTransform attributeName="transform" type="rotate" from="0 ${C} ${C}" to="${ang} ${C} ${C}" dur="1.4s" fill="freeze" calcMode="spline" keyTimes="0;1" keySplines=".2 .7 .2 1"/>${inner}</g>`;
-  const needle = `<g><animateTransform attributeName="transform" type="rotate" values="-1.3 ${C} ${C};1.3 ${C} ${C};-1.3 ${C} ${C}" dur=".5s" repeatCount="indefinite"/><path d="M${C} ${C - 4}L${C - R - 4} ${C - .6}L${C - R - 4} ${C + .6}L${C} ${C + 4}Z" fill="#E3C16A" stroke="#0A0E07" stroke-width=".8" stroke-linejoin="round"/></g>`;
+  const sweep = (from, to) => `<animateTransform attributeName="transform" type="rotate" from="${from}" to="${to}" dur="1.4s" fill="freeze" calcMode="spline" keyTimes="0;1" keySplines=".2 .7 .2 1"/>`;
+  const needle = `<g transform="rotate(${ang} ${C} ${C})">${sweep(`0 ${C} ${C}`, `${ang} ${C} ${C}`)}
+      <g><animateTransform attributeName="transform" type="rotate" values="-1.2 ${C} ${C};1.2 ${C} ${C};-1.2 ${C} ${C}" dur=".5s" repeatCount="indefinite"/>
+        <path d="M${C} ${C - 4}L${C - 52} ${C - 3}L${C - 63} ${C}L${C - 52} ${C + 3}L${C} ${C + 4}Z" fill="#E3C16A" stroke="#0A0E07" stroke-width=".8" stroke-linejoin="round"/></g>
+      <g transform="translate(${C - R} ${C})"><g transform="rotate(${-ang})">${sweep('0', String(-ang))}<text x="0" y="5.5" text-anchor="middle" class="gpt">${Math.round(P)}%</text></g></g></g>`;   // the % turns with the needle and is turned back so it stays upright
+  const digits = String(Math.max(0, Math.floor(Number(xp) || 0))).padStart(4, '0').split('');
   return `<div class="xpg" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(P)}" aria-label="XP progress">
-    <svg viewBox="0 0 240 176" aria-hidden="true"><defs><linearGradient id="xpgf" gradientUnits="userSpaceOnUse" x1="${C - R}" y1="0" x2="${C + R}" y2="0"><stop offset="0" stop-color="#3F5F27"/><stop offset=".45" stop-color="#6F8030"/><stop offset=".78" stop-color="#C0701E"/><stop offset="1" stop-color="#FF8A1F"/></linearGradient></defs>
+    <svg viewBox="0 0 240 134" aria-hidden="true"><defs><linearGradient id="xpgf" gradientUnits="userSpaceOnUse" x1="${C - R}" y1="0" x2="${C + R}" y2="0"><stop offset="0" stop-color="#3F5F27"/><stop offset=".45" stop-color="#6F8030"/><stop offset=".78" stop-color="#C0701E"/><stop offset="1" stop-color="#FF8A1F"/></linearGradient></defs>
       <path d="${arc}" pathLength="100" fill="none" stroke="#0E140A" stroke-width="38"/>
       <path d="M${C - R - 19} ${C}A${R + 19} ${R + 19} 0 0 1 ${C + R + 19} ${C}M${C - R + 19} ${C}A${R - 19} ${R - 19} 0 0 1 ${C + R - 19} ${C}" fill="none" stroke="#C2A06A" stroke-width="1.2" opacity=".75"/>
       <path d="${arc}" pathLength="100" fill="none" stroke="url(#xpgf)" stroke-width="36" stroke-dasharray="${P} 100"><animate attributeName="stroke-dasharray" from="0 100" to="${P} 100" dur="1.4s" fill="freeze" calcMode="spline" keyTimes="0;1" keySplines=".2 .7 .2 1"/></path>
       <path d="${arc}" pathLength="100" fill="none" stroke="#FFB347" stroke-width="36" stroke-dasharray="${P} 100" opacity="0"><animate attributeName="opacity" values="0;.22;0" dur=".45s" repeatCount="indefinite"/></path>
-      ${ticks}${spin(needle)}
-      <circle cx="${C}" cy="${C}" r="10" fill="#121A0D" stroke="#C2A06A" stroke-width="2"/><circle cx="${C}" cy="${C}" r="3.5" fill="#E3C16A"/>
-      <text x="${C}" y="152" text-anchor="middle" class="gp">${Math.round(P)}%</text><text x="${C}" y="169" text-anchor="middle" class="gx">${xp} XP</text></svg><div class="gn">${esc(rname || '')}</div></div>`;
+      ${ticks}${needle}
+      <circle cx="${C}" cy="${C}" r="10" fill="#121A0D" stroke="#C2A06A" stroke-width="2"/><circle cx="${C}" cy="${C}" r="3.5" fill="#E3C16A"/></svg>
+    <div class="gxl">XP</div><div class="odo" aria-label="${digits.join('')} XP">${digits.map((d, k) => `<i style="animation-delay:${k * 90}ms">${d}</i>`).join('')}</div>
+    <div class="gn">${esc(rname || '')}</div></div>`;
 }
 // Career gauge: the whole road to the final rank (6000 XP). One box per rank on the person's own service ladder, each labelled with the XP that
 // rank starts at. Boxes behind the person are filled, the box they are in fills as they progress, and the needle shows where they stand.
