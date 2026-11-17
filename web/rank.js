@@ -426,6 +426,34 @@ const SUBTABS = [
 ];
 // The living head of the XP bar, one per service (drawn at the end of the fill, pointing right; the motion is in style.css):
 //  Army: a fired bullet with fire behind it. Air Force: a jet with a contrail. Navy: a warship riding the waves, with a wake.
+// XP gauge: a half-dial like a speedometer. Dark gunmetal dial with tick marks, an arc that fills olive -> ember, a brass needle,
+// and a fired bullet with fire riding at the end of the filled arc. Animated with SVG's own animation (SMIL), which phones run
+// even when CSS animation is switched off by battery saver / reduce motion.
+function xpGauge(pct, xp) {
+  const P = Math.max(0, Math.min(100, Number(pct) || 0)), ang = (180 * P / 100).toFixed(2), C = 120, R = 81;
+  let ticks = '';
+  for (let i = 0; i <= 100; i += 5) {
+    const a = Math.PI * (1 - i / 100), big = i % 10 === 0, r1 = 103, r2 = big ? 110 : 106;
+    ticks += `<line x1="${(C + r1 * Math.cos(a)).toFixed(1)}" y1="${(C - r1 * Math.sin(a)).toFixed(1)}" x2="${(C + r2 * Math.cos(a)).toFixed(1)}" y2="${(C - r2 * Math.sin(a)).toFixed(1)}" stroke="#C2A06A" stroke-width="${big ? 1.6 : 1}" opacity="${big ? .9 : .5}"/>`;
+  }
+  const arc = `M${C - R} ${C}A${R} ${R} 0 0 1 ${C + R} ${C}`;
+  const spin = (inner) => `<g transform="rotate(${ang} ${C} ${C})"><animateTransform attributeName="transform" type="rotate" from="0 ${C} ${C}" to="${ang} ${C} ${C}" dur="1.4s" fill="freeze" calcMode="spline" keyTimes="0;1" keySplines=".2 .7 .2 1"/>${inner}</g>`;
+  const bullet = `<g transform="translate(${C - R} ${C})">
+      <g transform="translate(0 26)"><g><animateTransform attributeName="transform" type="scale" values="1 .82;1.18 1.2;.95 .9;1.12 1.1;1 .82" dur=".22s" repeatCount="indefinite"/>
+        <path d="M-10 0C-12 9-5 12-5 20C-2 15 0 17 0 28C4 19 9 16 7 9C10 6 10 3 10 0Z" fill="#FF5A1F"/><path d="M-5 0C-6 6-2 8-2 13C1 10 3 8 5 0Z" fill="#FFD23F"/></g></g>
+      <path d="M0-20C7-12 10-6 10 2V12H-10V2C-10-6-7-12 0-20Z" fill="#B8651E" stroke="#3A2208" stroke-width="1"/><path d="M-4-6C-3-11 0-15 1-16" stroke="#F0B27A" stroke-width="1.4" fill="none" stroke-linecap="round"/>
+      <rect x="-10" y="12" width="20" height="14" fill="#D8B04A" stroke="#3A2208" stroke-width="1"/><path d="M-10 16h20" stroke="#8A6B1F" stroke-width="1.2"/></g>`;
+  const needle = `<g><animateTransform attributeName="transform" type="rotate" values="-1.3 ${C} ${C};1.3 ${C} ${C};-1.3 ${C} ${C}" dur=".5s" repeatCount="indefinite"/><path d="M${C} ${C - 4}L${C - R - 4} ${C - .6}L${C - R - 4} ${C + .6}L${C} ${C + 4}Z" fill="#E3C16A" stroke="#0A0E07" stroke-width=".8" stroke-linejoin="round"/></g>`;
+  return `<div class="xpg" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(P)}" aria-label="XP progress">
+    <svg viewBox="0 0 240 176" aria-hidden="true"><defs><linearGradient id="xpgf" gradientUnits="userSpaceOnUse" x1="${C - R}" y1="0" x2="${C + R}" y2="0"><stop offset="0" stop-color="#3F5F27"/><stop offset=".45" stop-color="#6F8030"/><stop offset=".78" stop-color="#C0701E"/><stop offset="1" stop-color="#FF8A1F"/></linearGradient></defs>
+      <path d="${arc}" pathLength="100" fill="none" stroke="#0E140A" stroke-width="38"/>
+      <path d="M${C - R - 19} ${C}A${R + 19} ${R + 19} 0 0 1 ${C + R + 19} ${C}M${C - R + 19} ${C}A${R - 19} ${R - 19} 0 0 1 ${C + R - 19} ${C}" fill="none" stroke="#C2A06A" stroke-width="1.2" opacity=".75"/>
+      <path d="${arc}" pathLength="100" fill="none" stroke="url(#xpgf)" stroke-width="36" stroke-dasharray="${P} 100"><animate attributeName="stroke-dasharray" from="0 100" to="${P} 100" dur="1.4s" fill="freeze" calcMode="spline" keyTimes="0;1" keySplines=".2 .7 .2 1"/></path>
+      <path d="${arc}" pathLength="100" fill="none" stroke="#FFB347" stroke-width="36" stroke-dasharray="${P} 100" opacity="0"><animate attributeName="opacity" values="0;.22;0" dur=".45s" repeatCount="indefinite"/></path>
+      ${ticks}${spin(bullet)}${spin(needle)}
+      <circle cx="${C}" cy="${C}" r="10" fill="#121A0D" stroke="#C2A06A" stroke-width="2"/><circle cx="${C}" cy="${C}" r="3.5" fill="#E3C16A"/>
+      <text x="${C}" y="152" text-anchor="middle" class="gp">${Math.round(P)}%</text><text x="${C}" y="169" text-anchor="middle" class="gx">${xp} XP</text></svg></div>`;
+}
 const XPHEAD = {
   rocket: '<svg viewBox="0 0 56 28"><g class="fl"><path d="M20 14C13 4 8 10 0 2c3 6 2 9 6 12-4 3-3 6-6 12 8-6 14-1 20-12z" fill="#FF5A1F"/><path d="M20 14C15 9 11 12 5 8c3 4 1 6 4 6-3 2-2 4-4 6 6-3 10 0 15-6z" fill="#FFD23F"/></g><path d="M18 9l-6-6v6zM18 19l-6 6v-6z" fill="#D93A2B"/><path d="M18 8h20c8 0 14 3 17 6-3 3-9 6-17 6H18z" fill="#F2F4F7" stroke="#6B7480" stroke-width="1" stroke-linejoin="round"/><path d="M42 8.6c6 .8 10 3 13 5.4-3 2.4-7 4.6-13 5.4z" fill="#D93A2B"/><circle cx="32" cy="14" r="3.2" fill="#7CC4F2" stroke="#6B7480"/><path d="M24 8v12" stroke="#B9C0C9"/></svg>',
   army: '<svg viewBox="0 0 56 28"><g class="fl"><path d="M22 14C15 5 9 11 0 3c3 6 2 8 6 11-4 3-3 5-6 11 9-6 15-1 22-11z" fill="#FF5A1F"/><path d="M22 14C16 9 12 12 5 8c3 4 1 6 4 6-3 2-2 4-4 6 7-3 11 0 17-6z" fill="#FFD23F"/></g><path d="M20 8h14v12H20z" fill="#D8B04A"/><path d="M25 8v12" stroke="#8A6B1F" stroke-width="1.2"/><path d="M34 8c9 0 15 3 21 6-6 3-12 6-21 6z" fill="#B8651E"/><path d="M38 10c5 0 9 1.5 13 4" stroke="#F0B27A" stroke-width="1.2" fill="none"/></svg>',
@@ -468,7 +496,7 @@ async function renderRank() {
   const pages = {
     rank: `<h3 class="ctr" style="margin-top:0">Service record</h3>
       <div class="card prof">${insignia(i, 56, s.branch)}<div style="flex:1"><div class="small">RANK AND CALLSIGN</div><div class="rname">${rankName(i, s)}</div><div class="callsign">${esc(name)}</div>${br ? `<div class="svc">${ico(br.ico)}${br.name}</div>` : ''}</div></div>
-      <div class="xpbar big br-${hk}" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct}" aria-label="XP progress"><div style="width:${pct}%"></div><i class="hd" style="--p:${pct}%" aria-hidden="true">${XPHEAD[hk]}</i><span class="xr"><b>${pct}%</b> &middot; ${s.xp} XP</span></div>
+      ${xpGauge(pct, s.xp)}
       <div class="small xpl">${nx ? `Next Rank: ${nxName} at ${nx[1]} XP` : 'highest rank'}</div>${gate ? `<div class="card req tap" id="reqgo" role="button" tabindex="0" aria-label="Open the promotion requirement: ${esc(gate.short)}"><small>PROMOTION REQUIREMENT${held ? ' &middot; XP TARGET REACHED' : ''}</small>${esc(gate.text(s))}<span class="reqgo">${gate.pick ? 'Tap to choose your service' : 'Tap to open this mission'} &rsaquo;</span></div>` : ''}`,
     missions: `<h3 class="ctr" style="margin-top:0">Missions</h3>
       <div class="plan"><div><small>ROLL CALL STREAK</small><span class="px">${s.streak} d</span></div><div><small>CHAPTERS</small><span class="px">${s.ch.length}/${CHAPTERS.length}</span></div><div><small>EXAMS</small><span class="px">${examsPassed}/${CHAPTERS.length}</span></div></div>

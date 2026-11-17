@@ -365,3 +365,9 @@ canvas{touch-action:pan-y;user-select:none;-webkit-user-select:none}
 .xpbar.big .hd svg{filter:drop-shadow(0 0 4px rgba(255,140,40,.55))}
 .xpbar.big .xr{background:rgba(8,12,6,.88);border:1px solid var(--tan);border-radius:0;color:var(--gold);z-index:3}
 .xpbar.big .xr b{color:var(--chipfg)}
+
+/* XP gauge (half-dial) */
+.xpg{display:block;max-width:340px;margin:10px auto 0;padding:10px 8px 4px;background:linear-gradient(#0A0E07,#121A0D);border:1px solid var(--tan);box-shadow:0 0 0 1px #05070380,inset 0 0 14px rgba(0,0,0,.7)}
+.xpg svg{display:block;width:100%;height:auto;overflow:visible}
+.xpg .gp{font:700 26px var(--head);letter-spacing:1px;fill:var(--gold)}
+.xpg .gx{font:700 12px var(--mono);fill:var(--chipfg);letter-spacing:.5px}
