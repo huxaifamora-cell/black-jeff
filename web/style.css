@@ -353,3 +353,15 @@ canvas{touch-action:pan-y;user-select:none;-webkit-user-select:none}
 /* percentage and XP live inside the bar, at the right, on a light chip so they read over any fill */
 .xpbar.big .xr{right:8px;top:50%;bottom:auto;transform:translateY(-50%);height:24px;padding:0 8px;background:rgba(255,255,255,.72);border-radius:2px;font:700 12px var(--mono);letter-spacing:0;text-shadow:none}
 .xpbar.big .xr b{font-weight:700;margin-right:4px}.xpbar.big .xr{gap:0}
+
+/* MILITARY look for the XP bar: gunmetal track with gauge ticks, brass border, olive-to-ember fill, dark gold readout */
+.xpbar.big{background:linear-gradient(#0A0E07,#121A0D);border:1px solid var(--tan);box-shadow:0 0 0 1px #05070380,inset 0 0 12px rgba(0,0,0,.7)}
+.xpbar.big::before{content:"";position:absolute;inset:0;z-index:1;pointer-events:none;background:
+  repeating-linear-gradient(90deg,rgba(226,211,160,.28) 0 1px,transparent 1px 10%) 0 100%/100% 7px no-repeat,
+  repeating-linear-gradient(90deg,rgba(226,211,160,.16) 0 1px,transparent 1px 2%) 0 100%/100% 4px no-repeat,
+  repeating-linear-gradient(90deg,rgba(226,211,160,.28) 0 1px,transparent 1px 10%) 0 0/100% 7px no-repeat}
+.xpbar.big::after{background:linear-gradient(90deg,transparent 40%,rgba(227,193,106,.28) 50%,transparent 60%) -120% 0/60% 100% no-repeat}
+.xpbar.big.br-army div,.xpbar.big.br-rocket div{background:linear-gradient(90deg,#26391B,#45612A 40%,#8A5A1E 75%,#E8892B)}
+.xpbar.big .hd svg{filter:drop-shadow(0 0 4px rgba(255,140,40,.55))}
+.xpbar.big .xr{background:rgba(8,12,6,.88);border:1px solid var(--tan);border-radius:0;color:var(--gold);z-index:3}
+.xpbar.big .xr b{color:var(--chipfg)}
