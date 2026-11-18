@@ -231,6 +231,27 @@ export function orderFlow(h1, trend, p) {
     }
     list.push(b); return true;
   };
+  // Always map an order flow. When the current leg gives fewer than 2 usable BOS (right after a flip, or at the start of the window), go back through
+  // ALL earlier BOS in the trend direction (previous candle data) instead of waiting for new ones to form:
+  // the inducement is the most recent BOS (an invalid newest one is left out, see eff), the disruption is the nearest earlier BOS whose POI sits on the
+  // right side of it (below the inducement in an uptrend, above it in a downtrend). Nothing else filters it.
+  const fill = (upTo) => {
+    const cand = bosAll.filter((b) => b.dir === d && b.idx <= upTo);
+    if (!cand.length) return;
+    const tailInvalid = !cand[cand.length - 1].valid ? cand[cand.length - 1] : null;
+    const arr = tailInvalid ? cand.slice(0, -1) : cand, chain = [];
+    for (let j = arr.length - 1; j >= 0; j--) {
+      const q = disPoi(arr[j]);
+      if (chain.length) {
+        const h = disPoi(chain[chain.length - 1]);
+        const stale = d === 1 ? ((h.lo + h.hi) <= (q.lo + q.hi) || h.lo <= q.hi) : ((h.lo + h.hi) >= (q.lo + q.hi) || h.hi >= q.lo);
+        if (stale) continue;
+      }
+      chain.push(arr[j]);
+    }
+    if (chain.length < 2) return;                       // nothing older fits on the right side: keep what the leg gave
+    list = chain.reverse(); if (tailInvalid) list.push(tailInvalid); effKey = -1;
+  };
   for (let i = 0; i < h1.length; i++) {
     const c = h1[i];
     // the disruption POI is invalidated (an H1 wick beyond it is enough): flip right away
@@ -248,6 +269,7 @@ export function orderFlow(h1, trend, p) {
       let lastOld = -1;
       for (const b of bosAll) if (b.idx <= i && b.dir === -d && b.idx > lastOld) lastOld = b.idx;
       for (const b of bosAll) if (b.dir === d && b.idx > lastOld && b.idx < i) addBos(b);
+      if (eff().length < 2) fill(i - 1);              // the current leg is too short: use the BOS that came before it
     }
     // pullback at the inducement: price comes back into the inducement POI (it does not change the trend direction)
     if (eff().length >= 2 && (pb === null || pb.resume_t)) {
@@ -258,12 +280,16 @@ export function orderFlow(h1, trend, p) {
       }
     }
     for (const b of at.get(i) || []) {
+      // No complete order flow yet (no disruption exists, so nothing can flip it): a BOS the other way is the current direction, not something to ignore.
+      // This is the first mapping of the flow, not a flip, so nothing is marked official.
+      if (b.dir !== d && eff().length < 2) { d = b.dir; list = []; effKey = -1; pb = null; list.push(b); fill(i); continue; }
       if (b.dir === d) {
         addBos(b);
         if (b.valid && pb !== null && !pb.resume_t) pb.resume_t = c.t;   // the first valid BOS in the trend direction after the pullback = the trend resumes
       }
     }
   }
+  if (eff().length < 2) fill(h1.length - 1);        // never leave a symbol without an order flow while earlier BOS exist
   res.dir = d; res.invalidated = last; res.remapped = last !== null;
   res.pullback = pb;
   const e = eff();
