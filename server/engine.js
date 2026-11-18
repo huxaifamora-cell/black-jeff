@@ -653,7 +653,7 @@ export function evaluate(h4Live, h1Live, m5, p = defaultParams, digits = 3) {
   for (const poi of of.pois) {
     if (poi.role === 'inducement' || poi.role === 'disruption') {
       events.push(ev('O', poi.role, poi.dir, poi.bos_t + H1, H1, `O: new ${poi.role} POI (${poi.dir === 1 ? 'bullish' : 'bearish'})`,
-        `POI ${f(poi.lo)} to ${f(poi.hi)} (order block body). Line at ${f(poi.line)}.`, `${poi.role}-${poi.bos_t}`, { lo: poi.lo, hi: poi.hi }));
+        `POI ${f(poi.lo)} to ${f(poi.hi)} (order block body). Line at ${f(poi.line)}.`, `${poi.role}-${poi.bos_t}`, { lo: poi.lo, hi: poi.hi, t0: poi.ob_t }));
     }
     // H1 chart: dotted grey horizontal line at the level the inducement / disruption BOS broke, labelled BOS
     if (poi.role === 'inducement' || poi.role === 'disruption') overlays.push({ type: 'line', tf: 'h1', grp: 'o', y: poi.bos_level, t0: poi.broken_t, label: 'BOS', tone: 'bos', dotted: true });
@@ -675,7 +675,7 @@ export function evaluate(h4Live, h1Live, m5, p = defaultParams, digits = 3) {
     if (r.last_complete) {
       events.push(ev('R', 'reclamation', poi.dir, r.last_complete + H1, H1, `R: valid ${poi.dir === 1 ? 'bullish' : 'bearish'} reclamation`,
         `H1 reclamation completed at the ${poi.role} POI (${f(poi.lo)} to ${f(poi.hi)}). Use it as a confirmation, not as an entry.`,
-        `${poi.role}-${poi.bos_t}-${r.last_complete}`));
+        `${poi.role}-${poi.bos_t}-${r.last_complete}`, { lo: poi.lo, hi: poi.hi, t0: poi.ob_t }));
     }
   }
 
@@ -701,7 +701,7 @@ export function evaluate(h4Live, h1Live, m5, p = defaultParams, digits = 3) {
     const uid = `${act.type}-${act.t_valid}`;
     if (inv) {
       events.push(ev('K', 'kl_invalid', act.dir, inv.t, M5, `K: ${act.type} invalidated`,
-        `An M5 body closed outside the POI (${f(act.lo)} to ${f(act.hi)}). All older key levels are invalid too. Watch for the QML.`, `${uid}-inv-${inv.t}`, { sub: act.type }));
+        `An M5 body closed outside the POI (${f(act.lo)} to ${f(act.hi)}). All older key levels are invalid too. Watch for the QML.`, `${uid}-inv-${inv.t}`, { sub: act.type, lo: act.lo, hi: act.hi, t0: act.t0 }));
       const q = qmlFor(act, inv, h1, m5, p, atr1, liquidityPoints(h1, of, p));
       if (q) {
         state.qml = q;
@@ -710,23 +710,23 @@ export function evaluate(h4Live, h1Live, m5, p = defaultParams, digits = 3) {
           const qp = tradePlan(q.lo, q.hi, q.dir, atr5, p);
           q.plan = qp;
           events.push(ev('QML', 'qml_valid', q.dir, q.t, M5, `QML: ${side(q.dir)} Quasimodo level formed ${q.plq.inside ? 'at' : 'close to'} a point of liquidity`,
-            `Reversal at ${f(q.extreme)}, ${q.plq.inside ? 'inside' : 'close to'} an H1 point of liquidity (POI ${f(q.plq.lo)} to ${f(q.plq.hi)}). QML POI ${f(q.lo)} to ${f(q.hi)}. ${cap(side(q.dir))} limit ${f(qp.entry)}, SL ${f(qp.sl)}, TP (1:${p.rr}) ${f(qp.tp)}.`, `qml-${q.t}`, { lo: q.lo, hi: q.hi, ...qp, sub: 'QML' }));
+            `Reversal at ${f(q.extreme)}, ${q.plq.inside ? 'inside' : 'close to'} an H1 point of liquidity (POI ${f(q.plq.lo)} to ${f(q.plq.hi)}). QML POI ${f(q.lo)} to ${f(q.hi)}. ${cap(side(q.dir))} limit ${f(qp.entry)}, SL ${f(qp.sl)}, TP (1:${p.rr}) ${f(qp.tp)}.`, `qml-${q.t}`, { lo: q.lo, hi: q.hi, t0: q.t, ...qp, sub: 'QML' }));
           for (const cf of confirmations(m5c, q.lo, q.hi, q.dir, q.t).slice(-3)) {
             events.push(ev('QML', 'qml_entry', q.dir, cf.t + M5, M5, `QML: ${side(q.dir)} confirmation (${nice(cf.type, q.dir)})`,
-              `${cap(nice(cf.type, q.dir))} inside the QML POI. ${cap(side(q.dir))} limit ${f(qp.entry)}, SL ${f(qp.sl)}, TP ${f(qp.tp)}.`, `qml-${q.t}-${cf.t}-${cf.type}`, { sub: 'QML', conf: nice(cf.type, q.dir) }));
+              `${cap(nice(cf.type, q.dir))} inside the QML POI. ${cap(side(q.dir))} limit ${f(qp.entry)}, SL ${f(qp.sl)}, TP ${f(qp.tp)}.`, `qml-${q.t}-${cf.t}-${cf.type}`, { sub: 'QML', conf: nice(cf.type, q.dir), lo: q.lo, hi: q.hi, t0: q.t }));
           }
         }
       }
     } else if (act.high_prob) {
       events.push(ev('K', 'kl_valid', act.dir, act.t_valid + H1, H1, `K: valid ${act.type} key level (${side(act.dir)} setup)`,
         `POI ${f(act.lo)} to ${f(act.hi)}, ${act.wicks} wick(s) inside (high probability). ${cap(side(act.dir))} limit ${f(plan.entry)}, SL ${f(plan.sl)}, TP (1:${p.rr}) ${f(plan.tp)}.`,
-        uid, { lo: act.lo, hi: act.hi, ...plan, sub: act.type }));
+        uid, { lo: act.lo, hi: act.hi, t0: act.t0, ...plan, sub: act.type }));
       const cfs = confirmations(m5c, act.lo, act.hi, act.dir, act.t_valid + H1).slice(-3);
       state.signals = cfs;
       for (const cf of cfs) {
         events.push(ev('K', 'kl_entry', act.dir, cf.t + M5, M5, `K: ${side(act.dir)} confirmation on ${act.type} (${nice(cf.type, act.dir)})`,
           `${cap(nice(cf.type, act.dir))} inside the POI. ${cap(side(act.dir))} limit ${f(plan.entry)}, SL ${f(plan.sl)}, TP ${f(plan.tp)}.`,
-          `${uid}-${cf.t}-${cf.type}`, { lo: act.lo, hi: act.hi, ...plan, sub: act.type, conf: nice(cf.type, act.dir) }));
+          `${uid}-${cf.t}-${cf.type}`, { lo: act.lo, hi: act.hi, t0: act.t0, ...plan, sub: act.type, conf: nice(cf.type, act.dir) }));
       }
       // The 50% POI sits inside the key level POI box DRAWN ON M5 (the M5 order block box; the H1 box when there is no M5 order block).
       const adv = advanced(mp ? { ...act, lo: mp.lo, hi: mp.hi } : act, m5, p, null);
@@ -736,12 +736,12 @@ export function evaluate(h4Live, h1Live, m5, p = defaultParams, digits = 3) {
         overlays.push({ type: 'box', lo: z.lo, hi: z.hi, t0: z.t0, label: 'bjeff zone', tone: 'adv2' });
         if (z.active_t) {
           events.push(ev('ADV', 'bjeff_valid', act.dir, z.active_t, M5, 'ADV: bjeff zone is active',
-            `M5 key level ${f(z.lo)} to ${f(z.hi)} inside the 50% of the H1 ${act.type}. A body candle closed inside it. Wait for any confirmation entry.`, `bj-${act.t_valid}-${z.t}`, { sub: act.type }));
+            `M5 key level ${f(z.lo)} to ${f(z.hi)} inside the 50% of the H1 ${act.type}. A body candle closed inside it. Wait for any confirmation entry.`, `bj-${act.t_valid}-${z.t}`, { sub: act.type, lo: z.lo, hi: z.hi, t0: z.t0 }));
         }
       }
       for (const sg of adv.signals) {
         events.push(ev('ADV', 'adv_entry', act.dir, sg.t + M5, M5, `ADV: ${side(act.dir)} confirmation in the bjeff zone (${nice(sg.type, act.dir)})`,
-          `${cap(nice(sg.type, act.dir))} after a body closed inside the bjeff zone. SL slightly outside the POI, TP by your risk reward ratio.`, `bj-${act.t_valid}-${sg.t}-${sg.type}`, { sub: act.type, conf: nice(sg.type, act.dir) }));
+          `${cap(nice(sg.type, act.dir))} after a body closed inside the bjeff zone. SL slightly outside the POI, TP by your risk reward ratio.`, `bj-${act.t_valid}-${sg.t}-${sg.type}`, { sub: act.type, conf: nice(sg.type, act.dir), lo: adv.half[0], hi: adv.half[1], t0: mp ? mp.t : act.t0 }));
       }
     }
   }

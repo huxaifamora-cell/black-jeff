@@ -56,6 +56,23 @@ export const formatAlert = (a) => {
     : `⚪ <b>${type}</b>`;
   return `${head}\n${esc(a.symbol_name)}`;
 };
+// Short plain-text version of the headline for the chart image ("BEARISH KEY LEVEL").
+export const alertLabel = (a) => `${INVALID_KINDS.has(a.kind) ? 'INVALIDATED' : a.dir === 1 ? 'BULLISH' : a.dir === -1 ? 'BEARISH' : ''} ${alertType(a)}`.trim();
+
+// What the chart screenshot of an alert needs (see chartimg.js): the candles of the timeframe that fired it, the POI box and the trade plan.
+// It is kept on the alert object only (never stored in the database) and used when the Telegram message is sent.
+export function chartSnap(a, ev, series, digits) {
+  const p = ev.extra || {}, plan = [];
+  if (Number.isFinite(p.entry)) plan.push({ y: p.entry, label: 'ENTRY', tone: 'entry' });
+  if (Number.isFinite(p.sl)) plan.push({ y: p.sl, label: 'SL', tone: 'sl' });
+  if (Number.isFinite(p.tp)) plan.push({ y: p.tp, label: 'TP', tone: 'tp' });
+  return {
+    candles: series.slice(-300).map((c) => ({ t: c.t, o: c.o, h: c.h, l: c.l, c: c.c, forming: !!c.forming })),
+    tf: ev.tf, tfName: TF_NAME[ev.tf] || '', t: ev.t, dir: INVALID_KINDS.has(a.kind) ? 0 : a.dir, symbol: a.symbol_name.toUpperCase(), label: alertLabel(a), digits,
+    box: Number.isFinite(p.lo) && Number.isFinite(p.hi) ? { lo: p.lo, hi: p.hi, t0: p.t0, label: (TYPE_NAME[a.concept] || '').toUpperCase() } : null,
+    lines: plan,
+  };
+}
 
 // The SORK checklist for one symbol: S structure, O order flow, R reclamation, K key level.
 export function stepsOf(st) {
@@ -101,7 +118,7 @@ export class Service {
   // Evaluate one symbol and return the NEW alerts (already stored).
   apply(sid, h4, h1, m5, now = Date.now() / 1000) {
     const s = this.byId.get(sid);
-    const res = evaluate(h4, h1, m5, this.p, digitsFor(m5));
+    const digits = digitsFor(m5), res = evaluate(h4, h1, m5, this.p, digits);
     res.state.updated = Math.floor(now);
     res.state.price = m5.length ? m5[m5.length - 1].c : null;
     this.states.set(sid, res.state);
@@ -114,7 +131,10 @@ export class Service {
         payload: { ...ev.extra, tf: ev.tf, bias: res.state.s ? res.state.s.bias : 0 },
       };
       a.id = this.store.addAlert(a);
-      if (a.id) fresh.push(a);
+      if (a.id) {
+        try { a.snap = chartSnap(a, ev, ev.tf === M5 ? m5 : ev.tf === H4 ? h4 : h1, digits); } catch (e) { this.log.warn('chart data for', a.key, 'failed:', e.message); }
+        fresh.push(a);
+      }
     }
     return fresh;
   }

@@ -11,6 +11,7 @@ import { Deriv } from './deriv.js';
 import { Bot } from './telegram.js';
 import { TelegramBackup } from './backup.js';
 import { Service, formatAlert } from './service.js';
+import { renderChart } from './chartimg.js';
 import { alertParam, alertId, checkParam, isAlertId, xpStatusText } from './alertlink.js';
 import { rankTag } from './ranks.js';
 import { ALL_CONCEPTS, Store } from './store.js';
@@ -156,17 +157,25 @@ export function createApp({ cfg = loadConfig(), store, svc, deriv, bot, log = co
       if (cfg.miniAppLink) return { text: label, url: `${cfg.miniAppLink}?startapp=${param}`, plain: true, style, callback };   // t.me link: works in groups and channels
       return cfg.webappUrl ? { text: label, url: `${cfg.webappUrl}/?p=${param}`, plain: signed, style, callback } : null;
     };
+    // Chart screenshot, drawn once and sent to every chat. If it cannot be drawn or sent, the plain text alert goes out as before.
+    let chart = null;
+    if (alert.snap && bot.sendPhoto) { try { chart = renderChart(alert.snap); } catch (e) { log.warn('chart image failed:', e.message); } }
+    const deliver = async (chat, b) => {
+      const text = formatAlert(alert);
+      if (chart) { try { return await bot.sendPhoto(chat, chart, text, b); } catch (e) { log.warn('chart not sent to', chat + ', sending text only:', e.message); } }
+      return bot.send(chat, text, b);
+    };
     // Groups and channels: reclamation, key level, QML and bjeff zone only, and never an invalidation (those stay in the app's Alerts tab and in private messages).
     if ((cfg.chatConcepts || ['R', 'K', 'QML', 'ADV']).includes(alert.concept) && !CHAT_SKIP_KINDS.has(alert.kind)) {
       for (const chat of cfg.alertChats || []) {
-        try { await bot.send(chat, formatAlert(alert), btn(true)); }
+        try { await deliver(chat, btn(true)); }
         catch (e) { log.warn('could not post to', chat + ':', e.message); }
         await sleep(50);
       }
     }
     if (cfg.dmAlerts === false) return;               // channel-only mode: no private alert messages
     for (const chatId of store.recipients(alert.symbol, alert.concept)) {
-      try { await bot.send(chatId, formatAlert(alert), btn(false)); } catch (e) { log.warn('could not message', chatId, e.message); }
+      try { await deliver(chatId, btn(false)); } catch (e) { log.warn('could not message', chatId, e.message); }
       await sleep(50);
     }
   }

@@ -12,22 +12,45 @@ export class Bot {
     return data.result;
   }
 
+  // The inline keyboard: one row with the open chart button and, for channel posts, the XP status button next to it.
   // button.plain = ordinary link button (channels do not allow mini app buttons)
+  // button.style: 'success' (green), 'danger' (red) or 'primary' (blue). Left out when not set, so the app's default colour is used.
+  // button.callback: a second button that answers with a pop-up only the person who tapped it sees (used for the private XP status)
+  static keyboard(button) {
+    if (!button) return null;
+    const b = button.plain ? { text: button.text, url: button.url } : { text: button.text, web_app: { url: button.url } };
+    if (button.style) b.style = button.style;
+    const row = [b];
+    if (button.callback) {
+      const cb = { text: button.callback.text, callback_data: button.callback.data };
+      if (button.style) cb.style = button.style;                                                  // same colour as the open chart button
+      row.push(cb);
+    }
+    return { inline_keyboard: [row] };
+  }
+
   send(chatId, text, button) {
     const params = { chat_id: chatId, text, parse_mode: 'HTML', disable_web_page_preview: true };
-    // button.style: 'success' (green), 'danger' (red) or 'primary' (blue). Left out when not set, so the app's default colour is used.
-    if (button) {
-      const b = button.plain ? { text: button.text, url: button.url } : { text: button.text, web_app: { url: button.url } };
-      if (button.style) b.style = button.style;
-      params.reply_markup = { inline_keyboard: [[b]] };
-      // button.callback: a second button that answers with a pop-up only the person who tapped it sees (used for the private XP status)
-      if (button.callback) {                                                                          // same row: left and right
-        const cb = { text: button.callback.text, callback_data: button.callback.data };
-        if (button.style) cb.style = button.style;                                                  // same colour as the open chart button
-        params.reply_markup.inline_keyboard[0].push(cb);
-      }
-    }
+    const kb = Bot.keyboard(button);
+    if (kb) params.reply_markup = kb;
     return this.call('sendMessage', params);
+  }
+
+  // Alert with a chart screenshot: the text (caption) sits ABOVE the picture, the buttons under it.
+  // `png` is a Buffer. Multipart upload, because the picture is generated here and has no web address.
+  async sendPhoto(chatId, png, caption, button) {
+    const form = new FormData();
+    form.set('chat_id', String(chatId));
+    form.set('photo', new Blob([png], { type: 'image/png' }), 'chart.png');
+    form.set('caption', caption);
+    form.set('parse_mode', 'HTML');
+    form.set('show_caption_above_media', 'true');
+    const kb = Bot.keyboard(button);
+    if (kb) form.set('reply_markup', JSON.stringify(kb));
+    const r = await fetch(this.base + 'sendPhoto', { method: 'POST', body: form, signal: AbortSignal.timeout(30000) });
+    const data = await r.json();
+    if (!data.ok) throw new Error(`telegram sendPhoto: ${data.description}`);
+    return data.result;
   }
 
   answerCallback(id, text) { return this.call('answerCallbackQuery', { callback_query_id: id, text, show_alert: true, cache_time: 0 }); }
