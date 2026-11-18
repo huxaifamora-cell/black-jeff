@@ -10,6 +10,22 @@ Plain Node.js, **no npm dependencies** (it uses Node's built-in `fetch`, `WebSoc
   (S trend valid, O new inducement/disruption POI or invalidation, R valid reclamation, K valid RBS/SBR and entry
   confirmations, QML, bjeff zone). Per user: on/off, which concepts, and muted symbols.
 
+## Battle plan (long / short position boxes)
+
+On a symbol's chart, tap **BATTLE PLAN** to open the plan card (code: `web/positions.js`):
+
+1. Pick **LONG** (buy) or **SHORT** (sell).
+2. Check the three prices: **Entry** (starts at the live price), **Stop loss** and **Take profit**.
+3. Tap **DEPLOY ON CHART**. A box appears: green = profit zone, red = loss zone, with tags for stop, target, live P/L (in R) and the ratio.
+
+The risk:reward ratio is not fixed. It is whatever the three prices work out to. Change any price and the ratio follows; type a ratio in the **Risk : Reward** field and the take profit moves to match.
+The first plan starts at 1:1 and each new plan starts from the ratio you used last.
+
+- **Drag on the chart** (the selected box shows blue squares): top/bottom-left square = stop or target, middle-left = move the whole box, right square = width. Stop and target can never cross the entry.
+- **Tap a box** to select it. The plan card then shows and edits that box. **NEW PLAN** starts another one, **LOCK** freezes a box, **REMOVE** deletes it, the **eye** hides or shows all boxes. Up to 20 per symbol.
+- Boxes are anchored to time and price, so they stay put across M5 / H1 / H4, zoom, pan and the live refresh. They are saved per symbol in the browser (`localStorage`, key `bj_pos_v1`).
+- The suggested stop is one ATR of the timeframe (never less than two label heights on screen).
+
 ## Deploy on Render (plain Web Service)
 
 No Blueprint, no database and no disk. Everything is a normal Render **Web Service** with environment variables.
@@ -80,8 +96,16 @@ Until a service is chosen the person stays at Lieutenant, even with enough XP: c
 Groups and channels get only **reclamation, key level, QML and advanced key level** alerts. Market structure (S) and order flow (O)
 alerts stay in the app (and in private messages for people who turned them on). Invalidation alerts (for example "K: RBS invalidated") are never posted to groups or channels; they only appear in the app's Alerts tab and in private messages. `ALERT_CHAT_CONCEPTS=R,K,QML,ADV` is the default; change it to widen or narrow the list.
 
-Each message is a small signal card: a bold headline with a status dot (🟢 buy or bullish, 🔴 sell or bearish, ⚪ invalidation or no direction) and the alert type, the symbol, then a quoted block with the H4 bias, the status and the timeframe that fired it. Key level, QML and advanced key level alerts read "BUY SETUP" or "SELL SETUP"; structure, order flow and reclamation read "BULLISH" or "BEARISH". The layout is `formatAlert` in `server/service.js`. The button reads
+Each message is two lines: a bold headline with a status dot (🟢 bullish, 🔴 bearish, ⚪ invalidation or no direction), the direction and the alert type (RECLAMATION, KEY LEVEL, QML, BJEFF ZONE or 50% KEYLEVEL POI), and below it the symbol name. The layout is `formatAlert` in `server/service.js`. The button reads
 **Open (symbol) chart** and opens the symbol in the mini app on the SORK page (S, O, R or K; QML and ADV sit under Key level) that fired the alert.
+
+**Chart screenshot.** Every alert comes with a picture of the chart where the event happened, placed between the text and the buttons (the text is the photo caption, shown above the picture with Telegram's `show_caption_above_media`). The picture is the timeframe that fired the alert (H1 or M5): about 80 candles ending just after the event, the POI box, the entry, SL and TP lines when the alert has a plan, a dashed line and arrow on the event candle, and a tag with the headline. It is drawn by `server/chartimg.js` with no npm packages (own PNG writer and font), from the data `chartSnap` in `server/service.js` puts on the alert (not stored in the database). If the picture cannot be drawn or sent, the plain text alert goes out as before. `Bot.sendPhoto` is in `server/telegram.js`, the fallback in `notify` in `server/app.js`.
+
+### Price alerts (drag a line on the chart)
+
+On a symbol's page, the **Price alert** button (bell) opens a card and puts a line on the chart. Tap the chart where you want the alert, drag the gold tag up or down, or type the price, then tap **SET ALERT**. When price reaches that level the bot sends the person a private message with a chart picture (`PRICE ALERT`, the symbol, `rose to` / `fell to` the price, and the Open chart button). Telegram plays the person's own notification sound for it; a bot cannot pick the sound, so each person sets it in Telegram (the bot chat's Notifications, Sound). An alert fires once and is then removed. Dragging an existing tag moves it, REMOVE deletes it. Up to 20 per person (`MAX_PRICE_ALERTS` in `server/store.js`).
+
+The person must have started the bot once (/start), or Telegram refuses the private message. The server watches the price (`checkPriceAlerts` in `server/app.js`, the test is `hitPriceAlerts` in `server/service.js`), so alerts work with the app closed. They also catch a spike that came and went between two polls (M5 candles after the alert was set). The alerts are saved in the same Telegram backup file as the users (`STATE_CHAT_ID`), so they survive a restart. The API is `/api/price-alerts` (GET, POST, `/update`, `/delete`) and the screen is `web/pricealerts.js`.
 
 **Button colour.** The button is green for a buy setup and red for a sell setup (Telegram's button `style`: `success` / `danger`). Invalidation alerts and alerts without a direction keep Telegram's default colour. It is set in `notify` in `server/app.js` and passed on by `Bot.send` in `server/telegram.js`. Telegram clients that are too old to know button colours show the default button instead.
 
