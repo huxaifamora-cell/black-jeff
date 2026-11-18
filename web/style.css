@@ -279,8 +279,8 @@ canvas{touch-action:pan-y;user-select:none;-webkit-user-select:none}
 .ctl-g{display:flex;flex-direction:column;gap:2px}.ctl-g.zg{margin-left:auto}
 .ctl-g .pills{margin:0}
 .ctl-t{font:700 10px var(--head);letter-spacing:1.5px;text-transform:uppercase;color:var(--gold)}
-/* mini menu under the live line: Battle plan | Symbol alerts | View details */
-.tmenu{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin:8px 0}
+/* mini menu under the live line: Battle plan | Symbol alerts | View details | Price alert */
+.tmenu{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin:8px 0}
 .tmenu button{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;min-height:64px;padding:8px 2px 6px;border:1px solid var(--edge);background:var(--inner);color:var(--hint);font:700 11px var(--head);letter-spacing:.6px;text-transform:uppercase;transition:transform .08s ease,filter .15s ease,background-color .15s ease}
 .tmenu svg{width:24px;height:24px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:square;stroke-linejoin:miter}
 .tmenu button.on{background:var(--chipbg);border-color:var(--tan);color:var(--chipfg);box-shadow:inset 0 -3px 0 var(--gold)}
@@ -391,3 +391,13 @@ canvas{touch-action:pan-y;user-select:none;-webkit-user-select:none}
 .xpg .gxl{font-size:20px;letter-spacing:7px;color:var(--gold);margin-top:4px}
 .xpg .gh{display:flex;align-items:center;justify-content:center;gap:10px;font:700 15px var(--head);letter-spacing:5px;color:var(--gold);padding:0 0 4px;border-bottom:1px solid var(--edge);margin:0 6px 4px}
 .xpg .gh span{font-size:11px;color:var(--tan);letter-spacing:0}
+
+/* price alert card (reuses the battle plan card look) */
+.palert .pa-help{margin:0 0 8px;font:400 12px var(--body);color:var(--hint)}
+.palert .pa-list{margin-top:8px;display:grid;gap:6px}
+.palert .pa-row{display:flex;align-items:center;gap:10px;padding:6px 8px;border:1px solid var(--edge);background:var(--inner)}
+.palert .pa-row span{font:600 14px var(--mono)}
+.palert .pa-row small{flex:1;font:400 11px var(--body);color:var(--hint)}
+.palert .pa-row button{min-height:36px;padding:4px 10px;font-size:11px}
+.palert button:disabled{opacity:.4;pointer-events:none}
+.tmenu .pabtn.on{background:var(--chipbg);border-color:var(--tan);color:var(--chipfg);box-shadow:inset 0 -3px 0 var(--gold)}
