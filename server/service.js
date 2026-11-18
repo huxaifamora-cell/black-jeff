@@ -181,6 +181,27 @@ export class Service {
     return this.apply(sid, cache[H4].cs, cache[H1].cs, cache[M5].cs, now);
   }
 
+  // Which of these price alerts has price reached? Live price counts at once; the M5 candles after the alert was set catch a spike
+  // that came and went between two polls. The candle the alert was set in is skipped (its earlier highs and lows are not news).
+  hitPriceAlerts(sid, list) {
+    const st = this.states.get(sid);
+    if (!st || st.price == null) return [];
+    const ent = this.cache.get(sid)[M5], m5 = (ent && ent.cs) || [];
+    return list.filter((a) => {
+      const after = m5.filter((c) => c.t >= Math.ceil(a.created / M5) * M5);
+      return a.side === 1 ? st.price >= a.price || after.some((c) => c.h >= a.price) : st.price <= a.price || after.some((c) => c.l <= a.price);
+    });
+  }
+
+  // Chart data for the picture sent with a price alert (see chartimg.js).
+  priceSnap(sid, price) {
+    const s = this.byId.get(sid), ent = this.cache.get(sid)[M5], st = this.states.get(sid);
+    if (!s || !ent || !ent.cs.length) return null;
+    return { candles: ent.cs.slice(-300).map((c) => ({ t: c.t, o: c.o, h: c.h, l: c.l, c: c.c, forming: !!c.forming })), tf: M5, tfName: 'M5',
+      t: Math.floor(Date.now() / 1000), dir: 0, symbol: s.name.toUpperCase(), label: 'PRICE ALERT', digits: st ? st.digits : 3, box: null,
+      lines: [{ y: price, label: 'ALERT', tone: 'entry' }] };
+  }
+
   overview() {
     const last = this.store.lastAlertTs();
     return this.symbols.map((s) => {

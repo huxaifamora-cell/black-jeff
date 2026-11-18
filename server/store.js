@@ -2,8 +2,10 @@
 // users survive restarts through backup.js and ALERT_CHAT_IDS, alerts are rebuilt from the market feed.
 import { DatabaseSync } from 'node:sqlite';
 import { mkdirSync } from 'node:fs';
+import { randomBytes } from 'node:crypto';
 import { dirname } from 'node:path';
 
+export const MAX_PRICE_ALERTS = 20;                 // per person
 export const ALL_CONCEPTS = ['S', 'O', 'R', 'K', 'QML', 'ADV'];
 
 const SCHEMA = `
@@ -12,6 +14,8 @@ CREATE TABLE IF NOT EXISTS alerts(
   concept TEXT, kind TEXT, dir INTEGER, title TEXT, body TEXT, payload TEXT);
 CREATE INDEX IF NOT EXISTS alerts_symbol ON alerts(symbol, id);
 CREATE TABLE IF NOT EXISTS alert_xp(tg_id INTEGER, oid TEXT, st INTEGER, ts INTEGER, PRIMARY KEY(tg_id, oid));
+CREATE TABLE IF NOT EXISTS price_alerts(id TEXT PRIMARY KEY, tg_id INTEGER, symbol TEXT, price REAL, side INTEGER, created INTEGER);
+CREATE INDEX IF NOT EXISTS price_alerts_symbol ON price_alerts(symbol);
 CREATE TABLE IF NOT EXISTS user_rank(tg_id INTEGER PRIMARY KEY, tag TEXT, applied INTEGER DEFAULT 0);
 CREATE TABLE IF NOT EXISTS users(
   tg_id INTEGER PRIMARY KEY, chat_id INTEGER, name TEXT, subscribed INTEGER DEFAULT 1,
@@ -118,6 +122,39 @@ export class Store {
     const ins = this.db.prepare('INSERT OR IGNORE INTO user_rank(tg_id,tag,applied) VALUES(?,?,?)');
     let n = 0;
     for (const x of Array.isArray(rows) ? rows : []) if (Number.isInteger(x.tg_id) && typeof x.tag === 'string' && x.tag.length <= 16) n += ins.run(x.tg_id, x.tag, x.applied ? 1 : 0).changes;
+    return n;
+  }
+
+  // ---- price alerts: a person drags a line on the chart; the bot messages them once when price gets there.
+  // side 1 = alert when price rises to the level (it was below), -1 = when it falls to it (it was above). One shot: removed when it fires.
+  paList(tgId, symbol) {
+    return symbol ? this.db.prepare('SELECT id, symbol, price, side, created FROM price_alerts WHERE tg_id=? AND symbol=? ORDER BY created').all(tgId, symbol)
+      : this.db.prepare('SELECT id, symbol, price, side, created FROM price_alerts WHERE tg_id=? ORDER BY created').all(tgId);
+  }
+  paBySymbol(symbol) { return this.db.prepare('SELECT id, tg_id, symbol, price, side, created FROM price_alerts WHERE symbol=?').all(symbol); }
+  paAdd(tgId, symbol, price, side, now = Math.floor(Date.now() / 1000)) {
+    if (this.db.prepare('SELECT COUNT(*) n FROM price_alerts WHERE tg_id=?').get(tgId).n >= MAX_PRICE_ALERTS) return null;
+    const id = randomBytes(5).toString('hex');
+    this.db.prepare('INSERT INTO price_alerts(id,tg_id,symbol,price,side,created) VALUES(?,?,?,?,?,?)').run(id, tgId, symbol, price, side, now);
+    this.onUsersChanged?.();
+    return { id, symbol, price, side, created: now };
+  }
+  paUpdate(tgId, id, price, side, now = Math.floor(Date.now() / 1000)) {
+    const r = this.db.prepare('UPDATE price_alerts SET price=?, side=?, created=? WHERE id=? AND tg_id=?').run(price, side, now, id, tgId);
+    if (r.changes) this.onUsersChanged?.();
+    return r.changes > 0;
+  }
+  paDelete(tgId, id) {
+    const r = tgId === null ? this.db.prepare('DELETE FROM price_alerts WHERE id=?').run(id) : this.db.prepare('DELETE FROM price_alerts WHERE id=? AND tg_id=?').run(id, tgId);
+    if (r.changes) this.onUsersChanged?.();
+    return r.changes > 0;
+  }
+  exportPriceAlerts() { return this.db.prepare('SELECT id, tg_id, symbol, price, side, created FROM price_alerts').all(); }
+  importPriceAlerts(rows) {
+    const ins = this.db.prepare('INSERT OR IGNORE INTO price_alerts(id,tg_id,symbol,price,side,created) VALUES(?,?,?,?,?,?)');
+    let n = 0;
+    for (const x of Array.isArray(rows) ? rows : [])
+      if (typeof x.id === 'string' && Number.isInteger(x.tg_id) && typeof x.symbol === 'string' && Number.isFinite(x.price) && (x.side === 1 || x.side === -1)) n += ins.run(x.id, x.tg_id, x.symbol, x.price, x.side, x.created || 0).changes;
     return n;
   }
 
