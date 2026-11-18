@@ -132,3 +132,36 @@ test('alerts are posted to ALERT_CHANNEL with a plain link button', async () => 
   assert.equal(sent[0][1].url, 'https://t.me/b/app?startapp=V10');
   await app.stop();
 });
+
+test('telegram: the XP status button gets the same colour (style) as the open chart button', async () => {
+  const { Bot } = await import('../server/telegram.js');
+  const bot = new Bot('x'), sent = [];
+  bot.call = async (method, params) => { sent.push(params); return {}; };
+  await bot.send(1, 'hi', { text: 'Open chart', url: 'https://t.me/b/app', plain: true, style: 'success', callback: { text: 'XP status', data: 'xp_a_b' } });
+  const row = sent[0].reply_markup.inline_keyboard[0];
+  assert.equal(row.length, 2); assert.equal(row[0].style, 'success'); assert.equal(row[1].style, 'success'); assert.equal(row[1].text, 'XP status');
+  await bot.send(1, 'hi', { text: 'Open chart', url: 'https://t.me/b/app', plain: true, callback: { text: 'XP status', data: 'xp_a_b' } });   // no colour: both keep the default
+  const row2 = sent[1].reply_markup.inline_keyboard[0];
+  assert.equal(row2[0].style, undefined); assert.equal(row2[1].style, undefined);
+});
+
+test('backup: saved as Bjeff-users.json with the "BJeff user backup" caption; an old sork-users.json pin is still read', async () => {
+  const { TelegramBackup, BACKUP_FILE } = await import('../server/backup.js');
+  assert.equal(BACKUP_FILE, 'Bjeff-users.json');
+  const realFetch = globalThis.fetch, calls = [];
+  globalThis.fetch = async (url, opts) => {
+    if (String(url).endsWith('/sendDocument')) { const f = opts.body; calls.push({ caption: f.get('caption'), name: f.get('document').name }); return { json: async () => ({ ok: true, result: { message_id: 7 } }) }; }
+    return { ok: true, json: async () => ({ users: [{ id: 1 }] }) };
+  };
+  try {
+    for (const name of ['sork-users.json', 'Bjeff-users.json', 'other.json']) {
+      const bot = { token: 't', base: 'https://api.telegram.org/bott/', call: async (m) => (m === 'getChat' ? { pinned_message: { message_id: 3, document: { file_name: name, file_id: 'f' } } } : m === 'getFile' ? { file_path: 'p' } : {}) };
+      const b = new TelegramBackup(bot, '5', console, 1);
+      assert.equal((await b.load()).length, name === 'other.json' ? 0 : 1, name);
+    }
+    const bot = { token: 't', base: 'https://api.telegram.org/bott/', call: async () => ({}) };
+    const b = new TelegramBackup(bot, '5', console, 1);
+    b.schedule(() => [{ id: 1 }, { id: 2 }]); await b.flush();
+    assert.deepEqual(calls[0], { caption: 'BJeff user backup: 2 users', name: 'Bjeff-users.json' });
+  } finally { globalThis.fetch = realFetch; }
+});

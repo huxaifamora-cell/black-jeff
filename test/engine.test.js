@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { C, H1, M5, defaultParams as P, findBos, markValid, marketStructure, orderBlock, poiFromOb, reclamation, findKls,
-  validateKls, klInvalidation, confirmations, qmlFor, advanced, evaluate, mirror, tradePlan, atr, lastDays, liquidityPoints, nearLiquidity, orderFlow } from '../server/engine.js';
+import { C, H1, M5, defaultParams as P, findBos, markValid, marketStructure, orderBlock, obPair, poiFromOb, reclamation, findKls,
+  validateKls, klInvalidation, confirmations, qmlFor, advanced, evaluate, mirror, tradePlan, atr, lastDays, liquidityPoints, nearLiquidity, orderFlow, m5Poi, m5Obs } from '../server/engine.js';
 
 export function mk(segments, { start = 100, t0 = 0, step = 3600, wick = 0.1 } = {}) {
   const cs = []; let price = start, t = t0;
@@ -22,7 +22,7 @@ test('BOS, SLQ and validity', () => {
   assert.ok(!first.slq && !first.valid);
   const cs3 = mk([[1.0, 5], [-0.8, 3], [1.0, 4], [-0.8, 3], [1.0, 5]]);
   const b3 = markValid(cs3, findBos(cs3, 2)).filter((x) => x.dir === 1);
-  assert.ok(b3.length >= 2 && !b3[0].valid && b3[1].valid);
+  assert.ok(b3.length >= 2 && !b3[0].slq && !b3[1].slq && b3[0].valid && !b3[1].valid, 'two BOS in a row without SLQ: the one BEFORE the current becomes valid, the current stays invalid');
   assert.equal(marketStructure(cs3, P).trend, 1);
 });
 
@@ -162,7 +162,8 @@ test('old trend is invalidated when the disruption POI is invalidated', () => {
   assert.ok(ok.events.some((e) => e.kind === 'trend_valid'));
   const dead = evalFixture(20);
   assert.equal(dead.state.s.trend, -1);
-  assert.equal(dead.state.s.trend_invalidated.by, 'disruption'); assert.equal(dead.state.s.trend_invalidated.old_dir, 1);
+  assert.equal(dead.state.s.trend_invalidated, null, 'the flip is immediate, nothing stays pending');
+  assert.equal(dead.state.s.official.by, 'disruption'); assert.equal(dead.state.s.official.dir, -1);
   assert.ok(!dead.events.some((e) => e.kind === 'trend_valid') && dead.events.some((e) => e.kind === 'invalidated'));
 });
 
@@ -236,4 +237,115 @@ test('points of liquidity are every BOS except the inducement and the disruption
   assert.equal(liq.length, findBos(h1, P.swingK).length - used.size);
   assert.ok(liq.every((q) => Number.isFinite(q.lo) && Number.isFinite(q.hi) && q.hi >= q.lo));
   assert.equal(nearLiquidity(liq[0].line, liq[0].t + 1, liq, 1, P).dist, 0);
+});
+
+test('A and B candles at the point of liquidity (no scan limit)', () => {
+  // HH BOS: bearish A at the higher low 12 candles before the tip, B = first bullish candle after it
+  const cs = [C(0, 100, 101, 99, 100.5), C(1, 100.5, 104, 100, 103.5)];                    // prior swing high 104
+  cs.push(C(2, 103.5, 103.8, 101, 101.5));                                                 // A: bearish
+  for (let i = 3; i < 14; i++) cs.push(C(i, 101.5, 102.5, 101.4, 101.5));                  // doji candles, neither bullish nor bearish
+  cs.push(C(14, 101.5, 102.6, 100.9, 102.4));                                              // tip (lowest low), bullish: B
+  cs.push(C(15, 102.4, 105.5, 102.3, 105.2));
+  const b = { dir: 1, idx: 15, tip_idx: 14, broken_idx: 1, level: 104, tip_price: 100.9 };
+  const pr = obPair(cs, b);
+  assert.equal(pr.a, 2); assert.equal(pr.b, 14);
+  const bd = { dir: -1, idx: 15, tip_idx: 14, broken_idx: 1, level: 96, tip_price: 103 };
+  const m = cs.map(mirror), pm = obPair(m, bd);
+  assert.equal(pm.a, 2); assert.equal(pm.b, 14);
+});
+
+// ---- M5 POI: the closest UNMITIGATED order block near the H1 key level POI, else the original order block
+const m5seq = (shift = 0) => [
+  C(0,    101 + shift, 101.2 + shift, 99.8 + shift,  100 + shift),    // A: bearish order block
+  C(300,  100 + shift, 102.5 + shift, 99.9 + shift,  102 + shift),    // breakout above A's high (leaves the box)
+  C(600,  102 + shift, 103 + shift,   100.5 + shift, 102.5 + shift),  // wick back into A's box: A is mitigated
+  C(900,  105 + shift, 105.2 + shift, 103.8 + shift, 104 + shift),    // B: bearish order block, near the POI
+  C(1200, 104 + shift, 106.5 + shift, 103.9 + shift, 106 + shift),    // breakout above B
+  C(1500, 106 + shift, 108 + shift,   105.9 + shift, 107 + shift),    // never comes back into B's box: B is unmitigated
+];
+const klBuy = { dir: 1, lo: 100, hi: 102, t0: 0 };
+
+test('M5 POI: the closest unmitigated order block is used, a mitigated one is skipped', () => {
+  const cs = m5seq();
+  const obs = m5Obs(cs, cs, 1, 0, P);
+  assert.equal(obs.length, 2);
+  assert.equal(obs[0].mitigated, true); assert.equal(obs[1].mitigated, false);
+  const r = m5Poi(klBuy, cs, 10, P);
+  assert.equal(r.source, 'unmitigated'); assert.equal(r.t, 900); assert.equal(r.orig_t, 0);   // original = A (at the H1 POI), B is the closest unmitigated to it
+  assert.equal(r.lo, 103.8); assert.equal(r.hi, 105.2);            // whole candle: wick and body
+});
+
+test('M5 POI: the closest unmitigated one is too far away -> the original order block is used', () => {
+  const near = m5seq();
+  const cs = [near[0], near[1], near[2], ...m5seq(30).slice(3)];
+  const r = m5Poi(klBuy, cs, 10, P);                                // gap from the original to the unmitigated one is ~32.6, limit is 2 x 10
+  assert.equal(r.source, 'original'); assert.equal(r.t, 0);
+  assert.equal(r.lo, 99.8); assert.equal(r.hi, 101.2);
+});
+
+test('M5 POI: a too long order block candle is marked from its body only', () => {
+  const small = [0, 1, 2, 3, 4].map((i) => C(i * 300, 100, 101, 100, 100.5));
+  const cs = [...small, C(1500, 101, 104, 98, 100), C(1800, 100, 105, 99.9, 105)];
+  const r = m5Poi({ dir: 1, lo: 100, hi: 101.5, t0: 0 }, cs, 10, P);
+  assert.equal(r.t, 1500); assert.equal(r.lo, 100); assert.equal(r.hi, 101); assert.equal(r.part, 'body');
+});
+
+test('M5 POI: sell side is the mirror image', () => {
+  const cs = m5seq().map(mirror);
+  const r = m5Poi({ dir: -1, lo: -102, hi: -100, t0: 0 }, cs, 10, P);
+  assert.equal(r.source, 'unmitigated'); assert.equal(r.t, 900);
+  assert.equal(r.lo, -105.2); assert.equal(r.hi, -103.8);
+});
+
+test('M5 POI: the original order block is used as is when it is unmitigated itself', () => {
+  const cs = m5seq().slice(3);                                       // only B (unmitigated), far from nothing: it is the closest one to the H1 POI
+  const r = m5Poi({ dir: 1, lo: 103, hi: 105, t0: 0 }, cs, 10, P);
+  assert.equal(r.source, 'original'); assert.equal(r.t, 900); assert.equal(r.gap, 0);
+});
+
+test('order flow always uses the most current valid BOS as the inducement (a stale older BOS is dropped, not the new one skipped)', () => {
+  const h1 = mk([[0.5, 6], [-0.4, 3], [0.5, 6], [-0.4, 3], [0.5, 8], [-0.4, 3], [0.5, 8], [-0.4, 5], [0.5, 10]], { start: 1000 });
+  const valid = markValid(h1, findBos(h1, P.swingK)).filter((b) => b.valid && b.dir === 1);
+  const of = orderFlow(h1, 1, P);
+  const ind = of.pois.find((x) => x.role === 'inducement'), dis = of.pois.find((x) => x.role === 'disruption');
+  assert.ok(ind && dis, 'both mapped');
+  assert.equal(ind.bos_idx, valid[valid.length - 1].idx, 'inducement = the latest valid BOS');
+  assert.ok(dis.hi < ind.lo, 'disruption POI sits below the inducement POI in an uptrend');
+});
+
+test('trend flips at once when an H1 WICK goes beyond the disruption POI; a new BOS alone never flips it', () => {
+  const up = mk([[0.5, 6], [-0.4, 3], [0.5, 6], [-0.4, 3], [0.5, 8], [-0.4, 3], [0.5, 8]], { start: 1000 });
+  const f0 = orderFlow(up, null, P);
+  assert.equal(f0.dir, 1); assert.equal(f0.invalidated, null);
+  const dis = f0.pois.find((x) => x.role === 'disruption'), t = up[up.length - 1].t + 3600, last = up[up.length - 1].c;
+  const wick = [...up, C(t, last, last + 0.2, dis.lo - 0.5, last - 0.1)];       // wick below the disruption POI, the body closes back above it
+  const f1 = orderFlow(wick, null, P);
+  assert.equal(f1.dir, -1, 'wick through the disruption POI flips the trend immediately');
+  assert.equal(f1.invalidated.by, 'disruption'); assert.equal(f1.official.dir, -1);
+  assert.equal(orderFlow(up, null, P).dir, 1, 'no flip without a disruption invalidation');
+});
+
+test('invalid BOS count as points of liquidity, but an invalid NEWEST BOS is never the inducement (the one before it is)', () => {
+  const h1 = mk([[0.5, 6], [-0.4, 3], [0.5, 6], [-0.4, 3], [0.5, 8], [-0.4, 3], [0.5, 8], [-0.4, 3], [0.5, 8]], { start: 1000 });
+  const all = markValid(h1, findBos(h1, P.swingK)).filter((b) => b.dir === 1);
+  const of = orderFlow(h1, 1, P);
+  const ind = of.pois.find((x) => x.role === 'inducement'), dis = of.pois.find((x) => x.role === 'disruption');
+  assert.ok(ind && dis);
+  const newest = all[all.length - 1];
+  if (newest.valid) assert.equal(ind.bos_idx, newest.idx); else assert.equal(ind.bos_idx, all[all.length - 2].idx);
+  assert.ok(dis.bos_idx < ind.bos_idx && dis.hi < ind.lo);
+});
+
+test('a BOS between the inducement and the disruption does not move the inducement (bullish and bearish)', () => {
+  for (const dir of [1, -1]) {
+    // staircase: each BOS POI beyond the previous one, then a pullback that breaks structure BELOW the inducement (above it in a downtrend)
+    const up = mk([[0.5, 6], [-0.4, 3], [0.5, 6], [-0.4, 3], [0.5, 8], [-0.4, 3], [0.5, 8], [-0.4, 2], [0.5, 3]], { start: 1000 });
+    const cs = dir === 1 ? up : up.map((c) => ({ t: c.t, o: 2000 - c.o, h: 2000 - c.l, l: 2000 - c.h, c: 2000 - c.c }));
+    const before = orderFlow(cs.slice(0, 29), dir, P), after = orderFlow(cs, dir, P);
+    const ib = before.pois.find((x) => x.role === 'inducement'), ia = after.pois.find((x) => x.role === 'inducement');
+    if (!ib || !ia) continue;
+    // whatever BOS formed later, the inducement is never moved to a POI on the wrong side of the earlier inducement
+    if (ia.bos_idx !== ib.bos_idx) assert.ok(dir === 1 ? ia.lo > ib.hi : ia.hi < ib.lo, 'only a BOS beyond the inducement replaces it');
+    assert.equal(after.dir, dir);
+  }
 });
