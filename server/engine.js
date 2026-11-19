@@ -7,6 +7,7 @@ export const H4 = 14400, H1 = 3600, M5 = 300;
 
 export const defaultParams = {
   swingK: 1,            // candles on each side that confirm a swing high/low
+  bosStructural: true,  // a BOS must close beyond the highest unbroken swing high / lowest unbroken swing low of the leg (a true new HH / LL). false = old behaviour (latest swing only)
   atrLen: 14,
   longBodyMult: 1.5,    // "longer than average" body = more than this x the average body
   avgBodyLen: 20,
@@ -66,7 +67,8 @@ export function swings(cs, k) {
   return out;
 }
 
-export function findBos(cs, k) {
+// Old behaviour (only the latest swing is tracked). Kept for comparison: set bosStructural: false.
+export function findBosLatestSwing(cs, k) {
   const sw = swings(cs, k);
   const highs = sw.filter((s) => s.kind === 'H'), lows = sw.filter((s) => s.kind === 'L');
   const out = [], usedH = new Set(), usedL = new Set();
@@ -87,6 +89,46 @@ export function findBos(cs, k) {
       for (let j = lastL.idx + 1; j <= i; j++) if (cs[j].h > cs[tip].h) tip = j;
       out.push({ dir: -1, idx: i, t: c.t, level: lastL.price, broken_idx: lastL.idx, tip_idx: tip, tip_price: cs[tip].h, slq: false, valid: false });
     }
+  }
+  out.sort((a, b) => a.idx - b.idx || b.dir - a.dir);
+  return out;
+}
+
+
+// BOS = a candle BODY closes beyond a swing, a wick alone does not count.
+// Structural mode (default): every confirmed swing stays in a list until a body closes beyond it, and a BOS must be a TRUE new HH / LL of the
+// current leg: the body must close beyond the HIGHEST unbroken swing high (LOWEST unbroken swing low) of the leg. Breaking a smaller swing while
+// a higher one is still intact only clears that smaller swing, it is not a BOS. A leg starts at the last BOS in the opposite direction
+// (a BOS the other way drops the swings that came before it), so reversal breaks still count as before.
+export function findBos(cs, k, structural = true) {
+  if (!structural) return findBosLatestSwing(cs, k);
+  const sw = swings(cs, k);
+  const out = [];
+  let sp = 0, openH = [], openL = [];             // confirmed swings not yet closed beyond, oldest first
+  for (let i = 0; i < cs.length; i++) {
+    const c = cs[i];
+    while (sp < sw.length && sw[sp].idx + k <= i) { (sw[sp].kind === 'H' ? openH : openL).push(sw[sp]); sp++; }
+    let upBos = null, dnBos = null;
+    if (openH.length) {
+      const top = openH.reduce((a, s) => (s.price > a.price ? s : a));          // highest unbroken swing high of the leg
+      if (c.c > top.price) {
+        let tip = top.idx + 1;
+        for (let j = top.idx + 1; j <= i; j++) if (cs[j].l < cs[tip].l) tip = j;
+        upBos = { dir: 1, idx: i, t: c.t, level: top.price, broken_idx: top.idx, tip_idx: tip, tip_price: cs[tip].l, slq: false, valid: false };
+      }
+      openH = openH.filter((s) => !(c.c > s.price));                           // smaller swings the body passed are used up either way
+    }
+    if (openL.length) {
+      const bot_ = openL.reduce((a, s) => (s.price < a.price ? s : a));
+      if (c.c < bot_.price) {
+        let tip = bot_.idx + 1;
+        for (let j = bot_.idx + 1; j <= i; j++) if (cs[j].h > cs[tip].h) tip = j;
+        dnBos = { dir: -1, idx: i, t: c.t, level: bot_.price, broken_idx: bot_.idx, tip_idx: tip, tip_price: cs[tip].h, slq: false, valid: false };
+      }
+      openL = openL.filter((s) => !(c.c < s.price));
+    }
+    if (upBos) { out.push(upBos); openL = openL.filter((s) => s.idx >= i); }   // new leg for the lows
+    if (dnBos) { out.push(dnBos); openH = openH.filter((s) => s.idx >= i); }
   }
   out.sort((a, b) => a.idx - b.idx || b.dir - a.dir);
   return out;
@@ -117,7 +159,7 @@ export function markValid(cs, bos) {
 }
 
 export function marketStructure(h4, p) {
-  const bos = markValid(h4, findBos(h4, p.swingK));
+  const bos = markValid(h4, findBos(h4, p.swingK, p.bosStructural !== false));
   const valid = bos.filter((b) => b.valid);
   const anchor = valid.length ? valid[valid.length - 1] : null;
   const last = bos.length ? bos[bos.length - 1] : null;
@@ -189,7 +231,7 @@ function poiOf(cs, b, role, p) {
 export function orderFlow(h1, trend, p) {
   const res = { dir: trend || 0, pois: [], pending: null, invalidated: null, remapped: false, recovered: null, pending_flip: null, official: null, pullback: null };
   if (trend === 0) return res;
-  const bosAll = markValid(h1, findBos(h1, p.swingK));   // every BOS counts, valid or not (a BOS with no structural liquidity is still a point of liquidity)
+  const bosAll = markValid(h1, findBos(h1, p.swingK, p.bosStructural !== false));   // every BOS counts, valid or not (a BOS with no structural liquidity is still a point of liquidity)
   if (trend == null) { if (!bosAll.length) return res; trend = bosAll[0].dir; res.dir = trend; }
   const at = new Map();
   for (const b of bosAll) { if (!at.has(b.idx)) at.set(b.idx, []); at.get(b.idx).push(b); }
@@ -441,7 +483,7 @@ export function liquidityPoints(h1, of, p) {
   const skip = new Set(((of && of.pois) || []).filter((x) => x.role === 'inducement' || x.role === 'disruption').map((x) => x.bos_idx));
   if (of && of.pending) skip.add(of.pending.bos_idx);     // a BOS waiting to become the inducement is not a point of liquidity yet
   const out = [];
-  for (const b of findBos(h1, p.swingK)) {
+  for (const b of findBos(h1, p.swingK, p.bosStructural !== false)) {
     if (skip.has(b.idx)) continue;
     const poi = poiOf(h1, b, 'plq', p);
     out.push({ dir: b.dir, t: b.t, line: b.tip_price, lo: poi.lo, hi: poi.hi });
