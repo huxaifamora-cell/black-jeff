@@ -86,7 +86,7 @@ export function stepsOf(st) {
     pois.length ? step('O', 'done', 'Inducement and disruption mapped') : step('O', 'todo', 'Nothing mapped yet'),
     rs.some((r) => r.state > 0) ? step('R', 'now', `In progress: step ${Math.max(...rs.map((r) => r.state))} of 5 on H1`)
       : rs.some((r) => r.last_complete) ? step('R', 'done', 'Reclamation complete') : step('R', 'todo', 'Waiting for a reclamation'),
-    valid ? (a.high_prob ? step('K', 'done', `${a.type} key level is valid`) : step('K', 'now', `${a.type} is valid but low probability, not traded`))
+    valid ? (a.high_prob ? step('K', 'done', 'Key level is valid') : step('K', 'now', 'Key level is valid but low probability, not traded'))
       : step('K', 'todo', a ? 'Last key level was invalidated' : 'No valid key level yet'),
   ];
   const ready = valid && a.high_prob && pois.length > 0 && !!(S && S.valid);   // a setup needs structure and order flow, not just a key level
