@@ -401,3 +401,11 @@ canvas{touch-action:pan-y;user-select:none;-webkit-user-select:none}
 .palert .pa-row button{min-height:36px;padding:4px 10px;font-size:11px}
 .palert button:disabled{opacity:.4;pointer-events:none}
 .tmenu .pabtn.on{background:var(--chipbg);border-color:var(--tan);color:var(--chipfg);box-shadow:inset 0 -3px 0 var(--gold)}
+
+/* watchlist search */
+.wlsearch{margin:10px 0 0}
+.wlsearch input{width:100%;box-sizing:border-box;background:var(--inner);color:var(--fg);border:1px solid var(--edge);border-radius:3px;padding:10px 12px;font:500 15px var(--mono);letter-spacing:.5px}
+.wlsearch input:focus{outline:none;border-color:var(--tan)}
+.wlsearch input::placeholder{color:var(--hint)}
+.rtabs.off button.on{background:none;border-color:transparent;color:var(--hint)}
+.wlcount{margin:8px 0 6px}

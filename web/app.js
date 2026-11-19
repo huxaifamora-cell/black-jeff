@@ -35,7 +35,7 @@ const RT_ICON = {
   quiet: '<path d="M2 20.5L12 4l10 16.5z"/><path d="M12 20.5l-3-6.5h6z"/><path d="M12 4V2"/>',
 };
 // ---- tactical radar: a live sweeping scope (web/radar.js); only ready symbols are shown as targets
-let radarTab = 'ready', radarSub = 'radar';
+let radarTab = 'ready', radarSub = 'radar', wlQuery = '';
 // Sub-menu under the Radar tab: the live scope, and the Watchlist (ready to trade / building / quiet)
 const RADAR_SUBS = [
   ['radar', 'Radar', '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4.5"/><path d="M12 12l6-6"/><circle cx="16" cy="15.5" r="1"/>'],                                                                        // radar sweep
@@ -62,12 +62,27 @@ async function renderSymbols() {
         <div class="legend"><span><i style="background:#5AFF64"></i>BUY READY</span><span><i style="background:#FF6955"></i>SELL READY</span></div>` +
         '<p class="small">Only symbols that are ready to trade appear on the radar. Bearing is fixed per symbol. Tap a target to open it. The full list is under Watchlist.</p>';
     } else {
+      // Search covers ALL symbols (every status); with an empty box the three tabs work as before
+      const squash = t => String(t).replace(/[\s()]/g, '').toLowerCase();
+      const wlRows = () => {
+        const q = squash(wlQuery);
+        if (!q) return G[radarTab].length ? G[radarTab].map(row).join('') : `<p class="mut">${{ ready: 'No symbols are ready to trade.', building: 'Nothing is building right now.', quiet: 'No quiet symbols.' }[radarTab]}</p>`;
+        const hit = [...G.ready, ...G.building, ...G.quiet].filter(s => squash([s.id, s.short, s.name].join('|')).includes(q));
+        return `<p class="small wlcount">${hit.length} of ${symbols.length} symbols match</p>` + (hit.length ? hit.map(row).join('') : `<p class="mut">No symbol matches "${esc(wlQuery.trim())}".</p>`);
+      };
       view.innerHTML = subs + `<h3 class="ctr" style="margin-top:0">Watchlist</h3>` +
-        `<div class="rtabs" role="tablist">${[['ready', 'Ready to trade'], ['building', 'Building'], ['quiet', 'Quiet']].map(([k, t]) => `<button role="tab" class="${radarTab === k ? 'on' : ''}" data-rt="${k}"><svg viewBox="0 0 24 24" aria-hidden="true">${RT_ICON[k]}</svg><em>${t} <span>${G[k].length}</span></em></button>`).join('')}</div>` +
-        (G[radarTab].length ? G[radarTab].map(row).join('') : `<p class="mut">${{ ready: 'No symbols are ready to trade.', building: 'Nothing is building right now.', quiet: 'No quiet symbols.' }[radarTab]}</p>`);
+        `<div class="wlsearch"><input id="wlSearch" type="search" inputmode="search" enterkeyhint="search" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Search all ${symbols.length} symbols (e.g. V75, 100 1s)" aria-label="Search all symbols" value="${esc(wlQuery)}"></div>` +
+        `<div class="rtabs${wlQuery.trim() ? ' off' : ''}" role="tablist">${[['ready', 'Ready to trade'], ['building', 'Building'], ['quiet', 'Quiet']].map(([k, t]) => `<button role="tab" class="${radarTab === k ? 'on' : ''}" data-rt="${k}"><svg viewBox="0 0 24 24" aria-hidden="true">${RT_ICON[k]}</svg><em>${t} <span>${G[k].length}</span></em></button>`).join('')}</div>` +
+        `<div id="wlList">${wlRows()}</div>`;
+      const wlBind = () => view.querySelectorAll('#wlList .rrow').forEach(b => b.onclick = () => openSymbol(b.dataset.id));
+      document.getElementById('wlSearch').oninput = e => {          // only the list is redrawn, so the keyboard stays open
+        wlQuery = e.target.value;
+        document.getElementById('wlList').innerHTML = wlRows(); wlBind();
+        view.querySelector('.rtabs').classList.toggle('off', !!wlQuery.trim());
+      };
     }
     view.querySelectorAll('[data-rs]').forEach(b => b.onclick = () => { radarSub = b.dataset.rs; renderSymbols(); });
-    view.querySelectorAll('.rtabs button').forEach(b => b.onclick = () => { radarTab = b.dataset.rt; renderSymbols(); });
+    view.querySelectorAll('.rtabs button').forEach(b => b.onclick = () => { radarTab = b.dataset.rt; wlQuery = ''; renderSymbols(); });
     view.querySelectorAll('.rrow').forEach(b => b.onclick = () => openSymbol(b.dataset.id));
     if (radarSub !== 'radar') return;
     const brg = document.getElementById('rdBrg'), clk = document.getElementById('rdClk');
