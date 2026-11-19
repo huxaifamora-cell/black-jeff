@@ -35,12 +35,16 @@ const RT_ICON = {
   quiet: '<path d="M2 20.5L12 4l10 16.5z"/><path d="M12 20.5l-3-6.5h6z"/><path d="M12 4V2"/>',
 };
 // ---- tactical radar: a live sweeping scope (web/radar.js); only ready symbols are shown as targets
-let radarTab = 'ready', radarSub = 'radar', wlQuery = '';
+let radarTab = 'ready', radarSub = 'radar', wlQuery = '', alQuery = '';
 // Sub-menu under the Radar tab: the live scope, and the Watchlist (ready to trade / building / quiet)
 const RADAR_SUBS = [
   ['radar', 'Radar', '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4.5"/><path d="M12 12l6-6"/><circle cx="16" cy="15.5" r="1"/>'],                                                                        // radar sweep
   ['watchlist', 'Watchlist', '<path d="M3 6.5h6.5l2 2.5H21v11H3z"/><path d="M12 12.2l1 2 2.2.3-1.6 1.5.4 2.2-2-1.1-2 1.1.4-2.2-1.6-1.5 2.2-.3z"/>'],                                                              // dossier folder with star
 ];
+// ---- symbol search, shared by Radar, Watchlist and Alerts. Ignores spaces and brackets and matches the code (V75s), the short name (V75 (1s)) or the full Deriv name.
+const sq = t => String(t).replace(/[\s()]/g, '').toLowerCase();
+const symHit = (q, ...parts) => { q = sq(q); return !q || sq(parts.join('|')).includes(q); };
+const searchBox = (id, val, ph) => `<div class="wlsearch"><input id="${id}" type="search" inputmode="search" enterkeyhint="search" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="${esc(ph)}" aria-label="${esc(ph)}" value="${esc(val)}"></div>`;
 async function renderSymbols() {
   Radar.unmount(); view.innerHTML = '<p class="mut">Loading...</p>';
   try {
@@ -54,24 +58,25 @@ async function renderSymbols() {
       return `<button class="rrow ${cls}" data-id="${s.id}"><span class="mid"><b>${esc(s.short)}</b><span class="st ${cls || 'quiet'}">${label}</span>${s.qml ? '<span class="tag alt">QML</span>' : ''}<br><span class="small">${sub}</span></span>
         <span><span class="px">${s.price != null ? N(s.price, s.digits) : ''}</span>${arrow(s.trend)}</span></button>`;
     };
+    const found = () => [...G.ready, ...G.building, ...G.quiet].filter(s => symHit(wlQuery, s.id, s.short, s.name));
+    const foundHtml = () => { if (!wlQuery.trim()) return ''; const hit = found(); return `<p class="small wlcount">${hit.length} of ${symbols.length} symbols match</p>` + (hit.length ? hit.map(row).join('') : `<p class="mut">No symbol matches "${esc(wlQuery.trim())}".</p>`); };
+    const symPh = `Search all ${symbols.length} symbols (e.g. V75, 100 1s)`;
     const map = `<div class="scope"><canvas id="radar" tabindex="0" role="img" aria-label="Live radar: ${ready.length} symbol(s) ready to trade"></canvas>
       <div class="scopeinfo"><span id="rdBrg">BRG 000&deg;</span><span>TARGETS <b id="rdN">${ready.length}</b></span><span id="rdClk"></span></div></div>`;
     const subs = `<div class="subtabs" role="tablist">${RADAR_SUBS.map(([k, t, ic]) => `<button role="tab" data-rs="${k}" class="${k === radarSub ? 'on' : ''}" aria-selected="${k === radarSub}"><svg viewBox="0 0 24 24" aria-hidden="true">${ic}</svg>${t}</button>`).join('')}</div>`;
     if (radarSub === 'radar') {
-      view.innerHTML = subs + `<h3 class="ctr" style="margin-top:0">Tactical radar</h3>${map}
+      view.innerHTML = subs + `<h3 class="ctr" style="margin-top:0">Tactical radar</h3>${searchBox('rdSearch', wlQuery, symPh)}<div id="rdList">${foundHtml()}</div>${map}
         <div class="legend"><span><i style="background:#5AFF64"></i>BUY READY</span><span><i style="background:#FF6955"></i>SELL READY</span></div>` +
         '<p class="small">Only symbols that are ready to trade appear on the radar. Bearing is fixed per symbol. Tap a target to open it. The full list is under Watchlist.</p>';
+      document.getElementById('rdSearch').oninput = e => {           // only the results are redrawn, so the keyboard stays open
+        wlQuery = e.target.value; const l = document.getElementById('rdList'); l.innerHTML = foundHtml();
+        l.querySelectorAll('.rrow').forEach(b => b.onclick = () => openSymbol(b.dataset.id));
+      };
     } else {
       // Search covers ALL symbols (every status); with an empty box the three tabs work as before
-      const squash = t => String(t).replace(/[\s()]/g, '').toLowerCase();
-      const wlRows = () => {
-        const q = squash(wlQuery);
-        if (!q) return G[radarTab].length ? G[radarTab].map(row).join('') : `<p class="mut">${{ ready: 'No symbols are ready to trade.', building: 'Nothing is building right now.', quiet: 'No quiet symbols.' }[radarTab]}</p>`;
-        const hit = [...G.ready, ...G.building, ...G.quiet].filter(s => squash([s.id, s.short, s.name].join('|')).includes(q));
-        return `<p class="small wlcount">${hit.length} of ${symbols.length} symbols match</p>` + (hit.length ? hit.map(row).join('') : `<p class="mut">No symbol matches "${esc(wlQuery.trim())}".</p>`);
-      };
+      const wlRows = () => wlQuery.trim() ? foundHtml() : (G[radarTab].length ? G[radarTab].map(row).join('') : `<p class="mut">${{ ready: 'No symbols are ready to trade.', building: 'Nothing is building right now.', quiet: 'No quiet symbols.' }[radarTab]}</p>`);
       view.innerHTML = subs + `<h3 class="ctr" style="margin-top:0">Watchlist</h3>` +
-        `<div class="wlsearch"><input id="wlSearch" type="search" inputmode="search" enterkeyhint="search" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Search all ${symbols.length} symbols (e.g. V75, 100 1s)" aria-label="Search all symbols" value="${esc(wlQuery)}"></div>` +
+        searchBox('wlSearch', wlQuery, symPh) +
         `<div class="rtabs${wlQuery.trim() ? ' off' : ''}" role="tablist">${[['ready', 'Ready to trade'], ['building', 'Building'], ['quiet', 'Quiet']].map(([k, t]) => `<button role="tab" class="${radarTab === k ? 'on' : ''}" data-rt="${k}"><svg viewBox="0 0 24 24" aria-hidden="true">${RT_ICON[k]}</svg><em>${t} <span>${G[k].length}</span></em></button>`).join('')}</div>` +
         `<div id="wlList">${wlRows()}</div>`;
       const wlBind = () => view.querySelectorAll('#wlList .rrow').forEach(b => b.onclick = () => openSymbol(b.dataset.id));
@@ -395,13 +400,18 @@ async function renderAlerts() {
   view.innerHTML = '<p class="mut">Loading...</p>';
   try {
     const [{ alerts }, { me, concepts }] = await Promise.all([api('/api/alerts?limit=100'), api('/api/me')]);
-    const alerts2 = (concept ? alerts.filter(a => inView(a, concept)) : alerts).slice(0, SHOWN);
-    let list = '', day = '';
-    const xpb = await alertBadges(alerts2);   // opened / XP earned / XP to claim, shown on each alert row
-    alerts2.forEach(a => { const d = dayLabel(a.ts); if (d !== day) { day = d; list += `<div class="grp">${d}</div>`; } list += alertHtml(a, true, xpb); });
+    // the list is built from the symbol search box (alQuery) and the open concept menu; searching looks through the latest 100 alerts
+    const build = async () => {
+      const a2 = alerts.filter(a => (!concept || inView(a, concept)) && symHit(alQuery, a.symbol, a.symbol_name)).slice(0, SHOWN);
+      const xp = await alertBadges(a2);   // opened / XP earned / XP to claim, shown on each alert row
+      let html = '', day = '';
+      a2.forEach(a => { const d = dayLabel(a.ts); if (d !== day) { day = d; html += `<div class="grp">${d}</div>`; } html += alertHtml(a, true, xp); });
+      return { n: a2.length, html: a2.length ? `<div class="alist">${html}</div>` : `<p class="mut">${alQuery.trim() ? `No alerts for "${esc(alQuery.trim())}"${concept ? ' in this menu' : ''}.` : 'No alerts yet. They appear when a SORK concept becomes valid.'}</p>` };
+    };
+    const first = await build();
     const last = alerts[0], lastHtml = last ? `<div class="latest"><span>LATEST</span><span style="flex:1">${esc(last.title)}</span><span class="mut">${T(last.ts)}</span></div>` : '';
-    view.innerHTML = `<h3 style="margin-top:0">Alerts${alerts2.length ? ` &middot; ${alerts2.length}` : ''}</h3>${lastHtml}${snavHtml(alerts, concept)}` +
-      (alerts2.length ? `<div class="alist">${list}</div>` : '<p class="mut">No alerts yet. They appear when a SORK concept becomes valid.</p>') +
+    view.innerHTML = `<h3 style="margin-top:0">Alerts<span id="alN">${first.n ? ` &middot; ${first.n}` : ''}</span></h3>${lastHtml}${searchBox('alSearch', alQuery, 'Search alerts by symbol (e.g. V75, 100 1s)')}${snavHtml(alerts, concept)}` +
+      `<div id="alList">${first.html}</div>` +
       `<details class="more"><summary>Alert settings</summary><div class="card"><h4>Alert messages in Telegram</h4>
       <div class="row"><button class="btn" id="sub">${me.subscribed ? 'On: tap to pause' : 'Paused: tap to turn on'}</button></div>
       <p class="small">Send me alerts for:</p><div class="row">${concepts.map(c => `<label><input type="checkbox" class="cc" value="${c}" ${me.concepts.includes(c) ? 'checked' : ''}> ${c}</label>`).join(' ')}</div>
@@ -409,6 +419,14 @@ async function renderAlerts() {
     view.querySelectorAll('.snav button').forEach(b => b.onclick = () => { concept = concept === b.dataset.sc ? '' : b.dataset.sc; renderAlerts(); });
     view.querySelectorAll('.ksub button').forEach(b => b.onclick = () => { kSub = b.dataset.ks; renderAlerts(); });   // tap the active menu again to see every alert
     view.querySelectorAll('[data-open]').forEach(b => b.onclick = () => openSymbol(b.dataset.open));
+    let alT; document.getElementById('alSearch').oninput = e => {   // only the alert list is redrawn, so the keyboard stays open
+      alQuery = e.target.value; clearTimeout(alT);
+      alT = setTimeout(async () => {
+        const r = await build(), l = document.getElementById('alList'); if (!l) return;
+        l.innerHTML = r.html; document.getElementById('alN').textContent = r.n ? ' \u00B7 ' + r.n : '';
+        l.querySelectorAll('[data-open]').forEach(b => b.onclick = () => openSymbol(b.dataset.open));
+      }, 120);
+    };
     document.getElementById('sub').onclick = async () => { await api('/api/me/settings', { method: 'POST', body: JSON.stringify({ subscribed: !me.subscribed }) }); renderAlerts(); };
     view.querySelectorAll('.cc').forEach(cb => cb.onchange = async () => {
       const sel = [...view.querySelectorAll('.cc:checked')].map(x => x.value);
