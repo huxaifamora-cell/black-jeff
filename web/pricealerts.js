@@ -16,6 +16,7 @@ const PA = (() => {
   const env = () => { const cv = canvas(); return cv && cv._pa && cv._pa.env; };
   const live = () => { const E = env(); return E ? (E.price ?? E.last) : NaN; };
   const fmt = v => num(v) ? v.toFixed(digits) : '';
+  const curTf = () => { const E = env(); return E ? E.tf : 'm5'; };            // the timeframe shown on the chart right now: where the alert is set
   const side = p => p > live() ? 1 : -1;
 
   function open(id) { sym = id; items = []; panel = false; draft = null; drag = tap = null; note = ''; load(id); }
@@ -68,7 +69,7 @@ const PA = (() => {
       if (a === 'set') {
         if (draft === null) return;
         if (Math.abs(draft - live()) < Math.pow(10, -digits) / 2) { note = 'Pick a price away from the current price.'; return sync(); }
-        const r = await api('/api/price-alerts', { method: 'POST', body: JSON.stringify({ symbol: sym, price: draft }) });
+        const r = await api('/api/price-alerts', { method: 'POST', body: JSON.stringify({ symbol: sym, price: draft, tf: curTf() }) });
         items.push(r.alert); draft = null; note = 'Alert set. You will get a message when price gets there.';
       } else if (a === 'del') {
         await api('/api/price-alerts/delete', { method: 'POST', body: JSON.stringify({ id }) });
@@ -124,7 +125,7 @@ const PA = (() => {
       if (d.id === 'draft') { if (d.price !== undefined) draft = d.price; sync(); redraw(); return; }
       const a = items.find(x => x.id === d.id);
       if (a && d.price !== undefined && d.price !== a.price) {
-        try { const r = await api('/api/price-alerts/update', { method: 'POST', body: JSON.stringify({ id: a.id, price: d.price }) }); Object.assign(a, r.alert); note = ''; }
+        try { const r = await api('/api/price-alerts/update', { method: 'POST', body: JSON.stringify({ id: a.id, price: d.price, tf: curTf() }) }); Object.assign(a, r.alert); note = ''; }
         catch (err) { note = String(err.message || err); }
       }
       sync(); redraw(); return;
