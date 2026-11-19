@@ -35,7 +35,7 @@ const textWidth = (s, k) => Math.max(0, String(s).length * 6 * k - k);
 const SS = 2;                                       // shapes are drawn at 2x and averaged down (smooth edges), text is drawn after at 1x
 const hex = (h) => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
 const C = { bg: hex('#0B0F14'), grid: hex('#1B232D'), text: hex('#8A94A6'), bright: hex('#E6EAF0'), up: hex('#5AFF64'), dn: hex('#FF6955'),
-  gold: hex('#E3C16A'), blue: hex('#59A7FF'), white: hex('#FFFFFF') };
+  gold: hex('#E3C16A'), blue: hex('#59A7FF'), white: hex('#FFFFFF'), axis: hex('#B4BCC9') };
 
 class Canvas {
   constructor(w, h) { this.w = w; this.h = h; this.W = w * SS; this.H = h * SS; this.px = new Uint8Array(this.W * this.H * 3); this.fill(C.bg); }
@@ -124,72 +124,78 @@ function niceStep(range, target) {
 // snap = { candles: [{t,o,h,l,c}], tf (seconds), tfName, t (event time, candle close), dir, symbol, label (e.g. "BEARISH KEY LEVEL"),
 //          digits, box: { lo, hi, t0, label }, lines: [{ y, label, tone }] }
 // Returns a PNG Buffer, or null when there is nothing to draw.
-export function renderChart(snap, { width = 1000, height = 560 } = {}) {
+export function renderChart(snap, { width = 1280, height = 720 } = {}) {
+  // 1280 x 720 is Telegram's own display size for a photo, so the picture is not resampled (that is what made it soft). Text is big
+  // (KA / KH font dots) because the picture is read on a phone, where it is shown about 3x smaller than its pixels.
   const all = (snap && snap.candles) || [];
   if (all.length < 5) return null;
+  const KA = 3, KH = 4, GAPY = 6, z = width / 1000;
   const tf = snap.tf, evIdx = Math.max(0, all.findLastIndex((c) => c.t <= snap.t - tf));
-  const end = Math.min(all.length - 1, evIdx + 14), start = Math.max(0, end - 79), cs = all.slice(start, end + 1), n = cs.length;
+  const end = Math.min(all.length - 1, evIdx + 12), start = Math.max(0, end - 59), cs = all.slice(start, end + 1), n = cs.length;   // 60 candles: big, readable bodies
   const dg = snap.digits ?? 3, dir = snap.dir || 0, tone = dir === 1 ? C.up : dir === -1 ? C.dn : C.white;
 
-  const L = 12, R = 92, T = 52, B = 30, pw = width - L - R, ph = height - T - B;
   let lo = Math.min(...cs.map((c) => c.l)), hi = Math.max(...cs.map((c) => c.h));
   const box = snap.box && Number.isFinite(snap.box.lo) && Number.isFinite(snap.box.hi) ? snap.box : null;
   const span = hi - lo || 1;
   if (box) { lo = Math.min(lo, Math.max(box.lo, lo - span * 0.6)); hi = Math.max(hi, Math.min(box.hi, hi + span * 0.6)); }   // a far away box does not squash the candles
   const pad = (hi - lo) * 0.07; lo -= pad; hi += pad;
+  const axW = textWidth((hi).toFixed(dg), KA) + 30;                                  // the price axis is as wide as its longest label
+  const TAGH = 7 * KH + 14, L = Math.round(14 * z), R = axW, T = 16 + 7 * KH + 14 + TAGH + 12, B = 7 * KA + 26, pw = width - L - R, ph = height - T - B;
   const Y = (v) => T + (hi - v) / (hi - lo) * ph, step = pw / n, X = (i) => L + (i + 0.5) * step;
   const cv = new Canvas(width, height);
   cv.watermark(WATERMARK, L + pw / 2, T + ph / 2, Math.max(4, Math.round(pw / 70)), C.white, 0.07);     // under everything else, on every alert chart
 
   // grid + price axis
-  const gs = niceStep(hi - lo, 7), grid = [];
-  for (let v = Math.ceil(lo / gs) * gs; v <= hi; v += gs) { cv.hline(Y(v), L, L + pw, C.grid, 1, 1); grid.push(v); }
-  const ticks = [];
-  for (let i = Math.max(0, Math.floor(n / 7) - 1); i < n; i += Math.max(1, Math.round(n / 7))) { cv.vline(X(i), T, T + ph, C.grid, 1, 1); ticks.push(i); }
+  const gs = niceStep(hi - lo, 6), grid = [];
+  for (let v = Math.ceil(lo / gs) * gs; v <= hi; v += gs) { cv.hline(Y(v), L, L + pw, C.grid, 1, 1.5); grid.push(v); }
+  const ticks = [], tickEvery = Math.max(1, Math.ceil((textWidth('00 MMM 00:00', KA) + 40) / step));      // time labels never touch each other
+  for (let i = Math.max(0, tickEvery - 1); i < n; i += tickEvery) { cv.vline(X(i), T, T + ph, C.grid, 1, 1.5); ticks.push(i); }
 
   // POI box (from its own start to the right edge)
   if (box) {
     const bi = box.t0 ? Math.max(0, cs.findLastIndex((c) => c.t <= box.t0)) : 0, x0 = box.t0 && cs[0].t > box.t0 ? L : X(bi) - step / 2;
     const bc = dir === 1 ? C.up : dir === -1 ? C.dn : C.gold;
-    cv.rect(x0, Y(Math.min(box.hi, hi)), L + pw, Y(Math.max(box.lo, lo)), bc, 0.16);
-    cv.hline(Y(Math.min(box.hi, hi)), x0, L + pw, bc, 0.8, 1.2); cv.hline(Y(Math.max(box.lo, lo)), x0, L + pw, bc, 0.8, 1.2);
+    cv.rect(x0, Y(Math.min(box.hi, hi)), L + pw, Y(Math.max(box.lo, lo)), bc, 0.18);
+    cv.hline(Y(Math.min(box.hi, hi)), x0, L + pw, bc, 0.9, 2); cv.hline(Y(Math.max(box.lo, lo)), x0, L + pw, bc, 0.9, 2);
   }
   // trade plan lines
   const plan = (snap.lines || []).filter((l) => Number.isFinite(l.y) && l.y > lo && l.y < hi);
-  for (const l of plan) cv.hline(Y(l.y), L, L + pw, l.tone === 'sl' ? C.dn : l.tone === 'tp' ? C.up : C.gold, 0.9, 1.2, 5);
+  for (const l of plan) cv.hline(Y(l.y), L, L + pw, l.tone === 'sl' ? C.dn : l.tone === 'tp' ? C.up : C.gold, 0.95, 2.5, 9);
 
   // event marker: dashed vertical line at the candle that fired the alert
   const ei = Math.min(n - 1, Math.max(0, evIdx - start));
-  cv.vline(X(ei), T, T + ph, tone, 0.55, 1, 4);
+  cv.vline(X(ei), T, T + ph, tone, 0.6, 1.5, 7);
 
-  // candles
-  const bw = Math.max(1.2, step * 0.66);
+  // candles: thick bodies, clear wicks
+  const bw = Math.max(2, step * 0.7);
   cs.forEach((c, i) => {
-    const up = c.c >= c.o, col = up ? C.up : C.dn, x = X(i), top = Y(Math.max(c.o, c.c)), bot = Y(Math.min(c.o, c.c));
-    cv.rect(x - 0.6, Y(c.h), x + 0.6, Y(c.l), col, c.forming ? 0.55 : 1);
-    cv.rect(x - bw / 2, top, x + bw / 2, Math.max(bot, top + 1), col, c.forming ? 0.55 : 1);
+    const up = c.c >= c.o, col = up ? C.up : C.dn, x = X(i), top = Y(Math.max(c.o, c.c)), bot = Y(Math.min(c.o, c.c)), a = c.forming ? 0.55 : 1;
+    cv.rect(x - 1, Y(c.h), x + 1, Y(c.l), col, a);
+    cv.rect(x - bw / 2, top, x + bw / 2, Math.max(bot, top + 2), col, a);
   });
   // arrow under (buy) or over (sell) the event candle
   const ec = cs[ei];
-  if (dir === 1) cv.triangle(X(ei), Y(ec.l) + 8, 14, false, tone);
-  else if (dir === -1) cv.triangle(X(ei), Y(ec.h) - 8, 14, true, tone);
+  if (dir === 1) cv.triangle(X(ei), Y(ec.l) + 12, 22, false, tone);
+  else if (dir === -1) cv.triangle(X(ei), Y(ec.h) - 12, 22, true, tone);
 
   cv.finish();
-  // axis labels and header (1x text)
-  for (const v of grid) { const y = Y(v); if (y > T + 4 && y < T + ph - 4) cv.text(v.toFixed(dg), L + pw + 8, y - 5, 1, C.text); }
-  for (const i of ticks) { const s = stamp(cs[i].t, tf), x = X(i) - textWidth(s, 1) / 2; if (x > L && x + textWidth(s, 1) < L + pw + R - 4) cv.text(s, x, T + ph + 10, 1, C.text); }
-  cv.text(`${snap.symbol || ''} - ${snap.tfName || ''}`, L + 4, 12, 2, C.bright);
-  cv.text('UTC', width - 4 - textWidth('UTC', 1), T + ph + 10, 1, C.text);
-  cv.text(WATERMARK, width - 8 - textWidth(WATERMARK, 2), 12, 2, C.gold);
+  const mid = (y, k) => y - (7 * k) / 2;                                               // top of text so that it is centred on y
+  const lp = cs[n - 1].c, th = 7 * KA + 12, ly = Math.min(Math.max(Y(lp), T + th / 2), T + ph - th / 2), lc = cs[n - 1].c >= cs[n - 1].o ? C.up : C.dn;
+  // axis labels (bright enough to read on a phone); the one under the last price tag is left out
+  for (const v of grid) { const y = Y(v); if (y > T + 10 && y < T + ph - 10 && Math.abs(y - ly) > th * 0.9) cv.text(v.toFixed(dg), L + pw + 14, mid(y, KA), KA, C.axis); }
+  for (const i of ticks) { const s = stamp(cs[i].t, tf), x = X(i) - textWidth(s, KA) / 2; if (x > L && x + textWidth(s, KA) < L + pw) cv.text(s, x, T + ph + 12, KA, C.axis); }
+  // header: symbol and timeframe, the B-JEFF mark in the corner
+  cv.text(`${snap.symbol || ''} - ${snap.tfName || ''}`, L + 6, 16, KH, C.bright);
+  cv.text(WATERMARK, width - 14 - textWidth(WATERMARK, KH), 16, KH, C.gold);
   const lab = String(snap.label || '');
   if (lab) {
-    const w = textWidth(lab, 2) + 14, x = Math.min(Math.max(L + 2, X(ei) - w / 2), L + pw - w);
-    cv.box(Math.round(x), 30, Math.round(x + w), 48, tone); cv.text(lab, x + 7, 33, 2, [11, 15, 20]);
+    const w = textWidth(lab, KH) + 32, x = Math.min(Math.max(L + 2, X(ei) - w / 2), L + pw - w), y0 = 16 + 7 * KH + 14;
+    cv.box(Math.round(x), y0, Math.round(x + w), y0 + TAGH, tone); cv.text(lab, x + 16, y0 + 7, KH, [11, 15, 20]);
   }
-  for (const l of plan) { const y = Y(l.y), s = `${l.label} ${l.y.toFixed(dg)}`; cv.text(s, L + 6, y - 11, 1, l.tone === 'sl' ? C.dn : l.tone === 'tp' ? C.up : C.gold); }
-  if (box && box.label) { const y = Y(Math.min(box.hi, hi)); cv.text(box.label, L + pw - textWidth(box.label, 1) - 6, y + 4, 1, C.bright); }
+  for (const l of plan) { const y = Y(l.y), s = `${l.label} ${l.y.toFixed(dg)}`, col = l.tone === 'sl' ? C.dn : l.tone === 'tp' ? C.up : C.gold; const ty = Math.round(y - 7 * KA - GAPY - 5); cv.box(L + 4, ty - 4, L + 4 + textWidth(s, KA) + 12, ty + 7 * KA + 4, C.bg); cv.text(s, L + 10, ty, KA, col); }
+  if (box && box.label) { const y = Y(Math.min(box.hi, hi)); cv.text(box.label, L + pw - textWidth(box.label, KA) - 10, y + 8, KA, C.bright); }
   // last price tag
-  const lp = cs[n - 1].c, ly = Math.min(Math.max(Y(lp), T + 8), T + ph - 8), lc = cs[n - 1].c >= cs[n - 1].o ? C.up : C.dn;
-  cv.box(L + pw + 2, Math.round(ly) - 8, width - 2, Math.round(ly) + 8, lc); cv.text(lp.toFixed(dg), L + pw + 8, ly - 4, 1, [11, 15, 20]);
+  cv.box(L + pw + 4, Math.round(ly - th / 2), width - 4, Math.round(ly + th / 2), lc); cv.text(lp.toFixed(dg), L + pw + 14, mid(ly, KA), KA, [11, 15, 20]);
+  cv.text('UTC', L + pw + 14, T + ph + 12, KA, C.axis);
   return png(width, height, cv.out);
 }
