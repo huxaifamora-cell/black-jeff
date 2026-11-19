@@ -13,7 +13,7 @@ function symMap(v) {
     const r = (s.r || []).find(x => x.role === p.role);
     zones.push({ id: 'o-' + p.role, lo: p.lo, hi: p.hi, col: COL.o, title: 'O  ' + p.role.toUpperCase(), sub: r ? (r.state ? `RECLAIM ${r.state}/5` : r.last_complete ? 'RECLAIMED' : 'WATCHING') : '', step: 'O' });
   });
-  if (K) zones.push({ id: 'k', lo: K.lo, hi: K.hi, col: K.invalidated ? COL.dead : COL.tan, title: `K  ${K.type} ${K.dir === 1 ? 'BUY' : 'SELL'}`, sub: K.invalidated ? 'INVALIDATED' : K.high_prob ? `HIGH PROB · ${K.wicks} WICK` : 'LOW PROB, NOT TRADED', step: 'K', key: true });
+  if (K) zones.push({ id: 'k', lo: K.lo, hi: K.hi, col: K.invalidated ? COL.dead : COL.tan, title: `K  KEY LEVEL ${K.dir === 1 ? 'BUY' : 'SELL'}`, sub: K.invalidated ? 'INVALIDATED' : K.high_prob ? `HIGH PROB · ${K.wicks} WICK` : 'LOW PROB, NOT TRADED', step: 'K', key: true });
   if (s.qml) zones.push({ id: 'q', lo: s.qml.lo, hi: s.qml.hi, col: s.qml.invalidated_t ? COL.dead : COL.qml, title: `QML ${s.qml.dir === 1 ? 'BUY' : 'SELL'}`, sub: s.qml.invalidated_t ? 'INVALIDATED' : s.qml.at_liquidity ? 'AT LIQUIDITY' : 'NO LIQUIDITY', dash: false });
   if (s.adv) {
     zones.push({ id: 'a', lo: s.adv.half[0], hi: s.adv.half[1], col: COL.gold, title: '50% POI', sub: s.adv.entered_t ? 'PRICE ENTERED' : 'ADVANCED KL', dash: true });

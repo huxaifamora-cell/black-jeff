@@ -54,7 +54,7 @@ async function renderSymbols() {
       const buy = s.plan && s.plan.dir === 1, cls = s.status === 'ready' ? (buy ? 'buy' : 'sell') : s.status === 'building' ? 'build' : '';
       const label = s.status === 'ready' ? `${buy ? 'BUY' : 'SELL'} SETUP READY` : s.status === 'building' ? 'BUILDING' : 'QUIET';
       const sub = !s.available ? 'not on Deriv' : s.price == null ? 'waiting for data'
-        : s.status === 'ready' ? `${s.plan.type} &middot; entry ${N(s.plan.entry, s.digits)}` : (s.next ? esc(s.next) : 'No setup');
+        : s.status === 'ready' ? `key level &middot; entry ${N(s.plan.entry, s.digits)}` : (s.next ? esc(s.next) : 'No setup');
       return `<button class="rrow ${cls}" data-id="${s.id}"><span class="mid"><b>${esc(s.short)}</b><span class="st ${cls || 'quiet'}">${label}</span>${s.qml ? '<span class="tag alt">QML</span>' : ''}<br><span class="small">${sub}</span></span>
         <span><span class="px">${s.price != null ? N(s.price, s.digits) : ''}</span>${arrow(s.trend)}</span></button>`;
     };
@@ -201,11 +201,11 @@ function cards(s, d) {
     `<p>${r.role === 'plq' ? 'Point of liquidity' : r.role}: ${r.state ? 'in progress, step ' + r.state + ' of 5' : 'waiting'}${r.last_complete ? ` <span class="small">last complete ${T(r.last_complete)}</span>` : ''}</p>`).join('')
     : '<p class="mut">No POI to watch.</p>') + '<p class="small">A reclamation is a confirmation, not an entry.</p></div>';
   const K = s.k, a = K && K.active;
-  h += `<div class="card"><h4>K &middot; Key level (H1)</h4>` + (a ? `<p><b>${a.type}</b> (${a.dir === 1 ? 'buy' : 'sell'}) POI ${box(a, d)}
+  h += `<div class="card"><h4>K &middot; Key level (H1)</h4>` + (a ? `<p><b>Key level</b> (${a.dir === 1 ? 'buy' : 'sell'}) POI ${box(a, d)}
     ${a.invalidated ? `<span class="down"> invalidated ${T(a.invalidated.t)}</span>` : (a.high_prob ? '<span class="up"> valid, high probability</span>' : '<span class="down"> valid but low probability, not traded</span>')}</p>
     <p class="small">${a.wicks} wick(s) inside the POI between the key level and its BOS.</p>` +
     (!a.invalidated && a.high_prob ? `<p class="small">${a.dir === 1 ? 'Buy' : 'Sell'} limit ${P(a.plan.entry, d)} &middot; <span class="down">SL ${P(a.plan.sl, d)}</span> &middot; <span class="up">TP (1:${a.plan.rr}) ${P(a.plan.tp, d)}</span></p>` : '')
-    : '<p class="mut">No valid key level (RBS or SBR) yet.</p>') +
+    : '<p class="mut">No valid key level yet.</p>') +
     '</div>';
   if (s.qml) h += `<div class="card"><h4>QML (H1)</h4><p><b>${s.qml.dir === 1 ? 'Buy' : 'Sell'}</b> POI ${box(s.qml, d)} ${s.qml.invalidated_t ? '<span class="down">invalidated</span>' : ''}</p>
     <p class="small">${s.qml.at_liquidity ? `Reversal ${s.qml.plq.inside ? 'at' : 'close to'} an H1 point of liquidity (POI ${box(s.qml.plq, d)}).` : 'Reversal is not at or close to a point of liquidity, so it is not alerted.'}</p></div>`;
