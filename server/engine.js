@@ -760,15 +760,15 @@ export function evaluate(h4Live, h1Live, m5, p = defaultParams, digits = 3) {
     const plan = tradePlan(act.lo, act.hi, act.dir, atr5, p);
     kState.active = { type: act.type, dir: act.dir, lo: act.lo, hi: act.hi, t0: act.t0, t_valid: act.t_valid, wicks: act.wicks,
       high_prob: act.high_prob, invalidated: inv, plan };
-    overlays.push({ type: 'box', grp: 'k', lo: act.lo, hi: act.hi, t0: act.t0, label: (act.dir === 1 ? 'Bullish KeyLevel' : 'Bearish KeyLevel') + (act.high_prob ? '' : ' (low probability)'), tone: inv ? 'dead' : 'k' });
+    overlays.push({ type: 'box', grp: 'k', lo: act.lo, hi: act.hi, t0: act.t0, label: 'KeyLevel' + (act.high_prob ? '' : ' (low probability)'), tone: inv ? 'dead' : 'k' });
     // The key level POI box on the M5 chart (grp 'k5', same label and colour as the H1 one) is marked from the M5 order block (see m5Poi).
     // With no M5 order block it falls back to the H1 box.
     const mp = m5Poi(act, m5, atr5, p);
     state.m5poi = mp;
-    overlays.push({ type: 'box', grp: 'k5', lo: mp ? mp.lo : act.lo, hi: mp ? mp.hi : act.hi, t0: mp ? mp.t : act.t0, label: (act.dir === 1 ? 'Bullish KeyLevel' : 'Bearish KeyLevel') + (act.high_prob ? '' : ' (low probability)'), tone: inv ? 'dead' : 'k' });
+    overlays.push({ type: 'box', grp: 'k5', lo: mp ? mp.lo : act.lo, hi: mp ? mp.hi : act.hi, t0: mp ? mp.t : act.t0, label: 'KeyLevel' + (act.high_prob ? '' : ' (low probability)'), tone: inv ? 'dead' : 'k' });
     const uid = `${act.type}-${act.t_valid}`;
     if (inv) {
-      events.push(ev('K', 'kl_invalid', act.dir, inv.t, M5, `K: ${act.type} invalidated`,
+      events.push(ev('K', 'kl_invalid', act.dir, inv.t, M5, `K: key level invalidated`,
         `An M5 body closed outside the POI (${f(act.lo)} to ${f(act.hi)}). All older key levels are invalid too. Watch for the QML.`, `${uid}-inv-${inv.t}`, { sub: act.type, lo: act.lo, hi: act.hi, t0: act.t0 }));
       const q = qmlFor(act, inv, h1, m5, p, atr1, liquidityPoints(h1, of, p));
       if (q) {
@@ -786,13 +786,13 @@ export function evaluate(h4Live, h1Live, m5, p = defaultParams, digits = 3) {
         }
       }
     } else if (act.high_prob) {
-      events.push(ev('K', 'kl_valid', act.dir, act.t_valid + H1, H1, `K: valid ${act.type} key level (${side(act.dir)} setup)`,
+      events.push(ev('K', 'kl_valid', act.dir, act.t_valid + H1, H1, `K: valid key level (${side(act.dir)} setup)`,
         `POI ${f(act.lo)} to ${f(act.hi)}, ${act.wicks} wick(s) inside (high probability). ${cap(side(act.dir))} limit ${f(plan.entry)}, SL ${f(plan.sl)}, TP (1:${p.rr}) ${f(plan.tp)}.`,
         uid, { lo: act.lo, hi: act.hi, t0: act.t0, ...plan, sub: act.type }));
       const cfs = confirmations(m5c, act.lo, act.hi, act.dir, act.t_valid + H1).slice(-3);
       state.signals = cfs;
       for (const cf of cfs) {
-        events.push(ev('K', 'kl_entry', act.dir, cf.t + M5, M5, `K: ${side(act.dir)} confirmation on ${act.type} (${nice(cf.type, act.dir)})`,
+        events.push(ev('K', 'kl_entry', act.dir, cf.t + M5, M5, `K: ${side(act.dir)} confirmation on key level (${nice(cf.type, act.dir)})`,
           `${cap(nice(cf.type, act.dir))} inside the POI. ${cap(side(act.dir))} limit ${f(plan.entry)}, SL ${f(plan.sl)}, TP ${f(plan.tp)}.`,
           `${uid}-${cf.t}-${cf.type}`, { lo: act.lo, hi: act.hi, t0: act.t0, ...plan, sub: act.type, conf: nice(cf.type, act.dir) }));
       }
@@ -804,7 +804,7 @@ export function evaluate(h4Live, h1Live, m5, p = defaultParams, digits = 3) {
         overlays.push({ type: 'box', lo: z.lo, hi: z.hi, t0: z.t0, label: 'bjeff zone', tone: 'adv2' });
         if (z.active_t) {
           events.push(ev('ADV', 'bjeff_valid', act.dir, z.active_t, M5, 'ADV: bjeff zone is active',
-            `M5 key level ${f(z.lo)} to ${f(z.hi)} inside the 50% of the H1 ${act.type}. A body candle closed inside it. Wait for any confirmation entry.`, `bj-${act.t_valid}-${z.t}`, { sub: act.type, lo: z.lo, hi: z.hi, t0: z.t0 }));
+            `M5 key level ${f(z.lo)} to ${f(z.hi)} inside the 50% of the H1 key level. A body candle closed inside it. Wait for any confirmation entry.`, `bj-${act.t_valid}-${z.t}`, { sub: act.type, lo: z.lo, hi: z.hi, t0: z.t0 }));
         }
       }
       for (const sg of adv.signals) {

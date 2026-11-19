@@ -23,9 +23,9 @@ const TF_NAME = { [H4]: 'H4', [H1]: 'H1', [M5]: 'M5' };
 const TYPE_NAME = { S: 'Market structure', O: 'Order flow', R: 'Reclamation', K: 'Key level', QML: 'QML', ADV: 'Advanced key level' };
 const BIAS_NAME = { 1: 'Bullish', '-1': 'Bearish' };
 
-// Status on the timeframe that fired the alert, e.g. "Valid RBS (buy setup)" or "Entry confirmation: bearish breakout (sell)".
+// Status on the timeframe that fired the alert, e.g. "Valid key level (buy setup)" or "Entry confirmation: bearish breakout (sell)".
 export function statusOf(a) {
-  const p = a.payload || {}, buy = a.dir === 1, sd = buy ? 'buy' : 'sell', sub = p.sub || 'key level';
+  const p = a.payload || {}, buy = a.dir === 1, sd = buy ? 'buy' : 'sell', sub = 'key level';                      // never RBS / SBR in alert text
   switch (a.kind) {
     case 'reclamation': return `Valid ${buy ? 'bullish' : 'bearish'} reclamation`;
     case 'kl_valid': return `Valid ${sub} (${sd} setup)`;
@@ -37,8 +37,8 @@ export function statusOf(a) {
   }
 }
 
-// Telegram text: two lines, the direction and the alert type, then the symbol name.
-//   🟢 <b>BULLISH · RECLAMATION</b>
+// Telegram text: two lines, the status dot and the alert type (why it fired), then the symbol name. No "bullish" / "bearish" words.
+//   🟢 <b>RECLAMATION</b>
 //   Volatility 25 Index
 // The dot matches the button colour: green bullish, red bearish, white for invalidations and alerts with no direction.
 // The type is the kind of alert: RECLAMATION, KEY LEVEL, QML, BJEFF ZONE or 50% KEYLEVEL POI (structure and order flow alerts
@@ -51,13 +51,13 @@ export const formatAlert = (a) => {
   const esc = (t) => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   const type = esc(alertType(a));
   const head = INVALID_KINDS.has(a.kind) ? `⚪ <b>INVALIDATED · ${type}</b>`
-    : a.dir === 1 ? `🟢 <b>BULLISH · ${type}</b>`
-    : a.dir === -1 ? `🔴 <b>BEARISH · ${type}</b>`
+    : a.dir === 1 ? `🟢 <b>${type}</b>`
+    : a.dir === -1 ? `🔴 <b>${type}</b>`
     : `⚪ <b>${type}</b>`;
   return `${head}\n${esc(a.symbol_name)}`;
 };
-// Short plain-text version of the headline for the chart image ("BEARISH KEY LEVEL").
-export const alertLabel = (a) => `${INVALID_KINDS.has(a.kind) ? 'INVALIDATED' : a.dir === 1 ? 'BULLISH' : a.dir === -1 ? 'BEARISH' : ''} ${alertType(a)}`.trim();
+// Short plain-text version of the headline for the chart image ("KEY LEVEL"). The colour of the tag and the arrow carry the direction.
+export const alertLabel = (a) => `${INVALID_KINDS.has(a.kind) ? 'INVALIDATED ' : ''}${alertType(a)}`;
 
 // What the chart screenshot of an alert needs (see chartimg.js): the candles of the timeframe that fired it, the POI box and the trade plan.
 // It is kept on the alert object only (never stored in the database) and used when the Telegram message is sent.
