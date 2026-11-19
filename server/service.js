@@ -194,10 +194,12 @@ export class Service {
   }
 
   // Chart data for the picture sent with a price alert (see chartimg.js).
-  priceSnap(sid, price) {
-    const s = this.byId.get(sid), ent = this.cache.get(sid)[M5], st = this.states.get(sid);
+  // tf = the timeframe (seconds) the alert was set on: the picture shows that chart. Falls back to M5 when that timeframe has no candles.
+  priceSnap(sid, price, tf = M5) {
+    const s = this.byId.get(sid), cache = this.cache.get(sid) || {}, st = this.states.get(sid);
+    const use = cache[tf] && cache[tf].cs.length ? tf : M5, ent = cache[use];
     if (!s || !ent || !ent.cs.length) return null;
-    return { candles: ent.cs.slice(-300).map((c) => ({ t: c.t, o: c.o, h: c.h, l: c.l, c: c.c, forming: !!c.forming })), tf: M5, tfName: 'M5',
+    return { candles: ent.cs.slice(-300).map((c) => ({ t: c.t, o: c.o, h: c.h, l: c.l, c: c.c, forming: !!c.forming })), tf: use, tfName: TF_NAME[use] || 'M5',
       t: Math.floor(Date.now() / 1000), dir: 0, symbol: s.name.toUpperCase(), label: 'PRICE ALERT', digits: st ? st.digits : 3, box: null,
       lines: [{ y: price, label: 'ALERT', tone: 'entry' }] };
   }

@@ -126,6 +126,8 @@ export function createApp({ cfg = loadConfig(), store, svc, deriv, bot, log = co
       return json(res, 200, { ok: true });
     }
     // ---- price alerts (the person drags a line on the chart; one message when price gets there)
+    // The chart timeframe the alert is set on ('m5' | 'h1' | 'h4') is kept with it: its Telegram picture is a screenshot of that timeframe.
+    const TF_SECONDS = { m5: 300, h1: 3600, h4: 14400 }, tfOf = (x) => TF_SECONDS[x] || 300;
     if (path === '/api/price-alerts' && req.method === 'GET') {
       store.upsertUser(user.id, user.first_name || '');
       return json(res, 200, { alerts: store.paList(user.id, q.get('symbol') || undefined) });
@@ -135,7 +137,7 @@ export function createApp({ cfg = loadConfig(), store, svc, deriv, bot, log = co
       if (cur === null) return json(res, 400, { error: 'No live price for this symbol yet.' });
       if (!(price > 0) || !Number.isFinite(price) || Math.abs(price - cur) < 1e-9) return json(res, 400, { error: 'Pick a price different from the current price.' });
       store.upsertUser(user.id, user.first_name || '');
-      const a = store.paAdd(user.id, b.symbol, price, price > cur ? 1 : -1);
+      const a = store.paAdd(user.id, b.symbol, price, price > cur ? 1 : -1, tfOf(b.tf));
       return a ? json(res, 200, { alert: a }) : json(res, 400, { error: `You can have at most ${MAX_PRICE_ALERTS} price alerts. Remove one first.` });
     }
     if (path === '/api/price-alerts/update' && req.method === 'POST') {
@@ -143,7 +145,7 @@ export function createApp({ cfg = loadConfig(), store, svc, deriv, bot, log = co
       if (!mine) return json(res, 404, { error: 'Alert not found.' });
       const cur = priceNow(mine.symbol);
       if (cur === null || !(price > 0) || !Number.isFinite(price) || Math.abs(price - cur) < 1e-9) return json(res, 400, { error: 'Pick a price different from the current price.' });
-      store.paUpdate(user.id, b.id, price, price > cur ? 1 : -1);
+      store.paUpdate(user.id, b.id, price, price > cur ? 1 : -1, TF_SECONDS[b.tf] || 0);
       return json(res, 200, { alert: store.paList(user.id).find((a) => a.id === b.id) });
     }
     if (path === '/api/price-alerts/delete' && req.method === 'POST') {
@@ -219,7 +221,7 @@ export function createApp({ cfg = loadConfig(), store, svc, deriv, bot, log = co
       const button = cfg.miniAppLink ? { text: `Open ${short} chart`, url: `${cfg.miniAppLink}?startapp=${param}`, plain: true }
         : cfg.webappUrl ? { text: `Open ${short} chart`, url: `${cfg.webappUrl}/?p=${param}`, plain: false } : null;
       let png = null;
-      if (bot.sendPhoto) { try { const snap = svc.priceSnap(sid, a.price); png = snap && renderChart(snap); } catch (e) { log.warn('price alert chart failed:', e.message); } }
+      if (bot.sendPhoto) { try { const snap = svc.priceSnap(sid, a.price, a.tf); png = snap && renderChart(snap); } catch (e) { log.warn('price alert chart failed:', e.message); } }
       try {
         if (png) { try { await bot.sendPhoto(a.tg_id, png, text, button); } catch (e) { log.warn('price alert picture not sent, sending text only:', e.message); await bot.send(a.tg_id, text, button); } }
         else await bot.send(a.tg_id, text, button);

@@ -28,6 +28,7 @@ const FONT = {
   '%': G('##..#', '##..#', '...#.', '..#..', '.#...', '#..##', '#..##'), '(': G('...#.', '..#..', '.#...', '.#...', '.#...', '..#..', '...#.'),
   ')': G('.#...', '..#..', '...#.', '...#.', '...#.', '..#..', '.#...'), ' ': G('.....', '.....', '.....', '.....', '.....', '.....', '.....'),
 };
+const WATERMARK = 'B-JEFF';
 const textWidth = (s, k) => Math.max(0, String(s).length * 6 * k - k);
 
 // ---------------------------------------------------------------- tiny raster
@@ -72,6 +73,16 @@ class Canvas {
       out[(y * this.w + x) * 3 + ch] = Math.round(s / n);
     }
     this.out = out;
+  }
+  // Watermark: big, faint block letters behind the candles, drawn at the 2x stage so it is smooth. Centred in the plot area.
+  watermark(s, cx, cy, k, c, a) {
+    const w = textWidth(s, k), x0 = cx - w / 2, y0 = cy - (7 * k) / 2;
+    let x = x0;
+    for (const ch of String(s).toUpperCase()) {
+      const g = FONT[ch] || FONT[' '];
+      for (let r = 0; r < 7; r++) for (let q = 0; q < 5; q++) if (g[r][q] === '#') this.rect(x + q * k, y0 + r * k, x + (q + 1) * k, y0 + (r + 1) * k, c, a);
+      x += 6 * k;
+    }
   }
   dot(x, y, c) { if (x >= 0 && y >= 0 && x < this.w && y < this.h) { const i = (y * this.w + x) * 3; this.out[i] = c[0]; this.out[i + 1] = c[1]; this.out[i + 2] = c[2]; } }
   box(x0, y0, x1, y1, c) { for (let y = Math.max(0, y0); y < Math.min(this.h, y1); y++) for (let x = Math.max(0, x0); x < Math.min(this.w, x1); x++) this.dot(x, y, c); }
@@ -128,6 +139,7 @@ export function renderChart(snap, { width = 1000, height = 560 } = {}) {
   const pad = (hi - lo) * 0.07; lo -= pad; hi += pad;
   const Y = (v) => T + (hi - v) / (hi - lo) * ph, step = pw / n, X = (i) => L + (i + 0.5) * step;
   const cv = new Canvas(width, height);
+  cv.watermark(WATERMARK, L + pw / 2, T + ph / 2, Math.max(4, Math.round(pw / 70)), C.white, 0.07);     // under everything else, on every alert chart
 
   // grid + price axis
   const gs = niceStep(hi - lo, 7), grid = [];
@@ -168,6 +180,7 @@ export function renderChart(snap, { width = 1000, height = 560 } = {}) {
   for (const i of ticks) { const s = stamp(cs[i].t, tf), x = X(i) - textWidth(s, 1) / 2; if (x > L && x + textWidth(s, 1) < L + pw + R - 4) cv.text(s, x, T + ph + 10, 1, C.text); }
   cv.text(`${snap.symbol || ''} - ${snap.tfName || ''}`, L + 4, 12, 2, C.bright);
   cv.text('UTC', width - 4 - textWidth('UTC', 1), T + ph + 10, 1, C.text);
+  cv.text(WATERMARK, width - 8 - textWidth(WATERMARK, 2), 12, 2, C.gold);
   const lab = String(snap.label || '');
   if (lab) {
     const w = textWidth(lab, 2) + 14, x = Math.min(Math.max(L + 2, X(ei) - w / 2), L + pw - w);

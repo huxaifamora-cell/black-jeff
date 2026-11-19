@@ -14,7 +14,7 @@ CREATE TABLE IF NOT EXISTS alerts(
   concept TEXT, kind TEXT, dir INTEGER, title TEXT, body TEXT, payload TEXT);
 CREATE INDEX IF NOT EXISTS alerts_symbol ON alerts(symbol, id);
 CREATE TABLE IF NOT EXISTS alert_xp(tg_id INTEGER, oid TEXT, st INTEGER, ts INTEGER, PRIMARY KEY(tg_id, oid));
-CREATE TABLE IF NOT EXISTS price_alerts(id TEXT PRIMARY KEY, tg_id INTEGER, symbol TEXT, price REAL, side INTEGER, created INTEGER);
+CREATE TABLE IF NOT EXISTS price_alerts(id TEXT PRIMARY KEY, tg_id INTEGER, symbol TEXT, price REAL, side INTEGER, created INTEGER, tf INTEGER DEFAULT 300);
 CREATE INDEX IF NOT EXISTS price_alerts_symbol ON price_alerts(symbol);
 CREATE TABLE IF NOT EXISTS user_rank(tg_id INTEGER PRIMARY KEY, tag TEXT, applied INTEGER DEFAULT 0);
 CREATE TABLE IF NOT EXISTS users(
@@ -128,19 +128,21 @@ export class Store {
   // ---- price alerts: a person drags a line on the chart; the bot messages them once when price gets there.
   // side 1 = alert when price rises to the level (it was below), -1 = when it falls to it (it was above). One shot: removed when it fires.
   paList(tgId, symbol) {
-    return symbol ? this.db.prepare('SELECT id, symbol, price, side, created FROM price_alerts WHERE tg_id=? AND symbol=? ORDER BY created').all(tgId, symbol)
-      : this.db.prepare('SELECT id, symbol, price, side, created FROM price_alerts WHERE tg_id=? ORDER BY created').all(tgId);
+    return symbol ? this.db.prepare('SELECT id, symbol, price, side, created, tf FROM price_alerts WHERE tg_id=? AND symbol=? ORDER BY created').all(tgId, symbol)
+      : this.db.prepare('SELECT id, symbol, price, side, created, tf FROM price_alerts WHERE tg_id=? ORDER BY created').all(tgId);
   }
-  paBySymbol(symbol) { return this.db.prepare('SELECT id, tg_id, symbol, price, side, created FROM price_alerts WHERE symbol=?').all(symbol); }
-  paAdd(tgId, symbol, price, side, now = Math.floor(Date.now() / 1000)) {
+  paBySymbol(symbol) { return this.db.prepare('SELECT id, tg_id, symbol, price, side, created, tf FROM price_alerts WHERE symbol=?').all(symbol); }
+  // tf = seconds of the chart timeframe the alert was set on (300, 3600 or 14400); its picture is drawn from that timeframe.
+  paAdd(tgId, symbol, price, side, tf = 300, now = Math.floor(Date.now() / 1000)) {
     if (this.db.prepare('SELECT COUNT(*) n FROM price_alerts WHERE tg_id=?').get(tgId).n >= MAX_PRICE_ALERTS) return null;
     const id = randomBytes(5).toString('hex');
-    this.db.prepare('INSERT INTO price_alerts(id,tg_id,symbol,price,side,created) VALUES(?,?,?,?,?,?)').run(id, tgId, symbol, price, side, now);
+    this.db.prepare('INSERT INTO price_alerts(id,tg_id,symbol,price,side,created,tf) VALUES(?,?,?,?,?,?,?)').run(id, tgId, symbol, price, side, now, tf);
     this.onUsersChanged?.();
-    return { id, symbol, price, side, created: now };
+    return { id, symbol, price, side, created: now, tf };
   }
-  paUpdate(tgId, id, price, side, now = Math.floor(Date.now() / 1000)) {
-    const r = this.db.prepare('UPDATE price_alerts SET price=?, side=?, created=? WHERE id=? AND tg_id=?').run(price, side, now, id, tgId);
+  paUpdate(tgId, id, price, side, tf, now = Math.floor(Date.now() / 1000)) {
+    const r = tf ? this.db.prepare('UPDATE price_alerts SET price=?, side=?, created=?, tf=? WHERE id=? AND tg_id=?').run(price, side, now, tf, id, tgId)
+      : this.db.prepare('UPDATE price_alerts SET price=?, side=?, created=? WHERE id=? AND tg_id=?').run(price, side, now, id, tgId);
     if (r.changes) this.onUsersChanged?.();
     return r.changes > 0;
   }
@@ -149,12 +151,12 @@ export class Store {
     if (r.changes) this.onUsersChanged?.();
     return r.changes > 0;
   }
-  exportPriceAlerts() { return this.db.prepare('SELECT id, tg_id, symbol, price, side, created FROM price_alerts').all(); }
+  exportPriceAlerts() { return this.db.prepare('SELECT id, tg_id, symbol, price, side, created, tf FROM price_alerts').all(); }
   importPriceAlerts(rows) {
-    const ins = this.db.prepare('INSERT OR IGNORE INTO price_alerts(id,tg_id,symbol,price,side,created) VALUES(?,?,?,?,?,?)');
+    const ins = this.db.prepare('INSERT OR IGNORE INTO price_alerts(id,tg_id,symbol,price,side,created,tf) VALUES(?,?,?,?,?,?,?)');
     let n = 0;
     for (const x of Array.isArray(rows) ? rows : [])
-      if (typeof x.id === 'string' && Number.isInteger(x.tg_id) && typeof x.symbol === 'string' && Number.isFinite(x.price) && (x.side === 1 || x.side === -1)) n += ins.run(x.id, x.tg_id, x.symbol, x.price, x.side, x.created || 0).changes;
+      if (typeof x.id === 'string' && Number.isInteger(x.tg_id) && typeof x.symbol === 'string' && Number.isFinite(x.price) && (x.side === 1 || x.side === -1)) n += ins.run(x.id, x.tg_id, x.symbol, x.price, x.side, x.created || 0, [300, 3600, 14400].includes(x.tf) ? x.tf : 300).changes;
     return n;
   }
 
