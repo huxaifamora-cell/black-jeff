@@ -4,7 +4,7 @@
 //  (reward / risk). Nothing is fixed: change any price and the ratio follows; type a ratio and the take profit moves to match.
 //
 //  1. Tap BATTLE PLAN, pick LONG or SHORT, check the three prices, tap DEPLOY ON CHART.
-//  2. The box appears on the chart (green = profit zone, red = loss zone). Drag its corner squares to adjust:
+//  2. The box appears on the chart (teal = profit zone, red = loss zone; the stop / entry / target prices are tags on the price axis). Drag its corner squares to adjust:
 //     top/bottom-left square = stop or target, middle-left = move the whole box, right square = width.
 //     Tap a box to select it; the plan card then shows and edits that box.
 //  Boxes are anchored to time and price (they stay put across M5 / H1 / H4, zoom and pan) and are saved per symbol in localStorage.
@@ -12,7 +12,7 @@
 // app.js calls: open() when a symbol opens, toolsHtml() + bind() when its page is drawn, extent() and draw() from chart(),
 // and down() / move() / up() / hover() / near() from the chart's pointer handlers.
 const Pos = (() => {
-  const KEY = 'bj_pos_v1', GREEN = '#3CB371', RED = '#B22222', BLUE = '#4A7CFF', MAX_BOXES = 20;
+  const KEY = 'bj_pos_v1', GREEN = '#089981', RED = '#F23645', GREY = '#787B86', BLUE = '#4A7CFF', MAX_BOXES = 20;
   const num = Number.isFinite, clamp = (v, a, b) => Math.max(a, Math.min(b, v)), r2 = v => Math.round(v * 100) / 100;
   let sym = null, items = [], sel = null, hidden = false, rrLast = null, drag = null, tap = null, draft = null, panel = false, digits = 2;
 
@@ -155,38 +155,24 @@ const Pos = (() => {
     const geo = cv._pos = { env: E, items: [] };
     digits = E.digits;
     if (hidden || !items.length) return;
-    const { W, Hh, FS, LH, MONO, Y, taken } = E, d = E.digits, th = LH + 3, now = E.price ?? E.last;
+    const { W, Hh, FS, LH, MONO, Y, taken } = E, d = E.digits;
     const X = t => (t - E.cs0) / E.ivl * E.step + E.step / 2;
     g.font = `${FS}px ${MONO}`; g.textBaseline = 'middle'; g.setLineDash([]);
-    const wid = ls => Math.max(...ls.map(E.tw));
-    const tag = (tiers, cx, top, bg, room) => {                            // white text on a coloured plate, kept inside the canvas
-      const lines = tiers.find(ls => wid(ls) <= room) || tiers[tiers.length - 1];     // longest wording that fits the box width
-      const w = wid(lines), h = lines.length * LH + 3, x = clamp(cx - w / 2, 2, W - w - 2);
-      g.fillStyle = bg; g.fillRect(x, top, w, h); g.fillStyle = '#fff';
-      lines.forEach((t, i) => g.fillText(t, x + 5, top + 1.5 + i * LH + LH / 2 + .5));
+    // Simple position box (like the TradingView position tool): two flat zones, a thin entry line, and the stop / entry / target
+    // prices as tags on the right-hand price axis. No outlines, no text inside the box. Tags show for the selected box only.
+    const axisTag = (price, y, bg) => {
+      const text = price.toFixed(d), w = E.tw(text), h = LH + 2, top = clamp(y - h / 2, 1, Hh - h - 1), x = W - w - 2;
+      g.fillStyle = bg; g.fillRect(x, top, w, h); g.fillStyle = '#fff'; g.fillText(text, x + 5, top + h / 2 + .5);
       taken.push({ x, y: top, w, h });
     };
     for (const p of items.slice().sort((a, b) => (a.id === sel) - (b.id === sel))) {      // the selected box is drawn last, on top
       const a = X(p.t0), b = X(p.t1), L = Math.max(0, Math.min(a, b)), R = Math.min(W, Math.max(a, b));
       if (R <= 0 || L >= W || R - L < 1) continue;
-      const yE = Y(p.entry), yS = Y(p.sl), yT = Y(p.tp), isSel = p.id === sel, cx = (L + R) / 2, rr = rrOf(p);
-      const zone = (y, fill, line) => {
-        const top = Math.min(yE, y), h = Math.abs(y - yE);
-        g.fillStyle = fill; g.fillRect(L, top, R - L, h); g.strokeStyle = line; g.lineWidth = isSel ? 1.5 : 1; g.strokeRect(L + .5, top, R - L - 1, h);
-      };
-      zone(yT, 'rgba(60,179,113,.20)', 'rgba(60,179,113,.85)'); zone(yS, 'rgba(178,34,34,.26)', 'rgba(214,72,72,.85)');
-      g.strokeStyle = 'rgba(237,235,216,.9)'; g.lineWidth = 1; g.beginPath(); g.moveTo(L, yE); g.lineTo(R, yE); g.stroke();
-      // Target / Stop plates sit just outside the far edge of their zone (inside it when there is no room)
-      const lab = (name, price, yO, bg) => {
-        const dist = Math.abs(price - p.entry), base = `${name}: ${dist.toFixed(d)} (${(dist / Math.abs(p.entry) * 100).toFixed(2)}%)`;
-        let top = yO < yE ? yO - th : yO + 2;
-        if (top < 1) top = yO + 2; else if (top + th > Hh - 1) top = yO - th;
-        tag([[`${base} ${Math.round(dist * Math.pow(10, d))} pts`], [base], [`${name} ${dist.toFixed(d)}`]], cx, top, bg, R - L + 16);
-      };
-      lab('Target', p.tp, yT, GREEN); lab('Stop', p.sl, yS, RED);
-      // middle plate on the entry line: live P/L in R multiples (green in profit, red in loss) and the ratio
-      const pl = num(now) ? p.dir * (now - p.entry) / riskOf(p) : 0, plTxt = `P/L ${pl < 0 ? '-' : '+'}${Math.abs(pl).toFixed(2)}R`, rrTxt = `1:${r2(rr)}`;
-      tag([[`Entry ${p.entry.toFixed(d)} | ${plTxt}`, `Risk/profit ratio ${rrTxt}`], [plTxt, `R:R ${rrTxt}`]], cx, yE - LH - 2, pl >= 0 ? GREEN : RED, R - L + 16);
+      const yE = Y(p.entry), yS = Y(p.sl), yT = Y(p.tp), isSel = p.id === sel;
+      g.fillStyle = 'rgba(8,153,129,.24)'; g.fillRect(L, Math.min(yE, yT), R - L, Math.abs(yT - yE));       // profit zone: teal
+      g.fillStyle = 'rgba(242,54,69,.24)'; g.fillRect(L, Math.min(yE, yS), R - L, Math.abs(yS - yE));       // loss zone: red
+      g.strokeStyle = 'rgba(178,181,190,.75)'; g.lineWidth = 1; g.beginPath(); g.moveTo(L, yE); g.lineTo(R, yE); g.stroke();
+      if (isSel) { axisTag(p.sl, yS, RED); axisTag(p.tp, yT, GREEN); axisTag(p.entry, yE, GREY); }
       const hs = [];
       if (isSel && !p.locked) {
         const lx = Math.max(7, L), rx = Math.min(W - 7, R), vy = y => clamp(y, 6, Hh - 6);
