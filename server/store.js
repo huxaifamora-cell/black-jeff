@@ -6,6 +6,7 @@ import { randomBytes } from 'node:crypto';
 import { dirname } from 'node:path';
 
 export const MAX_PRICE_ALERTS = 20;                 // per person
+export const MAX_SNIPER_FLOWS = 10;                 // per person (one per symbol)
 export const ALL_CONCEPTS = ['S', 'O', 'R', 'K', 'QML', 'ADV'];
 
 const SCHEMA = `
@@ -16,6 +17,9 @@ CREATE INDEX IF NOT EXISTS alerts_symbol ON alerts(symbol, id);
 CREATE TABLE IF NOT EXISTS alert_xp(tg_id INTEGER, oid TEXT, st INTEGER, ts INTEGER, PRIMARY KEY(tg_id, oid));
 CREATE TABLE IF NOT EXISTS price_alerts(id TEXT PRIMARY KEY, tg_id INTEGER, symbol TEXT, price REAL, side INTEGER, created INTEGER, tf INTEGER DEFAULT 300);
 CREATE INDEX IF NOT EXISTS price_alerts_symbol ON price_alerts(symbol);
+CREATE TABLE IF NOT EXISTS sniper_flows(id TEXT PRIMARY KEY, tg_id INTEGER, symbol TEXT, dir INTEGER, ind_lo REAL, ind_hi REAL, ind_t INTEGER,
+  dis_lo REAL, dis_hi REAL, dis_t INTEGER, created INTEGER, status TEXT DEFAULT 'active', seen TEXT DEFAULT '[]');
+CREATE INDEX IF NOT EXISTS sniper_flows_symbol ON sniper_flows(symbol);
 CREATE TABLE IF NOT EXISTS user_rank(tg_id INTEGER PRIMARY KEY, tag TEXT, applied INTEGER DEFAULT 0);
 CREATE TABLE IF NOT EXISTS users(
   tg_id INTEGER PRIMARY KEY, chat_id INTEGER, name TEXT, subscribed INTEGER DEFAULT 1,
@@ -157,6 +161,52 @@ export class Store {
     let n = 0;
     for (const x of Array.isArray(rows) ? rows : [])
       if (typeof x.id === 'string' && Number.isInteger(x.tg_id) && typeof x.symbol === 'string' && Number.isFinite(x.price) && (x.side === 1 || x.side === -1)) n += ins.run(x.id, x.tg_id, x.symbol, x.price, x.side, x.created || 0, [300, 3600, 14400].includes(x.tf) ? x.tf : 300).changes;
+    return n;
+  }
+
+  // ---- Sniper Mode: a person sets the order flow (inducement + disruption POIs) by hand on a symbol and the bot alerts them to the rest of SORK.
+  // One flow per person per symbol (setting it again replaces it). status: 'active' while it is watched, 'ended' once the disruption was invalidated.
+  // `seen` = keys of the events already sent for this flow (kept with the flow, so a restart does not send them again).
+  static sniperRow(r) {
+    return r ? { id: r.id, tg_id: r.tg_id, symbol: r.symbol, dir: r.dir, ind: { lo: r.ind_lo, hi: r.ind_hi, t: r.ind_t },
+      dis: { lo: r.dis_lo, hi: r.dis_hi, t: r.dis_t }, created: r.created, status: r.status } : null;
+  }
+  sniperList(tgId, symbol) {
+    const rows = symbol ? this.db.prepare('SELECT * FROM sniper_flows WHERE tg_id=? AND symbol=?').all(tgId, symbol) : this.db.prepare('SELECT * FROM sniper_flows WHERE tg_id=? ORDER BY created').all(tgId);
+    return rows.map(Store.sniperRow);
+  }
+  sniperActive(symbol) { return this.db.prepare("SELECT * FROM sniper_flows WHERE symbol=? AND status='active'").all(symbol).map((r) => ({ ...Store.sniperRow(r), seen: JSON.parse(r.seen || '[]') })); }
+  sniperSet(tgId, symbol, spec, now = Math.floor(Date.now() / 1000)) {
+    const had = this.db.prepare('SELECT id FROM sniper_flows WHERE tg_id=? AND symbol=?').get(tgId, symbol);
+    if (!had && this.db.prepare('SELECT COUNT(*) n FROM sniper_flows WHERE tg_id=?').get(tgId).n >= MAX_SNIPER_FLOWS) return null;
+    if (had) this.db.prepare('DELETE FROM sniper_flows WHERE id=?').run(had.id);
+    const id = randomBytes(5).toString('hex');
+    this.db.prepare('INSERT INTO sniper_flows(id,tg_id,symbol,dir,ind_lo,ind_hi,ind_t,dis_lo,dis_hi,dis_t,created,status,seen) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)')
+      .run(id, tgId, symbol, spec.dir, spec.ind.lo, spec.ind.hi, spec.ind.t, spec.dis.lo, spec.dis.hi, spec.dis.t, now, 'active', '[]');
+    this.onUsersChanged?.();
+    return Store.sniperRow(this.db.prepare('SELECT * FROM sniper_flows WHERE id=?').get(id));
+  }
+  sniperDelete(tgId, id) {
+    const r = tgId === null ? this.db.prepare('DELETE FROM sniper_flows WHERE id=?').run(id) : this.db.prepare('DELETE FROM sniper_flows WHERE id=? AND tg_id=?').run(id, tgId);
+    if (r.changes) this.onUsersChanged?.();
+    return r.changes > 0;
+  }
+  sniperMark(id, keys) {                                 // remember events already sent (the newest 300 are kept)
+    const row = this.db.prepare('SELECT seen FROM sniper_flows WHERE id=?').get(id); if (!row) return;
+    const seen = [...new Set([...JSON.parse(row.seen || '[]'), ...keys])].slice(-300);
+    this.db.prepare('UPDATE sniper_flows SET seen=? WHERE id=?').run(JSON.stringify(seen), id);
+    this.onUsersChanged?.();
+  }
+  sniperEnd(id) { const r = this.db.prepare("UPDATE sniper_flows SET status='ended' WHERE id=?").run(id); if (r.changes) this.onUsersChanged?.(); return r.changes > 0; }
+  exportSniper() { return this.db.prepare('SELECT * FROM sniper_flows').all(); }
+  importSniper(rows) {
+    const ins = this.db.prepare('INSERT OR IGNORE INTO sniper_flows(id,tg_id,symbol,dir,ind_lo,ind_hi,ind_t,dis_lo,dis_hi,dis_t,created,status,seen) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)');
+    let n = 0;
+    for (const x of Array.isArray(rows) ? rows : []) {
+      if (typeof x.id !== 'string' || !Number.isInteger(x.tg_id) || typeof x.symbol !== 'string' || (x.dir !== 1 && x.dir !== -1)) continue;
+      if (![x.ind_lo, x.ind_hi, x.ind_t, x.dis_lo, x.dis_hi, x.dis_t].every(Number.isFinite)) continue;
+      n += ins.run(x.id, x.tg_id, x.symbol, x.dir, x.ind_lo, x.ind_hi, x.ind_t, x.dis_lo, x.dis_hi, x.dis_t, x.created || 0, x.status === 'ended' ? 'ended' : 'active', typeof x.seen === 'string' ? x.seen : '[]').changes;
+    }
     return n;
   }
 

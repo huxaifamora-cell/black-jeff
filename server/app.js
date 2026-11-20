@@ -10,11 +10,11 @@ import { loadConfig } from './config.js';
 import { Deriv } from './deriv.js';
 import { Bot } from './telegram.js';
 import { TelegramBackup } from './backup.js';
-import { Service, formatAlert } from './service.js';
+import { Service, formatAlert, formatSniperAlert } from './service.js';
 import { renderChart } from './chartimg.js';
 import { alertParam, alertId, checkParam, isAlertId, xpStatusText } from './alertlink.js';
 import { rankTag } from './ranks.js';
-import { ALL_CONCEPTS, MAX_PRICE_ALERTS, Store } from './store.js';
+import { ALL_CONCEPTS, MAX_PRICE_ALERTS, MAX_SNIPER_FLOWS, Store } from './store.js';
 
 const WEB = resolve(dirname(fileURLToPath(import.meta.url)), '..', 'web');
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
@@ -72,7 +72,7 @@ export function createApp({ cfg = loadConfig(), store, svc, deriv, bot, log = co
     if (liveBusy.has(id)) return liveBusy.get(id);
     if (Date.now() - (liveLast.get(id) || 0) < 1500) return;
     const job = (async () => {
-      try { for (const a of await svc.refresh(deriv, id)) { log.info('alert', a.key); await notify(a); } await checkPriceAlerts(id); }
+      try { for (const a of await svc.refresh(deriv, id)) { log.info('alert', a.key); await notify(a); } await checkPriceAlerts(id); await checkSniperFlows(id); }
       catch (e) { log.warn('live refresh', id, 'failed:', e.message); }
       finally { liveLast.set(id, Date.now()); liveBusy.delete(id); }
     })();
@@ -152,6 +152,35 @@ export function createApp({ cfg = loadConfig(), store, svc, deriv, bot, log = co
       const b = await readJson(req);
       return json(res, 200, { ok: store.paDelete(user.id, String(b.id || '')) });
     }
+    // ---- Sniper Mode: the person sets the order flow (inducement + disruption POIs) by hand; the bot then alerts them to the rest of SORK
+    if (path === '/api/sniper' && req.method === 'GET') {
+      store.upsertUser(user.id, user.first_name || '');
+      const sid = q.get('symbol') || '', flow = store.sniperList(user.id, sid)[0] || null;
+      const pois = ((svc.states.get(sid) || {}).o || {}).pois || [], I = pois.find((x) => x.role === 'inducement'), D = pois.find((x) => x.role === 'disruption');
+      const suggest = I && D ? { dir: I.dir, ind: { lo: I.lo, hi: I.hi, t: I.ob_t }, dis: { lo: D.lo, hi: D.hi, t: D.ob_t } } : null;     // the bot's own reading: a starting point
+      return json(res, 200, { flow, suggest });
+    }
+    if (path === '/api/sniper' && req.method === 'POST') {
+      const b = await readJson(req), sid = String(b.symbol || ''), s = svc.byId.get(sid), now = Math.floor(Date.now() / 1000);
+      if (!s || !s.available) return json(res, 400, { error: 'This symbol is not monitored.' });
+      const dir = Number(b.dir), poi = (x) => ({ lo: Number(x && x.lo), hi: Number(x && x.hi), t: Math.floor(Number(x && x.t)) });
+      const spec = { dir, ind: poi(b.ind), dis: poi(b.dis) };
+      if (dir !== 1 && dir !== -1) return json(res, 400, { error: 'Pick bullish or bearish.' });
+      for (const [name, x] of [['inducement', spec.ind], ['disruption', spec.dis]]) {
+        if (![x.lo, x.hi, x.t].every(Number.isFinite) || !(x.lo > 0) || !(x.hi > x.lo)) return json(res, 400, { error: `Set the ${name} high above its low.` });
+        if (x.t <= 0 || x.t > now + 60) return json(res, 400, { error: `The ${name} has no valid time.` });
+      }
+      if (dir === 1 ? !(spec.ind.lo > spec.dis.hi) : !(spec.ind.hi < spec.dis.lo))
+        return json(res, 400, { error: dir === 1 ? 'For a bullish order flow the inducement must sit above the disruption.' : 'For a bearish order flow the inducement must sit below the disruption.' });
+      if (svc.sniperDead(sid, spec)) return json(res, 400, { error: 'Price already went beyond your disruption since it formed, so this order flow is over. Pick a disruption that still holds.' });
+      store.upsertUser(user.id, user.first_name || '');
+      const flow = store.sniperSet(user.id, sid, spec, now);
+      return flow ? json(res, 200, { flow }) : json(res, 400, { error: `You can have at most ${MAX_SNIPER_FLOWS} Sniper Mode flows. Stop one first.` });
+    }
+    if (path === '/api/sniper/delete' && req.method === 'POST') {
+      const b = await readJson(req);
+      return json(res, 200, { ok: store.sniperDelete(user.id, String(b.id || '')) });
+    }
     if (path === '/api/me' && req.method === 'GET') return json(res, 200, { me: store.upsertUser(user.id, user.first_name || ''), concepts: ALL_CONCEPTS,
       links: { group: /^https:\/\/t\.me\//.test(cfg.groupUrl || '') ? cfg.groupUrl : '', channel: /^https:\/\/t\.me\//.test(cfg.channelUrl || '') ? cfg.channelUrl : '' } });
     if (path === '/api/me/settings' && req.method === 'POST') {
@@ -230,6 +259,34 @@ export function createApp({ cfg = loadConfig(), store, svc, deriv, bot, log = co
     }
   }
 
+  // Sniper Mode: for every active flow on this symbol, send the person each new SORK event (private message with a chart). The event keys are saved
+  // BEFORE sending, so a failed send is never repeated. When the person's disruption was invalidated the flow ends (the person sets the next one).
+  async function checkSniperFlows(sid) {
+    if (!bot) return;
+    for (const flow of store.sniperActive(sid)) {
+      let r; try { r = svc.sniperEvents(sid, flow); } catch (e) { log.warn('sniper flow', flow.id, 'failed:', e.message); continue; }
+      if (!r) continue;
+      const fresh = r.alerts.filter((a) => !flow.seen.includes(a.key)).sort((a, b) => a.ts - b.ts);
+      if (fresh.length) store.sniperMark(flow.id, fresh.map((a) => a.key));
+      const s = svc.byId.get(sid), short = s.name.replace('Volatility ', 'V').replace(' Index', '');
+      const param = alertParam({ symbol: sid, concept: 'K' }, cfg.botToken, false);
+      for (const a of fresh) {
+        const style = a.dir === 1 && a.kind !== 'invalidated' ? 'success' : a.dir === -1 && a.kind !== 'invalidated' ? 'danger' : undefined;
+        const button = cfg.miniAppLink ? { text: `Open ${short} chart`, url: `${cfg.miniAppLink}?startapp=${param}`, plain: true, style }
+          : cfg.webappUrl ? { text: `Open ${short} chart`, url: `${cfg.webappUrl}/?p=${param}`, plain: false, style } : null;
+        const text = formatSniperAlert(a); let png = null;
+        if (a.snap && bot.sendPhoto) { try { png = renderChart(a.snap); } catch (e) { log.warn('sniper chart failed:', e.message); } }
+        try {
+          if (png) { try { await bot.sendPhoto(flow.tg_id, png, text, button); } catch (e) { log.warn('sniper picture not sent, sending text only:', e.message); await bot.send(flow.tg_id, text, button); } }
+          else await bot.send(flow.tg_id, text, button);
+          log.info('sniper alert', a.key, 'to', flow.tg_id);
+        } catch (e) { log.warn('could not send the sniper alert to', flow.tg_id + ':', e.message); }
+        await sleep(50);
+      }
+      if (r.ended) store.sniperEnd(flow.id);
+    }
+  }
+
   async function feedLoop() {
     while (!abort.signal.aborted) {
       try {
@@ -239,6 +296,7 @@ export function createApp({ cfg = loadConfig(), store, svc, deriv, bot, log = co
           try {
             for (const a of await svc.refresh(deriv, s.id)) { log.info('alert', a.key); await notify(a); }
             await checkPriceAlerts(s.id);
+            await checkSniperFlows(s.id);
           } catch (e) { log.warn('refresh', s.id, 'failed:', e.message); }
           await sleep(200, abort.signal);
         }
@@ -256,8 +314,8 @@ export function createApp({ cfg = loadConfig(), store, svc, deriv, bot, log = co
     }
     for (const id of cfg.alertChatIds || []) store.upsertUser(id, '');
     if (!backup) return;
-    store.importXp((backup.extra || {}).xp); store.importRanks((backup.extra || {}).ranks); store.importPriceAlerts((backup.extra || {}).pa);
-    const extra = () => ({ xp: store.exportXp(), ranks: store.exportRanks(), pa: store.exportPriceAlerts() });
+    store.importXp((backup.extra || {}).xp); store.importRanks((backup.extra || {}).ranks); store.importPriceAlerts((backup.extra || {}).pa); store.importSniper((backup.extra || {}).sf);
+    const extra = () => ({ xp: store.exportXp(), ranks: store.exportRanks(), pa: store.exportPriceAlerts(), sf: store.exportSniper() });
     store.onUsersChanged = () => backup.schedule(() => store.exportUsers(), extra);
     backup.schedule(() => store.exportUsers(), extra);       // write once so the backup exists from the start
   }
@@ -328,7 +386,7 @@ export function createApp({ cfg = loadConfig(), store, svc, deriv, bot, log = co
     store.close?.();
   }
 
-  return { server, start, stop, svc, store, notify, checkPriceAlerts };
+  return { server, start, stop, svc, store, notify, checkPriceAlerts, checkSniperFlows };
 }
 
 // ------------------------------------------------------------ main

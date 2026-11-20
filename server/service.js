@@ -1,5 +1,5 @@
 // Ties the feed, the engine and the alert store together.
-import { H1, H4, M5, defaultParams, evaluate } from './engine.js';
+import { H1, H4, M5, defaultParams, evaluate, closedOnly, manualOrderFlow } from './engine.js';
 import { SYMBOLS, norm } from './symbols.js';
 
 // H1 needs the last 6 months (h1Days x 24 candles, the Deriv indices trade round the clock) plus a small margin; H4 covers the same span.
@@ -44,7 +44,8 @@ export function statusOf(a) {
 // The type is the kind of alert: RECLAMATION, KEY LEVEL, QML, BJEFF ZONE or 50% KEYLEVEL POI (structure and order flow alerts
 // keep their own names). The button under the message is added by the caller and is not part of this text.
 const KIND_TYPE = { reclamation: 'RECLAMATION', kl_valid: 'KEY LEVEL', kl_entry: 'KEY LEVEL', kl_invalid: 'KEY LEVEL',
-  qml_valid: 'QML', qml_entry: 'QML', bjeff_valid: 'BJEFF ZONE', adv_entry: '50% KEYLEVEL POI' };
+  qml_valid: 'QML', qml_entry: 'QML', bjeff_valid: 'BJEFF ZONE', adv_entry: '50% KEYLEVEL POI',
+  bos: 'BREAK OF STRUCTURE', choch: 'CHANGE OF STRUCTURE' };      // bos / choch / invalidated(ORDER FLOW) come from Sniper Mode flows
 const INVALID_KINDS = new Set(['kl_invalid', 'invalidated']);
 export const alertType = (a) => KIND_TYPE[a.kind] || String(TYPE_NAME[a.concept] || a.concept || 'ALERT').toUpperCase();
 export const formatAlert = (a) => {
@@ -59,6 +60,9 @@ export const formatAlert = (a) => {
 // Short plain-text version of the headline for the chart image ("KEY LEVEL"). The colour of the tag and the arrow carry the direction.
 export const alertLabel = (a) => `${INVALID_KINDS.has(a.kind) ? 'INVALIDATED ' : ''}${alertType(a)}`;
 
+// Sniper Mode (a person's own order flow): the same two lines, plus a third that says whose flow it is.
+export const formatSniperAlert = (a) => `${formatAlert(a)}\n🎯 <b>SNIPER MODE</b>${a.kind === 'invalidated' ? ' · your order flow is over, set a new one' : ''}`;
+
 // What the chart screenshot of an alert needs (see chartimg.js): the candles of the timeframe that fired it, the POI box and the trade plan.
 // It is kept on the alert object only (never stored in the database) and used when the Telegram message is sent.
 export function chartSnap(a, ev, series, digits) {
@@ -66,6 +70,7 @@ export function chartSnap(a, ev, series, digits) {
   if (Number.isFinite(p.entry)) plan.push({ y: p.entry, label: 'ENTRY', tone: 'entry' });
   if (Number.isFinite(p.sl)) plan.push({ y: p.sl, label: 'SL', tone: 'sl' });
   if (Number.isFinite(p.tp)) plan.push({ y: p.tp, label: 'TP', tone: 'tp' });
+  if (Number.isFinite(p.level)) plan.push({ y: p.level, label: 'BOS', tone: 'entry' });          // break / change of structure: the level that was broken
   return {
     candles: series.slice(-300).map((c) => ({ t: c.t, o: c.o, h: c.h, l: c.l, c: c.c, forming: !!c.forming })),
     tf: ev.tf, tfName: TF_NAME[ev.tf] || '', t: ev.t, dir: INVALID_KINDS.has(a.kind) ? 0 : a.dir, symbol: a.symbol_name.toUpperCase(), label: alertLabel(a), digits,
@@ -202,6 +207,34 @@ export class Service {
     return { candles: ent.cs.slice(-300).map((c) => ({ t: c.t, o: c.o, h: c.h, l: c.l, c: c.c, forming: !!c.forming })), tf: use, tfName: TF_NAME[use] || 'M5',
       t: Math.floor(Date.now() / 1000), dir: 0, symbol: s.name.toUpperCase(), label: 'PRICE ALERT', digits: st ? st.digits : 3, box: null,
       lines: [{ y: price, label: 'ALERT', tone: 'entry' }] };
+  }
+
+  // ---- Sniper Mode. The flow = { id, dir, ind: {lo, hi, t}, dis: {lo, hi, t}, created }. Returns null while the symbol has no data.
+  // Alerts = the SORK events that came AFTER the flow was set (reclamation, key level, QML, bjeff zone, break / change of structure, and the
+  // invalidation of the person's disruption). Nothing is sent for events that happened before, or that are older than 3 candles of their timeframe.
+  sniperEvents(sid, flow, now = Date.now() / 1000) {
+    const s = this.byId.get(sid), c = this.cache.get(sid) || {}, h4 = c[H4] && c[H4].cs, h1 = c[H1] && c[H1].cs, m5 = c[M5] && c[M5].cs;
+    if (!s || !h4 || !h1 || !m5 || !h4.length || !h1.length || !m5.length) return null;
+    const digits = digitsFor(m5), manual = { dir: flow.dir, ind: flow.ind, dis: flow.dis };
+    const res = evaluate(h4, h1, m5, this.p, digits, { manual });
+    const iv = res.state.o && res.state.o.invalidated, invT = iv ? iv.t + H1 : null, alerts = [];
+    for (const ev of res.events) {
+      if (ev.t < flow.created || now - ev.t > 3 * ev.tf) continue;
+      if (invT !== null && ev.kind !== 'invalidated' && ev.t >= invT) continue;       // the flow is over: nothing more is said about it
+      const a = { key: `${flow.id}|${ev.concept}|${ev.kind}|${ev.uid}`, ts: Math.min(ev.t, Math.floor(now)), symbol: sid, symbol_name: s.name, concept: ev.concept,
+        kind: ev.kind, dir: ev.dir, title: ev.title, body: ev.body, payload: { ...ev.extra, tf: ev.tf } };
+      try {
+        a.snap = chartSnap(a, ev, ev.tf === M5 ? m5 : ev.tf === H4 ? h4 : h1, digits);
+        if (ev.kind === 'invalidated') a.snap.box = { lo: flow.dis.lo, hi: flow.dis.hi, t0: flow.dis.t, label: 'DISRUPTION' };
+      } catch (e) { this.log.warn('chart data for', a.key, 'failed:', e.message); }
+      alerts.push(a);
+    }
+    return { alerts, ended: invT !== null };
+  }
+  // Has price already gone beyond this disruption POI? (Checked when a flow is set, so a flow that is already dead is refused.)
+  sniperDead(sid, spec) {
+    const ent = (this.cache.get(sid) || {})[H1]; if (!ent || !ent.cs.length) return false;
+    return !!manualOrderFlow(closedOnly(ent.cs), spec).invalidated;
   }
 
   overview() {

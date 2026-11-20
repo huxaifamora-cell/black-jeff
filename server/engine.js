@@ -342,6 +342,30 @@ export function orderFlow(h1, trend, p) {
   return res;
 }
 
+// ---------------------------------------------------------------- manual order flow (Sniper Mode)
+// The person sets the order flow by hand: a direction plus the inducement and disruption POIs (price range lo..hi and the time t the POI formed).
+// Everything downstream (reclamation, key levels, QML, bjeff zone) then runs on that flow exactly as it does on the bot's own flow.
+// The flow ends when an H1 candle goes beyond the disruption POI after BOTH POIs exist (a wick is enough, same rule as the automatic flow: a disruption can
+// only be invalidated once there is an inducement). Candles before that, such as the pullback that formed the POI, do not count. Unlike the
+// automatic flow nothing is remapped after that: the person sets the next one.
+export function manualOrderFlow(h1, m) {
+  const d = m.dir === -1 ? -1 : 1;
+  const mk = (role, x) => ({ role, dir: d, lo: x.lo, hi: x.hi, line: d === 1 ? x.lo : x.hi, bos_t: x.t, bos_idx: -1, ob_t: x.t, ob_b_t: null, bos_level: null, broken_t: x.t });
+  const ind = mk('inducement', m.ind), dis = mk('disruption', m.dis);
+  const res = { dir: d, pois: [ind, dis], pending: null, invalidated: null, remapped: false, recovered: null, pending_flip: null, official: null, pullback: null, manual: true };
+  const from = Math.max(ind.bos_t, dis.bos_t);
+  for (let i = 0; i < h1.length; i++) {
+    const c = h1[i];
+    if (c.t <= from) continue;
+    if ((d === 1 && c.l < dis.lo) || (d === -1 && c.h > dis.hi)) {
+      res.invalidated = { dir: d, t: c.t, idx: i, by: 'disruption' };
+      res.official = { dir: -d, invalidated_t: c.t, t: c.t, idx: i, by: 'disruption' };
+      break;
+    }
+  }
+  return res;
+}
+
 // ---------------------------------------------------------------- reclamation (H1)
 // Five steps, bullish version. The bearish version runs on mirrored candles.
 // Runs on H1 candles, against the H1 inducement / disruption POI it belongs to.
@@ -644,7 +668,8 @@ const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
 export const nice = (s, dir = 0) => s === 'move_out' ? (dir === 1 ? 'bullish breakout' : dir === -1 ? 'bearish breakout' : 'breakout') : s.replace('_', ' ');
 const tail = (cs, n) => cs.slice(-n).map((c) => [c.t, c.o, c.h, c.l, c.c]);
 
-export function evaluate(h4Live, h1Live, m5, p = defaultParams, digits = 3) {
+// opts.manual = { dir, ind: {lo, hi, t}, dis: {lo, hi, t} } runs everything on a hand-set order flow (see manualOrderFlow) instead of the bot's own.
+export function evaluate(h4Live, h1Live, m5, p = defaultParams, digits = 3, opts = {}) {
   // H4 and H1 arrive live (the forming candle is the last one, flagged `forming`) so the chart can show it. All the H4 / H1 rules
   // (BOS, order flow, reclamation, key levels, QML) are judged on CLOSED candles only, because they depend on a body CLOSING
   // beyond a level: a forming candle would make a POI appear and disappear while the candle is still moving.
@@ -685,7 +710,7 @@ export function evaluate(h4Live, h1Live, m5, p = defaultParams, digits = 3) {
   // A key level invalidation only changes the key levels we look for: a bearish key level invalidated = look for bullish key levels, a bullish one
   // invalidated = look for bearish ones. That goes on until the next key level invalidation (it flips again) or until the disruption is
   // invalidated (the order flow flips, and the key levels follow the new order flow again), whichever comes first.
-  const of = orderFlow(h1, null, p);
+  const of = opts.manual ? manualOrderFlow(h1, opts.manual) : orderFlow(h1, null, p);
   let bias = of.dir, since = -Infinity;
   const kInv = [];
   for (let n = 0; n < 8 && bias; n++) {
@@ -707,7 +732,7 @@ export function evaluate(h4Live, h1Live, m5, p = defaultParams, digits = 3) {
     swings: ms.swings,
     bos: ms.bos.map((b) => ({ dir: b.dir, t: b.t, level: b.level, valid: b.valid, slq: b.slq })),
   };
-  if (sInd) {
+  if (sInd && !opts.manual) {
     events.push(ev('S', 'trend_valid', trend, sInd.bos_t + H1, H1, `S: H1 ${trend === 1 ? 'uptrend' : 'downtrend'} is valid`,
       `Internal order flow is ${trend === 1 ? 'bullish' : 'bearish'}: valid BOS (liquidity + BOS) broke ${f(sInd.bos_level)}. Look for ${side(trend)} setups on H1.`, sInd.bos_t));
   }
@@ -719,20 +744,35 @@ export function evaluate(h4Live, h1Live, m5, p = defaultParams, digits = 3) {
   // ---- O: order flow on H1
   state.o = of;
   for (const poi of of.pois) {
-    if (poi.role === 'inducement' || poi.role === 'disruption') {
+    if ((poi.role === 'inducement' || poi.role === 'disruption') && !opts.manual) {       // a hand-set POI is not news to the person who set it
       events.push(ev('O', poi.role, poi.dir, poi.bos_t + H1, H1, `O: new ${poi.role} POI (${poi.dir === 1 ? 'bullish' : 'bearish'})`,
         `POI ${f(poi.lo)} to ${f(poi.hi)} (order block body). Line at ${f(poi.line)}.`, `${poi.role}-${poi.bos_t}`, { lo: poi.lo, hi: poi.hi, t0: poi.ob_t }));
     }
     // H1 chart: dotted grey horizontal line at the level the inducement / disruption BOS broke, labelled BOS
-    if (poi.role === 'inducement' || poi.role === 'disruption') overlays.push({ type: 'line', tf: 'h1', grp: 'o', y: poi.bos_level, t0: poi.broken_t, label: 'BOS', tone: 'bos', dotted: true });
+    if ((poi.role === 'inducement' || poi.role === 'disruption') && Number.isFinite(poi.bos_level)) overlays.push({ type: 'line', tf: 'h1', grp: 'o', y: poi.bos_level, t0: poi.broken_t, label: 'BOS', tone: 'bos', dotted: true });
     if (poi.role !== 'plq') overlays.push({ type: 'box', grp: 'o', lo: poi.lo, hi: poi.hi, t0: poi.ob_t, label: cap(poi.role), tone: poi.role === 'disruption' ? 'dis' : 'o' });   // point of liquidity is not drawn
   }
   if (of.invalidated) {
     const iv = of.invalidated;
-    events.push(ev('O', 'invalidated', iv.dir === 1 ? -1 : 1, iv.t + H1, H1, iv.by === 'key_level' ? 'O: key level invalidated, trend flipped' : 'O: disruption invalidated, trend flipped',
+    if (opts.manual) events.push(ev('O', 'invalidated', iv.dir === 1 ? -1 : 1, iv.t + H1, H1, 'O: your order flow is invalidated',
+      `An H1 candle went beyond your disruption POI (a wick is enough). This order flow is over: set a new one in Sniper Mode.`, `inv-${iv.t}`));
+    else events.push(ev('O', 'invalidated', iv.dir === 1 ? -1 : 1, iv.t + H1, H1, iv.by === 'key_level' ? 'O: key level invalidated, trend flipped' : 'O: disruption invalidated, trend flipped',
       iv.by === 'key_level'
         ? `The key level in the ${iv.dir === 1 ? 'up' : 'down'}trend was invalidated, so the trend flips to ${iv.dir === 1 ? 'down' : 'up'} at once. The new order flow is mapped from the most current breaks of structure.`
         : `An H1 candle went beyond the disruption POI (a wick is enough), so the trend flips to ${iv.dir === 1 ? 'down' : 'up'} at once. The new order flow is mapped from the most current breaks of structure.`, `inv-${iv.t}`));
+  }
+
+  // ---- S (Sniper Mode only): breaks of structure on H1 after the person's POIs were set. A valid BOS with the flow = break of structure,
+  // a valid BOS against it = change of structure. (Same structural-liquidity rule as everywhere else: a small break with no liquidity does not count.)
+  if (opts.manual) {
+    const from = Math.max(opts.manual.ind.t, opts.manual.dis.t);
+    for (const b of markValid(h1, findBos(h1, p.swingK, p.bosStructural !== false))) {
+      if (!b.valid || b.t <= from) continue;
+      const same = b.dir === of.dir;
+      events.push(ev('S', same ? 'bos' : 'choch', b.dir, b.t + H1, H1, same ? `S: break of structure (${side(b.dir)} side)` : 'S: change of structure',
+        same ? `An H1 body closed beyond ${f(b.level)}: the order flow is making a new ${b.dir === 1 ? 'higher high' : 'lower low'}.`
+          : `An H1 body closed beyond ${f(b.level)} against your order flow. Watch your disruption POI: if it breaks, the flow is over.`, `${same ? 'bos' : 'choch'}-${b.t}`, { level: b.level }));
+    }
   }
 
   // ---- R: reclamation on H1, at the inducement and disruption POIs (confirmation only)
