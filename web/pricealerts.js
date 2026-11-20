@@ -3,6 +3,8 @@
 //  1. Tap the bell (PRICE ALERT) in the symbol menu. A gold line appears at the live price.
 //  2. Tap the chart where you want the alert, or drag the gold tag up or down, or type the price. Tap SET ALERT.
 //  3. The line stays on the chart as a gold dashed line. Drag its tag to move it, or REMOVE it in the card.
+//  Quick way, no card needed: HOLD your finger (or the mouse button) on the chart where you want the alert. A line appears with SET and X buttons
+//  right on the chart; drag the line to fine tune it, then tap SET. The server watches the price, so it works with the app closed.
 //  An alert fires once, then it is gone. The server watches the price, so it works with the app closed.
 //
 // The alerts live on the server (api/price-alerts), per person. app.js calls: open() when a symbol opens, btnHtml() + toolsHtml() when its
@@ -10,6 +12,7 @@
 const PA = (() => {
   const GOLD = '#E3C16A', num = Number.isFinite;
   let sym = null, items = [], panel = false, draft = null, drag = null, tap = null, lastLoad = 0, digits = 2, note = '';
+  let qd = null, qNote = '', qTimer = null, hold = null;                        // quick alert: price of the line made by holding the chart, its message, the hold timer
 
   const canvas = () => document.getElementById('chart');
   const redraw = () => { const cv = canvas(), c = cv && cv._ctx; if (c) chart(cv, c.s, c.tf, c.name); };
@@ -19,7 +22,7 @@ const PA = (() => {
   const curTf = () => { const E = env(); return E ? E.tf : 'm5'; };            // the timeframe shown on the chart right now: where the alert is set
   const side = p => p > live() ? 1 : -1;
 
-  function open(id) { sym = id; items = []; panel = false; draft = null; drag = tap = null; note = ''; load(id); }
+  function open(id) { sym = id; items = []; panel = false; draft = null; drag = tap = null; note = ''; qd = null; qNote = ''; clearHold(); load(id); }
   function load(id) {
     lastLoad = Date.now();
     api('/api/price-alerts?symbol=' + encodeURIComponent(id)).then(r => {
@@ -62,15 +65,27 @@ const PA = (() => {
     sync();
   }
 
+  const q10 = () => Math.pow(10, -digits) / 2;
+  // One place that makes an alert (the card's SET ALERT and the quick SET button on the chart both come here).
+  async function create(price) {
+    if (Math.abs(price - live()) < q10()) throw new Error('Pick a price away from the current price.');
+    const r = await api('/api/price-alerts', { method: 'POST', body: JSON.stringify({ symbol: sym, price, tf: curTf() }) });
+    items.push(r.alert); note = 'Alert set. You will get a message when price gets there.';
+    try { window.Telegram.WebApp.HapticFeedback.notificationOccurred('success'); } catch { /* not in Telegram */ }
+  }
+  function flash(msg) { qNote = msg; clearTimeout(qTimer); qTimer = setTimeout(() => { qNote = ''; redraw(); }, 3500); }
+  async function quickSet() {
+    if (qd === null) return;
+    try { await create(qd); qd = null; qNote = ''; sync(); } catch (e) { flash(String(e.message || e)); }
+    redraw();
+  }
   async function act(a, id) {
     if (a === 'panel') { panel = !panel; note = ''; if (panel && typeof Snipe !== 'undefined') Snipe.close(); if (panel) { if (draft === null) draft = live(); if (!num(draft)) draft = null; } else draft = null; sync(); return redraw(); }
     if (a === 'cancel') { panel = false; draft = null; note = ''; sync(); return redraw(); }
     try {
       if (a === 'set') {
         if (draft === null) return;
-        if (Math.abs(draft - live()) < Math.pow(10, -digits) / 2) { note = 'Pick a price away from the current price.'; return sync(); }
-        const r = await api('/api/price-alerts', { method: 'POST', body: JSON.stringify({ symbol: sym, price: draft, tf: curTf() }) });
-        items.push(r.alert); draft = null; note = 'Alert set. You will get a message when price gets there.';
+        await create(draft); draft = null;
       } else if (a === 'del') {
         await api('/api/price-alerts/delete', { method: 'POST', body: JSON.stringify({ id }) });
         items = items.filter(x => x.id !== id); note = '';
@@ -86,6 +101,7 @@ const PA = (() => {
     if (Date.now() - lastLoad > 10000 && sym && !drag) load(sym);              // an alert that fired is gone from the server: refresh the list now and then
     const { W, Hh, FS, LH, MONO, Y, taken, tw } = E, th = LH + 6;
     const rows = items.map(a => ({ id: a.id, price: a.price, isDraft: false })); if (panel && draft !== null) rows.push({ id: 'draft', price: draft, isDraft: true });
+    if (qd !== null) rows.push({ id: 'quick', price: qd, isDraft: true, quick: true });
     g.font = `700 ${FS}px ${MONO}`; g.textBaseline = 'middle'; g.lineWidth = 1.5;
     for (const r of rows) {
       if (drag && drag.id === r.id && drag.price !== undefined) r.price = drag.price;
@@ -95,6 +111,16 @@ const PA = (() => {
       g.fillStyle = r.isDraft ? '#FFFFFF' : GOLD; g.globalAlpha = off ? .75 : 1; g.fillRect(x, top, w, th); g.globalAlpha = 1;
       g.fillStyle = '#0C1109'; g.fillText(text, x + 7, y + .5);
       taken.push({ x, y: top, w, h: th }); geo.tags.push({ id: r.id, x, y: top, w, h: th, isDraft: r.isDraft });
+      if (r.quick) {                                                              // SET and X buttons next to the tag, and a message when it did not work
+        const tooClose = Math.abs(r.price - live()) < q10(), bw = tw('SET') + 18, bx = x + w + 6;
+        g.fillStyle = tooClose ? '#6B7480' : '#5AFF64'; g.fillRect(bx, top, bw, th); g.fillStyle = '#0C1109'; g.fillText(tooClose ? 'TOO CLOSE' : 'SET', bx + 9, y + .5);
+        const bw2 = tooClose ? tw('TOO CLOSE') + 18 : bw, cx = bx + bw2 + 6;
+        g.fillStyle = '#B03A2E'; g.fillRect(cx, top, th + 4, th); g.fillStyle = '#fff'; g.fillText('✕', cx + 8, y + .5);
+        taken.push({ x: bx, y: top, w: bw2 + th + 10, h: th });
+        if (!tooClose) geo.tags.push({ id: 'qset', x: bx, y: top, w: bw2, h: th });
+        geo.tags.push({ id: 'qx', x: cx, y: top, w: th + 4, h: th });
+        if (qNote) { g.fillStyle = '#FF8A7A'; g.fillText(qNote, x, Math.min(Hh - 8, top + th + 11)); }
+      }
     }
     g.lineWidth = 1; g.textBaseline = 'alphabetic'; g.font = `${FS}px ${MONO}`;
   }
@@ -108,21 +134,40 @@ const PA = (() => {
   function down(cv, e) {
     if (!cv._pa) return false;
     const pt = local(cv, e), t = tagAt(cv, pt, e.pointerType === 'mouse' ? 4 : 14), E = cv._pa.env;
+    if (t && t.id === 'qset') { quickSet(); return true; }                          // the buttons act at once
+    if (t && t.id === 'qx') { qd = null; qNote = ''; redraw(); return true; }
     if (t) { drag = { id: t.id, pid: e.pointerId }; cv._freeze = { lo: E.lo, hi: E.hi }; tap = null; return true; }
+    clearHold();
+    const blocked = (typeof Pos !== 'undefined' && Pos.isOpen()) || (typeof Snipe !== 'undefined' && Snipe.isOpen());
+    if (!panel && !blocked && pt.x < E.plotW && e.isPrimary !== false)               // hold the chart (about half a second, finger not moving) to make a quick alert
+      hold = { pid: e.pointerId, x: e.clientX, y: e.clientY, cv, e: { clientX: e.clientX, clientY: e.clientY }, timer: setTimeout(startHold, 450) };
     tap = panel ? { x: e.clientX, y: e.clientY, pid: e.pointerId } : null;          // with the card open, a tap on the chart picks the price
     return false;
   }
+  function clearHold() { if (hold) { clearTimeout(hold.timer); hold = null; } }
+  function startHold() {
+    const h = hold; hold = null; if (!h || !h.cv._pa || !h.cv.isConnected) return;
+    const E = h.cv._pa.env, p = E.toPrice(local(h.cv, h.e).y); if (!(p > 0)) return;
+    qd = Math.round(p * Math.pow(10, digits)) / Math.pow(10, digits); qNote = '';
+    drag = { id: 'quick', pid: h.pid, price: qd }; h.cv._freeze = { lo: E.lo, hi: E.hi };   // the finger can keep dragging the line to the exact price
+    try { window.Telegram.WebApp.HapticFeedback.impactOccurred('medium'); } catch { /* not in Telegram */ }
+    redraw();
+  }
   function move(cv, e) {
+    if (hold && e.pointerId === hold.pid && Math.hypot(e.clientX - hold.x, e.clientY - hold.y) > 8) clearHold();   // it moved: that is a pan, not a hold
     if (!drag || e.pointerId !== drag.pid || !cv._pa) return false;
     const p = cv._pa.env.toPrice(local(cv, e).y); if (!(p > 0)) return true;
     drag.price = Math.round(p * Math.pow(10, digits)) / Math.pow(10, digits);
     if (drag.id === 'draft') { draft = drag.price; sync(); }
+    else if (drag.id === 'quick') qd = drag.price;
     redraw(); return true;
   }
   async function up(cv, e) {
+    if (hold && e.pointerId === hold.pid) clearHold();
     if (drag && e.pointerId === drag.pid) {
       const d = drag; drag = null; cv._freeze = null;
       if (d.id === 'draft') { if (d.price !== undefined) draft = d.price; sync(); redraw(); return; }
+      if (d.id === 'quick') { if (d.price !== undefined) qd = d.price; redraw(); return; }                // the line stays until SET or X
       const a = items.find(x => x.id === d.id);
       if (a && d.price !== undefined && d.price !== a.price) {
         try { const r = await api('/api/price-alerts/update', { method: 'POST', body: JSON.stringify({ id: a.id, price: d.price, tf: curTf() }) }); Object.assign(a, r.alert); note = ''; }
