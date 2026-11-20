@@ -16,7 +16,7 @@ On a symbol's chart, tap **BATTLE PLAN** to open the plan card (code: `web/posit
 
 1. Pick **LONG** (buy) or **SHORT** (sell).
 2. Check the three prices: **Entry** (starts at the live price), **Stop loss** and **Take profit**.
-3. Tap **DEPLOY ON CHART**. A box appears: green = profit zone, red = loss zone, with tags for stop, target, live P/L (in R) and the ratio.
+3. Tap **DEPLOY ON CHART**. A simple box appears (like the TradingView position tool): teal = profit zone, red = loss zone, a thin entry line, and the stop, entry and target prices as tags on the right price axis (selected box). The ratio and prices are shown and edited in the plan card.
 
 The risk:reward ratio is not fixed. It is whatever the three prices work out to. Change any price and the ratio follows; type a ratio in the **Risk : Reward** field and the take profit moves to match.
 The first plan starts at 1:1 and each new plan starts from the ratio you used last.
@@ -94,9 +94,9 @@ Until a service is chosen the person stays at Lieutenant, even with enough XP: c
 ### What groups and channels receive
 
 Groups and channels get only **reclamation, key level, QML and advanced key level** alerts. Market structure (S) and order flow (O)
-alerts stay in the app (and in private messages for people who turned them on). Invalidation alerts (for example "K: RBS invalidated") are never posted to groups or channels; they only appear in the app's Alerts tab and in private messages. `ALERT_CHAT_CONCEPTS=R,K,QML,ADV` is the default; change it to widen or narrow the list.
+alerts stay in the app (and in private messages for people who turned them on). Invalidation alerts (for example "K: key level invalidated") are never posted to groups or channels; they only appear in the app's Alerts tab and in private messages. `ALERT_CHAT_CONCEPTS=R,K,QML,ADV` is the default; change it to widen or narrow the list.
 
-Each message is two lines: a bold headline with a status dot (🟢 bullish, 🔴 bearish, ⚪ invalidation or no direction), the direction and the alert type (RECLAMATION, KEY LEVEL, QML, BJEFF ZONE or 50% KEYLEVEL POI), and below it the symbol name. The layout is `formatAlert` in `server/service.js`. The button reads
+Each message is two lines: a bold headline with a status dot (🟢 buy, 🔴 sell, ⚪ invalidation or no direction) and the alert type (RECLAMATION, KEY LEVEL, QML, BJEFF ZONE or 50% KEYLEVEL POI), and below it the symbol name. The layout is `formatAlert` in `server/service.js`. The button reads
 **Open (symbol) chart** and opens the symbol in the mini app on the SORK page (S, O, R or K; QML and ADV sit under Key level) that fired the alert.
 
 **Chart screenshot.** Every alert comes with a picture of the chart where the event happened, placed between the text and the buttons (the text is the photo caption, shown above the picture with Telegram's `show_caption_above_media`). The picture is the timeframe that fired the alert (H1 or M5): about 80 candles ending just after the event, the POI box, the entry, SL and TP lines when the alert has a plan, a dashed line and arrow on the event candle, and a tag with the headline. It is drawn by `server/chartimg.js` with no npm packages (own PNG writer and font), from the data `chartSnap` in `server/service.js` puts on the alert (not stored in the database). If the picture cannot be drawn or sent, the plain text alert goes out as before. `Bot.sendPhoto` is in `server/telegram.js`, the fallback in `notify` in `server/app.js`.
@@ -113,6 +113,26 @@ The person must have started the bot once (/start), or Telegram refuses the priv
 again earns nothing. Telegram does not tell a bot when a link button is tapped, so the open of the mini app is what counts. This needs `MINIAPP_LINK`
 (a plain web link has no Telegram identity). The link is signed with the bot token, so hand-made links earn nothing, and it pays for 24 hours.
 Which alerts a person has opened is kept in their own Telegram CloudStorage next to the rest of their rank progress.
+
+### Sniper Mode (set your own order flow, the bot hunts the rest of SORK)
+
+On a symbol's page, the **Sniper mode** button (crosshair) opens a card and puts two boxes on the chart: **inducement** and **disruption**.
+
+1. Pick **bullish flow** or **bearish flow**. In a bullish flow the inducement sits above the disruption, in a bearish flow below it. The boxes start from the bot's own reading when it has one (button **use the bot's reading**), or from two thin boxes near the price.
+2. Drag each box: the top and bottom squares set its price range, the round handle on its left edge moves it to where the POI formed (the bot only looks at candles after that time). You can also type the prices.
+3. Tap **Arm Sniper Mode**. You can arm one flow per symbol (up to 10 symbols); arming again replaces it, **Stop** removes it.
+
+From then on the bot sends **you** a private message, with a chart picture, for every new event on that symbol that comes after you armed it:
+
+| Alert | When |
+|---|---|
+| **BREAK OF STRUCTURE** | a valid H1 break (body close, with structural liquidity) in the direction of your flow |
+| **CHANGE OF STRUCTURE** | a valid H1 break against your flow |
+| **RECLAMATION** | an H1 reclamation at your inducement or disruption POI |
+| **KEY LEVEL** / **QML** / **BJEFF ZONE** / **50% KEYLEVEL POI** | the usual key level, QML and bjeff rules, run on YOUR order flow instead of the bot's |
+| **INVALIDATED · ORDER FLOW** | an H1 candle went beyond your disruption POI (a wick is enough). The flow ends; set a new one. |
+
+The messages use the usual format (green or red dot, the keyword, the symbol) plus a "Sniper Mode" line. The flow lives on the server (`/api/sniper`) and is part of the Telegram backup, so it works with the app closed and survives restarts. Rules that differ from the automatic flow: nothing is remapped after your disruption breaks, and the "first key level after the pullback is not traded" rule is not applied (you decide the flow, every valid key level counts). The name is one constant per place (`SNIPER MODE` in `server/service.js`, `web/sniper.js`) if you want to rename it.
 
 ### Intercept Analysis (Rank tab mission, Telegram alert analysis)
 
