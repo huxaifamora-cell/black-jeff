@@ -400,6 +400,8 @@ canvas{touch-action:pan-y;user-select:none;-webkit-user-select:none}
 .palert .pa-row small{flex:1;font:400 11px var(--body);color:var(--hint)}
 .palert .pa-row button{min-height:36px;padding:4px 10px;font-size:11px}
 .palert button:disabled{opacity:.4;pointer-events:none}
+.tmenu .snbtn.on{background:var(--chipbg);border-color:var(--tan);color:var(--chipfg);box-shadow:inset 0 -3px 0 var(--gold)}
+.tmenu .snbtn.armed:not(.on) span::after{content:' \25CF';color:var(--up,#5AFF64)}
 .tmenu .pabtn.on{background:var(--chipbg);border-color:var(--tan);color:var(--chipfg);box-shadow:inset 0 -3px 0 var(--gold)}
 
 /* watchlist search */
@@ -409,3 +411,11 @@ canvas{touch-action:pan-y;user-select:none;-webkit-user-select:none}
 .wlsearch input::placeholder{color:var(--hint)}
 .rtabs.off button.on{background:none;border-color:transparent;color:var(--hint)}
 .wlcount{margin:8px 0 6px}
+
+/* Sniper Mode card (shares the battle plan card look) */
+.snipe [data-sn=bull].on{background:#2F5FB3;border-color:#6C98E6;color:#fff}
+.snipe [data-sn=bear].on{background:#B03A2E;border-color:#E58272;color:#fff}
+.snipe .sn-sug{width:100%;margin-top:8px}
+.snipe .sn-sug[hidden]{display:none}
+.snipe .pa-help{margin:0 0 10px;font:400 12px var(--body);color:var(--hint)}
+.snipe .pp-act{margin-top:10px}

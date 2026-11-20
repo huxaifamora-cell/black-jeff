@@ -63,7 +63,7 @@ const PA = (() => {
   }
 
   async function act(a, id) {
-    if (a === 'panel') { panel = !panel; note = ''; if (panel) { if (draft === null) draft = live(); if (!num(draft)) draft = null; } else draft = null; sync(); return redraw(); }
+    if (a === 'panel') { panel = !panel; note = ''; if (panel && typeof Snipe !== 'undefined') Snipe.close(); if (panel) { if (draft === null) draft = live(); if (!num(draft)) draft = null; } else draft = null; sync(); return redraw(); }
     if (a === 'cancel') { panel = false; draft = null; note = ''; sync(); return redraw(); }
     try {
       if (a === 'set') {
@@ -138,5 +138,6 @@ const PA = (() => {
       tap = null;
     }
   }
-  return { open, btnHtml, toolsHtml, bind, draw, down, move, up, near };
+  const close = () => { if (panel) { panel = false; draft = null; sync(); } };
+  return { open, btnHtml, toolsHtml, bind, draw, down, move, up, near, close };
 })();

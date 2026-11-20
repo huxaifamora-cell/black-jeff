@@ -131,7 +131,7 @@ const Pos = (() => {
   }
   function act(a) {
     const p = cur();
-    if (a === 'panel') { panel = !panel; if (panel && !p && !draft) draft = suggest(1); msg(''); return sync(); }
+    if (a === 'panel') { panel = !panel; if (panel && typeof Snipe !== 'undefined') Snipe.close(); if (panel && !p && !draft) draft = suggest(1); msg(''); return sync(); }
     if (a === 'long') return setDir(1);
     if (a === 'short') return setDir(-1);
     if (a === 'deploy') return deploy();
@@ -242,6 +242,6 @@ const Pos = (() => {
   }
 
   const isOpen = () => panel;
-  const close = () => { panel = false; };
+  const close = () => { panel = false; sync(); };
   return { open, isOpen, close, toolsHtml, bind, sync, extent, draw, down, move, up, hover, near };
 })();
