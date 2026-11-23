@@ -105,6 +105,7 @@ export function findBos(cs, k, structural = true) {
   const sw = swings(cs, k);
   const out = [];
   let sp = 0, openH = [], openL = [];             // confirmed swings not yet closed beyond, oldest first
+  let lastUp = -1, lastDn = -1;                   // idx of the latest BOS each way (a leg only restarts on a real reversal, see below)
   for (let i = 0; i < cs.length; i++) {
     const c = cs[i];
     while (sp < sw.length && sw[sp].idx + k <= i) { (sw[sp].kind === 'H' ? openH : openL).push(sw[sp]); sp++; }
@@ -127,20 +128,20 @@ export function findBos(cs, k, structural = true) {
       }
       openL = openL.filter((s) => !(c.c < s.price));
     }
-    if (upBos) { out.push(upBos); openL = openL.filter((s) => s.idx >= i); }   // new leg for the lows
+    if (upBos) { out.push(upBos); openL = openL.filter((s) => s.idx >= i); }
     if (dnBos) { out.push(dnBos); openH = openH.filter((s) => s.idx >= i); }
   }
   out.sort((a, b) => a.idx - b.idx || b.dir - a.dir);
   return out;
 }
 
-// Structural liquidity: an opposite-colored candle on the right side of the V (or A),
-// not above the previous HH (not below the previous LL).
+// Structural liquidity: an opposite-colored BODY candle between the point of liquidity (the tip of the V / A) and the break of structure
+// (downtrend: a green candle before the BOS). Its body must not go beyond the broken level; a wick beyond it does not matter.
 export function hasSlq(cs, b) {
   for (let j = b.tip_idx + 1; j < b.idx; j++) {
     const c = cs[j];
-    if (b.dir === 1 && bear(c) && c.h <= b.level) return true;
-    if (b.dir === -1 && bull(c) && c.l >= b.level) return true;
+    if (b.dir === 1 && bear(c) && Math.max(c.o, c.c) <= b.level) return true;
+    if (b.dir === -1 && bull(c) && Math.min(c.o, c.c) >= b.level) return true;
   }
   return false;
 }
@@ -231,7 +232,9 @@ function poiOf(cs, b, role, p) {
 export function orderFlow(h1, trend, p) {
   const res = { dir: trend || 0, pois: [], pending: null, invalidated: null, remapped: false, recovered: null, pending_flip: null, official: null, pullback: null };
   if (trend === 0) return res;
-  const bosAll = markValid(h1, findBos(h1, p.swingK, p.bosStructural !== false));   // every BOS counts, valid or not (a BOS with no structural liquidity is still a point of liquidity)
+  // Every BOS has a swing that started it, and ONE candle cannot form a swing: a BOS whose swing has fewer than 2 candles leaving the swing start is not used.
+  // Valid or not, every other BOS counts (a BOS with no structural liquidity is still a point of liquidity).
+  const bosAll = markValid(h1, findBos(h1, p.swingK, p.bosStructural !== false)).filter((b) => b.idx - b.tip_idx >= 2);
   if (trend == null) { if (!bosAll.length) return res; trend = bosAll[0].dir; res.dir = trend; }
   const at = new Map();
   for (const b of bosAll) { if (!at.has(b.idx)) at.set(b.idx, []); at.get(b.idx).push(b); }
@@ -246,33 +249,19 @@ export function orderFlow(h1, trend, p) {
   //  - going back from the newest, a BOS whose POI is not on the right side of the newer one (uptrend: below it, downtrend: above it, no overlap)
   //    is skipped, so the inducement is always above the disruption in an uptrend (below it in a downtrend).
   let effKey = -1, effVal = [];
+  // The inducement is ALWAYS the swing start of the most recent BOS (valid or not) and the disruption is the swing start of the BOS before it.
+  // Two BOS that came out of the same swing share one swing start, so the older of them is skipped (the disruption is a different swing).
   const eff = () => {
     if (effKey === list.length) return effVal;
-    const arr = list.length && !list[list.length - 1].valid ? list.slice(0, -1) : list, out = [];
-    for (let j = arr.length - 1; j >= 0; j--) {
-      const q = disPoi(arr[j]);
-      if (out.length) {
-        const h = disPoi(out[out.length - 1]);
-        const stale = d === 1 ? ((h.lo + h.hi) <= (q.lo + q.hi) || h.lo <= q.hi) : ((h.lo + h.hi) >= (q.lo + q.hi) || h.hi >= q.lo);
-        if (stale) continue;
-      }
-      out.push(arr[j]);
+    const out = [];
+    for (let j = list.length - 1; j >= 0 && out.length < 6; j--) {
+      if (out.length && disPoi(out[out.length - 1]).ob_t === disPoi(list[j]).ob_t) continue;
+      out.push(list[j]);
     }
     effKey = list.length; effVal = out.reverse();
     return effVal;
   };
-  // The inducement only changes for a NEWER BOS beyond it: in an uptrend a new BOS must have its POI ABOVE the current inducement POI, in a downtrend
-  // BELOW it. A new BOS that forms between the inducement and the disruption (price pulled back into / below the inducement and broke structure
-  // there) is ignored: the inducement and the disruption stay where they are. Only a disruption invalidation (an H1 wick beyond it) resets them.
-  const addBos = (b) => {
-    const e = eff();
-    if (e.length) {
-      const h = disPoi(e[e.length - 1]), np = disPoi(b);
-      const beyond = d === 1 ? ((np.lo + np.hi) > (h.lo + h.hi) && np.lo > h.hi) : ((np.lo + np.hi) < (h.lo + h.hi) && np.hi < h.lo);
-      if (!beyond) return false;
-    }
-    list.push(b); return true;
-  };
+  const addBos = (b) => { list.push(b); return true; };
   // Always map an order flow. When the current leg gives fewer than 2 usable BOS (right after a flip, or at the start of the window), go back through
   // ALL earlier BOS in the trend direction (previous candle data) instead of waiting for new ones to form:
   // the inducement is the most recent BOS (an invalid newest one is left out, see eff), the disruption is the nearest earlier BOS whose POI sits on the
@@ -280,19 +269,7 @@ export function orderFlow(h1, trend, p) {
   const fill = (upTo) => {
     const cand = bosAll.filter((b) => b.dir === d && b.idx <= upTo);
     if (!cand.length) return;
-    const tailInvalid = !cand[cand.length - 1].valid ? cand[cand.length - 1] : null;
-    const arr = tailInvalid ? cand.slice(0, -1) : cand, chain = [];
-    for (let j = arr.length - 1; j >= 0; j--) {
-      const q = disPoi(arr[j]);
-      if (chain.length) {
-        const h = disPoi(chain[chain.length - 1]);
-        const stale = d === 1 ? ((h.lo + h.hi) <= (q.lo + q.hi) || h.lo <= q.hi) : ((h.lo + h.hi) >= (q.lo + q.hi) || h.hi >= q.lo);
-        if (stale) continue;
-      }
-      chain.push(arr[j]);
-    }
-    if (chain.length < 2) return;                       // nothing older fits on the right side: keep what the leg gave
-    list = chain.reverse(); if (tailInvalid) list.push(tailInvalid); effKey = -1;
+    list = cand; effKey = -1;
   };
   for (let i = 0; i < h1.length; i++) {
     const c = h1[i];
@@ -338,6 +315,10 @@ export function orderFlow(h1, trend, p) {
   if (e.length === 1) { res.pending = { dir: d, bos_t: e[0].t, bos_idx: e[0].idx }; return res; }
   if (e.length < 2) return res;
   const ind = e[e.length - 1], dis = e[e.length - 2];
+  // Chart labels: the most recent HH + HL (up) or LL + LH (down). The swing start is the HL / LH, the extreme made since then is the HH / LL.
+  { let x = ind.tip_idx; for (let j = ind.tip_idx; j < h1.length; j++) if (d === 1 ? h1[j].h > h1[x].h : h1[j].l < h1[x].l) x = j;
+    res.labels = d === 1 ? [{ kind: 'HL', t: h1[ind.tip_idx].t, price: h1[ind.tip_idx].l }, { kind: 'HH', t: h1[x].t, price: h1[x].h }]
+      : [{ kind: 'LH', t: h1[ind.tip_idx].t, price: h1[ind.tip_idx].h }, { kind: 'LL', t: h1[x].t, price: h1[x].l }]; }
   res.pois = [poiOf(h1, ind, 'inducement', p), poiOf(h1, dis, 'disruption', p), ...e.slice(-4, -2).map((b) => poiOf(h1, b, 'plq', p))];
   return res;
 }
@@ -752,6 +733,7 @@ export function evaluate(h4Live, h1Live, m5, p = defaultParams, digits = 3, opts
     if ((poi.role === 'inducement' || poi.role === 'disruption') && Number.isFinite(poi.bos_level)) overlays.push({ type: 'line', tf: 'h1', grp: 'o', y: poi.bos_level, t0: poi.broken_t, label: 'BOS', tone: 'bos', dotted: true });
     if (poi.role !== 'plq') overlays.push({ type: 'box', grp: 'o', lo: poi.lo, hi: poi.hi, t0: poi.ob_t, label: cap(poi.role), tone: poi.role === 'disruption' ? 'dis' : 'o' });   // point of liquidity is not drawn
   }
+  for (const l of (of.labels || [])) overlays.push({ type: 'mark', tf: 'h1', grp: 'o', t: l.t, y: l.price, label: l.kind, tone: 'o' });   // newest HH + HL (up) / LL + LH (down)
   if (of.invalidated) {
     const iv = of.invalidated;
     if (opts.manual) events.push(ev('O', 'invalidated', iv.dir === 1 ? -1 : 1, iv.t + H1, H1, 'O: your order flow is invalidated',
