@@ -103,6 +103,10 @@ Each message is two lines: a bold headline with a status dot (🟢 buy, 🔴 sel
 
 ### Price alerts (drag a line on the chart)
 
+**Quickest way, straight from the chart:** press and hold on the chart (about half a second, without moving) where you want the alert. A line appears with **SET** and **✕** buttons on the chart. Drag the line to fine tune the price, then tap **SET** (or ✕ to cancel). A tap or a drag (panning) does nothing, and it is off while the Battle plan or Sniper Mode card is open. The alert remembers the timeframe you were looking at.
+
+Or use the card:
+
 On a symbol's page, the **Price alert** button (bell) opens a card and puts a line on the chart. Tap the chart where you want the alert, drag the gold tag up or down, or type the price, then tap **SET ALERT**. When price reaches that level the bot sends the person a private message with a chart picture (`PRICE ALERT`, the symbol, `rose to` / `fell to` the price, and the Open chart button). Telegram plays the person's own notification sound for it; a bot cannot pick the sound, so each person sets it in Telegram (the bot chat's Notifications, Sound). An alert fires once and is then removed. Dragging an existing tag moves it, REMOVE deletes it. Up to 20 per person (`MAX_PRICE_ALERTS` in `server/store.js`).
 
 The person must have started the bot once (/start), or Telegram refuses the private message. The server watches the price (`checkPriceAlerts` in `server/app.js`, the test is `hitPriceAlerts` in `server/service.js`), so alerts work with the app closed. They also catch a spike that came and went between two polls (M5 candles after the alert was set). The alerts are saved in the same Telegram backup file as the users (`STATE_CHAT_ID`), so they survive a restart. The API is `/api/price-alerts` (GET, POST, `/update`, `/delete`) and the screen is `web/pricealerts.js`.
@@ -234,3 +238,14 @@ Python with matplotlib, reportlab and Pillow: `python tools/make_figs2.py && pyt
   is running with that token: an old Render service (for example from the earlier Blueprint), a copy on your computer, or another
   host. Stop or delete that one, or revoke the token in @BotFather (`/revoke`) and put the new one on Render only.
   If you only want alerts in groups and channels, set `POLL_COMMANDS=0`; the bot then never polls and cannot clash.
+
+
+## Structural liquidity
+Structural liquidity (SLQ) is an opposite-coloured BODY candle between the point of liquidity and the break of structure (downtrend: a green candle before the BOS). Its body must not go beyond the broken level; a wick beyond it is fine.
+
+## Inducement and disruption (order flow)
+- Every BOS has a swing that started it, and one candle cannot form a swing: a BOS needs at least 2 candles leaving the swing start, otherwise it is ignored.
+- The inducement is ALWAYS the swing start of the most recent BOS (valid or not). The disruption is the swing start of the BOS before it (a different swing).
+- The POI boxes start at the last candle before the swing started (the order block at the swing start) and run body to body.
+- The H1 chart labels the newest HH + HL (uptrend) or LL + LH (downtrend).
+- The trend still flips only when an H1 wick goes beyond the disruption POI.
