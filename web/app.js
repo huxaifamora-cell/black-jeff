@@ -292,7 +292,7 @@ function chart(cv, s, tf, name) {
   g.font = `${FS}px ${MONO}`;
   const tw = t => Math.ceil(g.measureText(t).width) + 10;
   // Labels: zone labels live in an empty band above the candles; line labels and the live price sit in a gutter on the right.
-  const boxes = ov.filter(o => o.type === 'box'), lines = ov.filter(o => o.type !== 'box');
+  const boxes = ov.filter(o => o.type === 'box'), lines = ov.filter(o => o.type !== 'box' && o.type !== 'mark'), marks = ov.filter(o => o.type === 'mark');
   const priceTxt = s.price != null ? Number(s.price).toFixed(s.digits ?? 3) : '';
   // The right-hand space after the live candle is also where zone labels sit (inside their box), so it is as wide as the widest label.
   const gutter = Math.min(Math.ceil(W * .4), Math.max(priceTxt ? tw(priceTxt) : 0, ...lines.map(o => tw(o.label)), ...boxes.map(o => tw(o.label) + 6)) + 8);
@@ -311,6 +311,7 @@ function chart(cv, s, tf, name) {
   const labels = [];
   ov.forEach(o => {
     const col = TONE[o.tone] || '#888';
+    if (o.type === 'mark') return;                                                // HH / HL / LL / LH tags are drawn on top of the candles below
     if (o.type === 'box') {
       const x = XL(o.t0), x1 = W;
       if (o.tone === 'adv') { g.strokeStyle = col; g.lineWidth = 1.5; g.setLineDash([6, 4]); g.strokeRect(x, Y(o.hi), x1 - x, Y(o.lo) - Y(o.hi)); g.setLineDash([]); g.lineWidth = 1; }   // 50% POI: dashed
@@ -333,6 +334,14 @@ function chart(cv, s, tf, name) {
     const y1 = Y(Math.max(c[1], c[4])), y2 = Y(Math.min(c[1], c[4])); g.fillRect(x - step * .3, y1, step * .6, Math.max(1, y2 - y1));
     solid.push({ x: x - step * .3 - 1, w: step * .6 + 2, y: Y(c[2]) - 1, h: Y(c[3]) - Y(c[2]) + 2 });
   });
+  // swing tags: HH / LH sit above their candle, HL / LL below it
+  g.font = `700 ${FS}px ${MONO}`; g.textAlign = 'center';
+  marks.forEach(o => {
+    const i = cs.findIndex(c => c[0] === o.t); if (i < 0) return;
+    const above = o.label === 'HH' || o.label === 'LH', x = i * step + step / 2, y = above ? Y(o.y) - 4 : Y(o.y) + FS + 3;
+    g.fillStyle = '#0B0F14'; g.fillRect(x - tw(o.label) / 2 + 1, y - FS, tw(o.label) - 2, FS + 3); g.fillStyle = '#FFFFFF'; g.fillText(o.label, x, y);
+  });
+  g.textAlign = 'left'; g.font = `${FS}px ${MONO}`;
   const hit = (a, r) => a.x < r.x + r.w && a.x + a.w > r.x && a.y < r.y + r.h && a.y + a.h > r.y;
   const taken = [];
   // title tag: symbol name and timeframe, top left
