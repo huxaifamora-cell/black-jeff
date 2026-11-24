@@ -212,7 +212,7 @@ function cards(s, d) {
 }
 // Zone colours avoid the candle colours (green up, red-orange down) and the cyan live-price line.
 // TradingView look: dark navy canvas, faint grid, teal / red candles with wicks in the body colour, muted axis text.
-const TV = { bg: '#131722', grid: '#2A2E39', text: '#B2B5BE', dim: '#787B86', up: '#089981', dn: '#F23645', upTxt: '#26A69A', dnTxt: '#EF5350' };
+const TV = { bg: '#000000', grid: '#2A2E39', text: '#B2B5BE', dim: '#787B86', up: '#089981', dn: '#F23645', upTxt: '#26A69A', dnTxt: '#EF5350' };
 const TONE = { s: '#8A94A6', o: '#FFFFFF', k: '#8DC3FF', qml: '#A9B1BD', pending: '#5d6875', dead: '#6B7480', adv: '#E3C16A', adv2: '#4A7CFF', dis: '#F5D547', bos: '#9AA3B2' };   // dis = disruption POI, yellowish
 // Which overlays each timeframe shows (everything else is hidden, not deleted: the engine still computes and alerts on it).
 //  H4: BOS lines.  H1: inducement, disruption, key level POI, QML POI.  M5: key level POI with its 50% POI, and the bjeff zone.
@@ -244,18 +244,23 @@ function bindZoom(cv) {                                   // once per canvas ele
   if (cv._zoomBound) return; cv._zoomBound = true; cv.style.touchAction = 'pan-y'; cv.style.cursor = 'grab'; cv.addEventListener('contextmenu', e => e.preventDefault());     // holding the chart starts a price alert / position box / draw, not a phone menu
   const geo = () => cv._geom || { plotW: cv.clientWidth, step: 6 };
   const frac = x => Math.max(0, Math.min(1, x / Math.max(1, geo().plotW)));
-  const pts = new Map(); let lastX = 0, pinch = 0, acc = 0, lastTap = 0;
+  const pts = new Map(); let lastX = 0, pinch = 0, acc = 0, lastTap = 0, tapRec = null;
+  const candleAt = (e) => { const g0 = cv._geom, r = cv.getBoundingClientRect(); if (!g0 || !g0.cs || !g0.cs.length) return null;
+    const x = e.clientX - r.left - cv.clientLeft, y = e.clientY - r.top - cv.clientTop;
+    const i = Math.round((x - g0.step / 2) / g0.step); if (i < 0 || i >= g0.cs.length || x > g0.plotW) return null; return { t: g0.cs[i][0], y }; };
+  const showXh = (v) => { const c = cv._ctx; cv._xh = v; if (c) chart(cv, c.s, c.tf, c.name); };
   cv.addEventListener('wheel', e => { e.preventDefault(); const r = cv.getBoundingClientRect(); zoomBy(cv, e.deltaY > 0 ? 1.15 : 1 / 1.15, frac(e.clientX - r.left)); }, { passive: false });
   cv.addEventListener('touchstart', e => { if (e.touches.length === 1 && (Pos.near(cv, e.touches[0]) || PA.near(cv, e.touches[0]) || Snipe.near(cv, e.touches[0]))) e.preventDefault(); }, { passive: false });   // finger on a handle: do not scroll the page
   cv.addEventListener('pointerdown', e => {
     const grabbed = Pos.down(cv, e) || PA.down(cv, e) || Snipe.down(cv, e);                                                          // grabbed a position box handle or a price alert tag
     if (grabbed) { try { cv.setPointerCapture(e.pointerId); } catch { /* ignore */ } return; }
     pts.set(e.pointerId, { x: e.clientX, y: e.clientY }); try { cv.setPointerCapture(e.pointerId); } catch { /* ignore */ }
+    tapRec = pts.size === 1 ? { x: e.clientX, y: e.clientY, t: Date.now(), pid: e.pointerId } : null;
     lastX = e.clientX; acc = 0; if (pts.size === 2) { const [a, b] = [...pts.values()]; pinch = Math.hypot(a.x - b.x, a.y - b.y); }
     const now = Date.now(); if (pts.size === 1 && now - lastTap < 300) zoomReset(cv); if (pts.size === 1) lastTap = now;
   });
   cv.addEventListener('pointermove', e => {
-    if (Pos.move(cv, e) || PA.move(cv, e) || Snipe.move(cv, e)) return; if (e.pointerType === 'mouse' && !e.buttons) Pos.hover(cv, e);
+    if (Pos.move(cv, e) || PA.move(cv, e) || Snipe.move(cv, e)) return; if (e.pointerType === 'mouse' && !e.buttons) { Pos.hover(cv, e); if (!cv._xhPinned) { const h = candleAt(e); if (h && (!cv._xh || cv._xh.t !== h.t || Math.abs((cv._xh.y || 0) - h.y) > 1)) showXh(h); } }
     if (!pts.has(e.pointerId)) return; pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (pts.size === 2) {                                   // pinch: fingers apart = zoom in
       const [a, b] = [...pts.values()], d = Math.hypot(a.x - b.x, a.y - b.y), r = cv.getBoundingClientRect();
@@ -265,8 +270,15 @@ function bindZoom(cv) {                                   // once per canvas ele
     const stepPx = geo().step || 6, whole = Math.trunc(-acc / stepPx);
     if (whole) { acc += whole * stepPx; panBy(cv, whole); }
   });
-  const up = e => { Pos.up(cv, e); PA.up(cv, e); Snipe.up(cv, e); pts.delete(e.pointerId); pinch = 0; acc = 0; };
-  cv.addEventListener('pointerup', up); cv.addEventListener('pointercancel', up); cv.addEventListener('pointerleave', up);
+  const up = e => {
+    Pos.up(cv, e); PA.up(cv, e); Snipe.up(cv, e); pts.delete(e.pointerId); pinch = 0; acc = 0;
+    if (e.type === 'pointerup' && tapRec && tapRec.pid === e.pointerId && Date.now() - tapRec.t < 350 && Math.hypot(e.clientX - tapRec.x, e.clientY - tapRec.y) < 6) {   // a tap (not a pan, not a hold): pin / move / hide the crosshair
+      const h = candleAt(e), same = cv._xhPinned && cv._xh && h && cv._xh.t === h.t;
+      if (!h || same) { cv._xhPinned = false; showXh(null); } else { cv._xhPinned = true; showXh(h); }
+    }
+    tapRec = null;
+  };
+  cv.addEventListener('pointerup', up); cv.addEventListener('pointercancel', up); cv.addEventListener('pointerleave', e => { up(e); if (e.pointerType === 'mouse' && !cv._xhPinned && cv._xh) showXh(null); });
 }
 function chart(cv, s, tf, name) {
   const W = cv.clientWidth, wide = W >= 600;                                        // desktop: bigger text and a taller chart
@@ -360,11 +372,11 @@ function chart(cv, s, tf, name) {
   const taken = [];
   // title tag: symbol name and timeframe, top left
   { const r = { x: 4, y: 4, w: titleW, h: TH }; taken.push(r);
-    g.fillStyle = 'rgba(19,23,34,.92)'; g.strokeStyle = TV.grid; g.beginPath(); g.roundRect ? g.roundRect(r.x, r.y, r.w, r.h, 3) : g.rect(r.x, r.y, r.w, r.h); g.fill(); g.stroke();
+    g.fillStyle = 'rgba(0,0,0,.92)'; g.strokeStyle = TV.grid; g.beginPath(); g.roundRect ? g.roundRect(r.x, r.y, r.w, r.h, 3) : g.rect(r.x, r.y, r.w, r.h); g.fill(); g.stroke();
     g.fillStyle = '#D1D4DC'; g.font = `700 ${FS + 1}px ${MONO}`; g.textBaseline = 'middle'; g.fillText(titleTxt, r.x + 7, r.y + r.h / 2 + .5);
     // H4 trend badge, right after the title tag: green = uptrend, red = downtrend, grey = no valid trend yet
     const t = { x: r.x + r.w + 6, y: 4, w: trW, h: TH }; taken.push(t);
-    g.fillStyle = 'rgba(19,23,34,.92)'; g.strokeStyle = trCol; g.lineWidth = 1.5; g.beginPath(); g.roundRect ? g.roundRect(t.x, t.y, t.w, t.h, 3) : g.rect(t.x, t.y, t.w, t.h); g.fill(); g.stroke(); g.lineWidth = 1;
+    g.fillStyle = 'rgba(0,0,0,.92)'; g.strokeStyle = trCol; g.lineWidth = 1.5; g.beginPath(); g.roundRect ? g.roundRect(t.x, t.y, t.w, t.h, 3) : g.rect(t.x, t.y, t.w, t.h); g.fill(); g.stroke(); g.lineWidth = 1;
     g.fillStyle = trCol; g.fillText(trTxt, t.x + 7, t.y + t.h / 2 + .5); g.textBaseline = 'alphabetic'; g.font = `${FS}px ${MONO}`; }
   if (main) { const E = { W, Hh, FS, LH, MONO, plotW, step, ivl, cs0: cs[0][0], lo, hi, TOP, tf, taken, tw, Y, digits: s.digits ?? 3, price: s.price, last: cs[cs.length - 1][4], atr: s.atr,
     rrPlan: s.k && s.k.active && s.k.active.plan && s.k.active.plan.rr, toPrice: y => lo + (Hh - 14 - y) / (Hh - 14 - TOP) * (hi - lo), toTime: x => Math.round(cs[0][0] + (x - step / 2) / step * ivl) }; Pos.draw(g, cv, E); Snipe.draw(g, cv, E); PA.draw(g, cv, E); }
@@ -413,7 +425,23 @@ function chart(cv, s, tf, name) {
   tickP.forEach(v => { const y = Y(v), txt = v.toFixed(Math.max(0, Math.min(8, (s.digits ?? 3)))), w = g.measureText(txt).width + 8, r = { x: W - w - 2, y: y - LH / 2, w, h: LH };
     if (y > TOP - 4 && y < Hh - 18 && !taken.some(t => hit(r, t)) && !boxes.some(b => y >= Y(b.hi) - 2 && y <= Y(b.lo) + 2)) g.fillText(txt, W - 5, y + .5); });
   g.textAlign = 'left'; g.textBaseline = 'alphabetic';
-  cv._geom = { plotW, step };
+  // MT5-style crosshair: tap a candle (or hover with a mouse) for its time on the time axis, its prices on the right edge and an O H L C line
+  const xh = cv._xh;
+  if (xh) { const i = cs.findIndex(c => c[0] === xh.t);
+    if (i >= 0) {
+      const c = cs[i], x = i * step + step / 2, y = xh.y, f2 = v => Number(v).toFixed(s.digits ?? 3), d = new Date(c[0] * 1000), p2 = n => String(n).padStart(2, '0');
+      const full = `${d.getFullYear()}.${p2(d.getMonth() + 1)}.${p2(d.getDate())} ${p2(d.getHours())}:${p2(d.getMinutes())}`;
+      g.save(); g.lineWidth = 1; g.strokeStyle = '#9598A1'; g.setLineDash([3, 3]); g.beginPath(); g.moveTo(Math.round(x) + .5, TOP - 6); g.lineTo(Math.round(x) + .5, Hh - 14);
+      const hy = y != null && y >= TOP - 6 && y <= Hh - 14; if (hy) { g.moveTo(0, Math.round(y) + .5); g.lineTo(W, Math.round(y) + .5); } g.stroke(); g.restore();
+      g.font = `700 ${FS}px ${MONO}`; g.textBaseline = 'middle'; g.textAlign = 'left';
+      const tag = (txt, tx, ty, bg, fg) => { const w = g.measureText(txt).width + 10; g.fillStyle = bg; g.fillRect(tx, ty, w, FS + 6); g.fillStyle = fg; g.fillText(txt, tx + 5, ty + (FS + 6) / 2 + .5); return w; };
+      const tw0 = g.measureText(full).width + 10; tag(full, Math.max(1, Math.min(W - tw0 - 1, x - tw0 / 2)), Hh - FS - 8, '#363A45', '#FFFFFF');     // time of the candle (its open time), on the time axis
+      if (hy) { const ptxt = f2(lo + (Hh - 14 - y) / (Hh - 14 - TOP) * (hi - lo)), w = g.measureText(ptxt).width + 10; tag(ptxt, W - w - 1, y - (FS + 6) / 2, '#363A45', '#FFFFFF'); }
+      const up = c[4] >= c[1], txt = `O ${f2(c[1])}  H ${f2(c[2])}  L ${f2(c[3])}  C ${f2(c[4])}`; g.font = `${FS}px ${MONO}`;
+      const ow = g.measureText(txt).width + 10; g.fillStyle = 'rgba(0,0,0,.85)'; g.fillRect(2, Hh - 14 - FS - 9, ow, FS + 6); g.fillStyle = up ? TV.upTxt : TV.dnTxt; g.fillText(txt, 7, Hh - 14 - FS / 2 - 6 + .5);
+      g.textBaseline = 'alphabetic';
+    } }
+  cv._geom = { plotW, step, cs };
   return { toPrice: y => lo + (Hh - 14 - y) / (Hh - 14 - TOP) * (hi - lo), xOf: X, step, lo, hi };
 }
 
