@@ -34,7 +34,7 @@ const textWidth = (s, k) => Math.max(0, String(s).length * 6 * k - k);
 // ---------------------------------------------------------------- tiny raster
 const SS = 2;                                       // shapes are drawn at 2x and averaged down (smooth edges), text is drawn after at 1x
 const hex = (h) => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
-const C = { bg: hex('#131722'), grid: hex('#2A2E39'), text: hex('#787B86'), bright: hex('#D1D4DC'), up: hex('#089981'), dn: hex('#F23645'),
+const C = { bg: hex('#000000'), grid: hex('#2A2E39'), text: hex('#787B86'), bright: hex('#D1D4DC'), up: hex('#089981'), dn: hex('#F23645'),
   gold: hex('#E3C16A'), blue: hex('#59A7FF'), white: hex('#FFFFFF'), axis: hex('#B2B5BE') };
 
 class Canvas {
