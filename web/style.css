@@ -419,3 +419,5 @@ canvas{touch-action:pan-y;user-select:none;-webkit-user-select:none}
 .snipe .sn-sug[hidden]{display:none}
 .snipe .pa-help{margin:0 0 10px;font:400 12px var(--body);color:var(--hint)}
 .snipe .pp-act{margin-top:10px}
+
+#chart{-webkit-touch-callout:none;-webkit-user-select:none;user-select:none}

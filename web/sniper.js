@@ -40,6 +40,20 @@ const Snipe = (() => {
     return { dir, ind: { ...at(a * 1.5), t: tA }, dis: { ...at(a * 4.5), t: tB } };
   }
 
+  // Held-chart shortcut: the held price is the inducement (a thin box centred on it, from the held candle on), the disruption sits a few ATR beyond it.
+  // The card opens with this draft so the boxes can still be dragged before arming.
+  function fromHold(price, dir, t) {
+    const E = env(); if (!E || !(price > 0)) return;
+    const a = (E.atr && (E.tf === 'm5' ? E.atr.m5 : E.atr.h1)) || (E.hi - E.lo) / 12, th = Math.max(a * .5, (E.hi - E.lo) * .05), off = a * 3;
+    const box = (c, tt) => ({ lo: c - th / 2, hi: c + th / 2, t: tt });
+    const tI = Number.isFinite(t) ? t : E.toTime(E.plotW * .78);
+    draft = { dir, ind: box(price, tI), dis: box(price - dir * off, tI - 12 * E.ivl) };
+    panel = true; note = '';
+    if (typeof Pos !== 'undefined') Pos.close(); if (typeof PA !== 'undefined') PA.close();
+    sync(); redraw();
+    const cv = document.getElementById('chart'); if (cv && cv.scrollIntoView) cv.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  }
+
   // ---------------------------------------------------------------- card
   const SCOPE = 'M12 3v4M12 17v4M3 12h4M17 12h4M12 9a3 3 0 100 6 3 3 0 000-6zM5.6 5.6l2 2M16.4 16.4l2 2M18.4 5.6l-2 2M7.6 16.4l-2 2';
   const btnHtml = () => `<button data-sn="panel" class="snbtn${panel ? ' on' : ''}" aria-label="Open Sniper Mode"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="${SCOPE}"/></svg><span>Sniper mode</span></button>`;
@@ -167,5 +181,5 @@ const Snipe = (() => {
   function up(cv, e) { if (drag && e.pointerId === drag.pid) { drag = null; cv._freeze = null; sync(); redraw(); } }
   const close = () => { if (panel) { panel = false; draft = null; sync(); } };
   const isOpen = () => panel;
-  return { open, btnHtml, toolsHtml, bind, draw, down, move, up, near, close, isOpen };
+  return { open, fromHold, btnHtml, toolsHtml, bind, draw, down, move, up, near, close, isOpen };
 })();

@@ -12,7 +12,7 @@
 const PA = (() => {
   const GOLD = '#E3C16A', num = Number.isFinite;
   let sym = null, items = [], panel = false, draft = null, drag = null, tap = null, lastLoad = 0, digits = 2, note = '';
-  let qd = null, qNote = '', qTimer = null, hold = null;                        // quick alert: price of the line made by holding the chart, its message, the hold timer
+  let qd = null, qt = null, qm = 'alert', qNote = '', qTimer = null, hold = null;   // qm = what the held line becomes: 'alert' (price alert), 'plan' (battle plan) or 'snipe' (Sniper Mode); qt = time under the finger                        // quick alert: price of the line made by holding the chart, its message, the hold timer
 
   const canvas = () => document.getElementById('chart');
   const redraw = () => { const cv = canvas(), c = cv && cv._ctx; if (c) chart(cv, c.s, c.tf, c.name); };
@@ -74,6 +74,14 @@ const PA = (() => {
     try { window.Telegram.WebApp.HapticFeedback.notificationOccurred('success'); } catch { /* not in Telegram */ }
   }
   function flash(msg) { qNote = msg; clearTimeout(qTimer); qTimer = setTimeout(() => { qNote = ''; redraw(); }, 3500); }
+  // Battle plan / Sniper Mode from the held line: the held price is the entry (plan) or the inducement (sniper), the button picks the direction.
+  function quickGo(dir) {
+    if (qd === null) return;
+    const price = qd, t = qt; qd = null; qNote = '';
+    if (qm === 'plan' && typeof Pos !== 'undefined') Pos.fromHold(price, dir, t);
+    else if (qm === 'snipe' && typeof Snipe !== 'undefined') Snipe.fromHold(price, dir, t);
+    sync(); redraw();
+  }
   async function quickSet() {
     if (qd === null) return;
     try { await create(qd); qd = null; qNote = ''; sync(); } catch (e) { flash(String(e.message || e)); }
@@ -107,19 +115,33 @@ const PA = (() => {
       if (drag && drag.id === r.id && drag.price !== undefined) r.price = drag.price;
       const y0 = Y(r.price), y = Math.max(th / 2 + 2, Math.min(Hh - th / 2 - 2, y0)), off = y0 !== y, up = r.price > live();
       g.strokeStyle = r.isDraft ? '#FFFFFF' : GOLD; g.setLineDash(r.isDraft ? [3, 3] : [7, 4]); g.beginPath(); g.moveTo(0, y); g.lineTo(W, y); g.stroke(); g.setLineDash([]);
-      const text = `${r.isDraft ? 'NEW' : 'ALERT'} ${up ? '▲' : '▼'} ${r.price.toFixed(E.digits)}`, w = tw(text) + 4, x = 4, top = y - th / 2;
+      const text = r.quick && qm !== 'alert' ? `${qm === 'plan' ? 'BATTLE PLAN' : 'SNIPER MODE'} ${r.price.toFixed(E.digits)}` : `${r.isDraft ? 'PRICE ALERT' : 'ALERT'} ${up ? '▲' : '▼'} ${r.price.toFixed(E.digits)}`, w = tw(text) + 4, x = 4, top = y - th / 2;
       g.fillStyle = r.isDraft ? '#FFFFFF' : GOLD; g.globalAlpha = off ? .75 : 1; g.fillRect(x, top, w, th); g.globalAlpha = 1;
       g.fillStyle = '#0C1109'; g.fillText(text, x + 7, y + .5);
       taken.push({ x, y: top, w, h: th }); geo.tags.push({ id: r.id, x, y: top, w, h: th, isDraft: r.isDraft });
-      if (r.quick) {                                                              // SET and X buttons next to the tag, and a message when it did not work
-        const tooClose = Math.abs(r.price - live()) < q10(), bw = tw('SET') + 18, bx = x + w + 6;
-        g.fillStyle = tooClose ? '#6B7480' : '#5AFF64'; g.fillRect(bx, top, bw, th); g.fillStyle = '#0C1109'; g.fillText(tooClose ? 'TOO CLOSE' : 'SET', bx + 9, y + .5);
-        const bw2 = tooClose ? tw('TOO CLOSE') + 18 : bw, cx = bx + bw2 + 6;
-        g.fillStyle = '#B03A2E'; g.fillRect(cx, top, th + 4, th); g.fillStyle = '#fff'; g.fillText('✕', cx + 8, y + .5);
-        taken.push({ x: bx, y: top, w: bw2 + th + 10, h: th });
-        if (!tooClose) geo.tags.push({ id: 'qset', x: bx, y: top, w: bw2, h: th });
-        geo.tags.push({ id: 'qx', x: cx, y: top, w: th + 4, h: th });
-        if (qNote) { g.fillStyle = '#FF8A7A'; g.fillText(qNote, x, Math.min(Hh - 8, top + th + 11)); }
+      if (r.quick) {                                                              // action buttons next to the tag, mode chips under it, and a message when it did not work
+        const btn = (id, label, bg, fg, bx, w0) => { const bw = w0 || tw(label) + 14; g.fillStyle = bg; g.fillRect(bx, top, bw, th); g.fillStyle = fg; g.fillText(label, bx + 7, y + .5); geo.tags.push({ id, x: bx, y: top, w: bw, h: th }); return bw; };
+        let bx = x + w + 6;
+        if (qm === 'alert') {
+          const tooClose = Math.abs(r.price - live()) < q10();
+          if (tooClose) { const bw = tw('TOO CLOSE') + 14; g.fillStyle = '#6B7480'; g.fillRect(bx, top, bw, th); g.fillStyle = '#0C1109'; g.fillText('TOO CLOSE', bx + 7, y + .5); bx += bw + 6; }
+          else bx += btn('qset', 'SET', '#5AFF64', '#0C1109', bx) + 6;
+        } else {
+          bx += btn('qa+', qm === 'plan' ? '▲ BUY' : '▲ BULL', '#089981', '#fff', bx) + 6;
+          bx += btn('qa-', qm === 'plan' ? '▼ SELL' : '▼ BEAR', '#F23645', '#fff', bx) + 6;
+        }
+        btn('qx', '✕', '#B03A2E', '#fff', bx, th + 4); bx += th + 4;
+        taken.push({ x, y: top, w: bx - x, h: th });
+        const cy = top + th + 4 + th > Hh - 2 ? top - th - 4 : top + th + 4;      // chips: PRICE ALERT / BATTLE PLAN / SNIPER (below the line, above it when there is no room)
+        let cx = x;
+        for (const [m, lab] of [['alert', 'ALERT'], ['plan', 'PLAN'], ['snipe', 'SNIPER']]) {
+          const cw = tw(lab) + 8, on = qm === m;
+          g.fillStyle = on ? '#FFFFFF' : '#1B222B'; g.fillRect(cx, cy, cw, th - 4); g.strokeStyle = '#FFFFFF'; g.lineWidth = 1; g.strokeRect(cx + .5, cy + .5, cw - 1, th - 5); g.lineWidth = 1.5;
+          g.fillStyle = on ? '#0C1109' : '#FFFFFF'; g.fillText(lab, cx + 4, cy + (th - 4) / 2 + .5);
+          geo.tags.push({ id: 'qm-' + m, x: cx, y: cy, w: cw, h: th - 4 }); cx += cw + 4;
+        }
+        taken.push({ x, y: cy, w: cx - x, h: th - 4 });
+        if (qNote) { g.fillStyle = '#FF8A7A'; g.fillText(qNote, x, Math.min(Hh - 8, Math.max(top, cy) + th + 11)); }
       }
     }
     g.lineWidth = 1; g.textBaseline = 'alphabetic'; g.font = `${FS}px ${MONO}`;
@@ -136,6 +158,8 @@ const PA = (() => {
     const pt = local(cv, e), t = tagAt(cv, pt, e.pointerType === 'mouse' ? 4 : 14), E = cv._pa.env;
     if (t && t.id === 'qset') { quickSet(); return true; }                          // the buttons act at once
     if (t && t.id === 'qx') { qd = null; qNote = ''; redraw(); return true; }
+    if (t && t.id.startsWith('qm-')) { qm = t.id.slice(3); qNote = ''; redraw(); return true; }                    // pick what the held line becomes
+    if (t && (t.id === 'qa+' || t.id === 'qa-')) { quickGo(t.id === 'qa+' ? 1 : -1); return true; }
     if (t) { drag = { id: t.id, pid: e.pointerId }; cv._freeze = { lo: E.lo, hi: E.hi }; tap = null; return true; }
     clearHold();
     const blocked = (typeof Pos !== 'undefined' && Pos.isOpen()) || (typeof Snipe !== 'undefined' && Snipe.isOpen());
@@ -148,7 +172,7 @@ const PA = (() => {
   function startHold() {
     const h = hold; hold = null; if (!h || !h.cv._pa || !h.cv.isConnected) return;
     const E = h.cv._pa.env, p = E.toPrice(local(h.cv, h.e).y); if (!(p > 0)) return;
-    qd = Math.round(p * Math.pow(10, digits)) / Math.pow(10, digits); qNote = '';
+    qd = Math.round(p * Math.pow(10, digits)) / Math.pow(10, digits); qNote = ''; qt = E.toTime(local(h.cv, h.e).x);
     drag = { id: 'quick', pid: h.pid, price: qd }; h.cv._freeze = { lo: E.lo, hi: E.hi };   // the finger can keep dragging the line to the exact price
     try { window.Telegram.WebApp.HapticFeedback.impactOccurred('medium'); } catch { /* not in Telegram */ }
     redraw();

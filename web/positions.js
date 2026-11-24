@@ -141,6 +141,14 @@ const Pos = (() => {
     else if (a === 'del' && p) { items = items.filter(i => i !== p); sel = items.length ? items[items.length - 1].id : null; if (!sel) draft = suggest(p.dir); }
     save(); sync(); redraw();
   }
+  // Held-chart shortcut: the held price is the entry, the stop is one ATR away (same as the card's starter) and the target follows your last ratio.
+  function fromHold(price, dir) {
+    const base = suggest(dir), risk = Math.abs(base.entry - base.sl);
+    if (!num(price) || !num(risk) || risk <= 0) { panel = true; draft = suggest(dir); msg('Set the stop loss and take profit.'); return sync(); }
+    draft = { dir, entry: price, sl: price - dir * risk, tp: price + dir * risk * (rrLast ?? 1) };
+    if (typeof Snipe !== 'undefined') Snipe.close();
+    deploy();
+  }
   function select(id) { sel = id; msg(''); save(); sync(); redraw(); }
 
   // ---------------------------------------------------------------- chart hooks
@@ -243,5 +251,5 @@ const Pos = (() => {
 
   const isOpen = () => panel;
   const close = () => { panel = false; sync(); };
-  return { open, isOpen, close, toolsHtml, bind, sync, extent, draw, down, move, up, hover, near };
+  return { open, isOpen, close, fromHold, toolsHtml, bind, sync, extent, draw, down, move, up, hover, near };
 })();
