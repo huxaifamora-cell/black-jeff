@@ -255,3 +255,10 @@ There are no cards or menu buttons for these. Press and hold on the chart (about
 - **PRICE ALERT**: `SET` creates the alert for the timeframe you are on, `X` cancels. A saved alert has an `X` next to its tag to remove it; drag the tag to move it.
 - **POSITION BOX**: the held price is the entry. `BUY` / `SELL` deploys the box with a one-ATR stop and a target at your last risk:reward. Drag the handles to adjust; the selected box has an `X` to remove it.
 - **DRAWING TOOLS** (the bot's Sniper Mode): the held price is your inducement. `BULL` / `BEAR` draws the inducement and disruption boxes (drag the handles), then `ARM` on the chart starts the alerts. Once armed the chart shows `DRAW ARMED` with a `STOP` button. Hold the chart again to draw a new one.
+
+## Key level confirmations (M5)
+Inside the M5 key level POI box (the H1 box when there is no M5 order block) the bot waits for one of: bullish / bearish harami, bullish / bearish engulf, morning star (buys) or evening star (sells). A breakout out of the box is no longer a confirmation. The Telegram alert names it on the first line, e.g. `🟢 KEY LEVEL · BULLISH HARAMI` or `🔴 KEY LEVEL · EVENING STAR`, and so does the tag on the chart image.
+- Harami: the confirming candle's body sits inside the body of the opposite candle before it.
+- Engulf: its body covers the body of the opposite candle before it.
+- Star: a long candle, a small body (at most half of it, at its far end, touching the box), then a candle of the other colour that closes beyond the middle of the first body.
+The 50% POI / bjeff zone and QML confirmations are unchanged.
