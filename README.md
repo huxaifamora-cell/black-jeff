@@ -249,3 +249,9 @@ Structural liquidity (SLQ) is an opposite-coloured BODY candle between the point
 - The POI boxes start at the last candle before the swing started (the order block at the swing start) and run body to body.
 - The H1 chart labels the newest HH + HL (uptrend) or LL + LH (downtrend).
 - The trend still flips only when an H1 wick goes beyond the disruption POI.
+
+## Hold the chart: price alert, battle plan, Sniper Mode
+Press and hold on the chart (about half a second) to put a line at that price; drag it to fine tune. Three chips under the line pick what it becomes:
+- **ALERT** (default, tag `PRICE ALERT`): `SET` creates the price alert for the timeframe you are on, `X` cancels.
+- **PLAN** (tag `BATTLE PLAN`): the held price is the entry. `BUY` / `SELL` deploys a plan box with a one-ATR stop and a target at your last risk:reward.
+- **SNIPER** (tag `SNIPER MODE`): the held price is your inducement. `BULL` / `BEAR` opens the Sniper Mode card with the inducement box there and the disruption a few ATR beyond, ready to drag and arm.
