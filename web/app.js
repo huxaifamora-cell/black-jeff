@@ -97,7 +97,7 @@ async function renderSymbols() {
 
 // ------------------------------------------------------------ symbol page
 function openSymbol(id) {
-  Radar.unmount(); current = id; tf = 'h1'; ZOOM = {}; liveCtx = null; showAlerts = showDetails = false; clearInterval(timer); Pos.open(id); PA.open(id); Snipe.open(id);
+  Radar.unmount(); current = id; tf = 'h1'; ZOOM = {}; liveCtx = null; showAlerts = showDetails = false; clearInterval(timer); Pos.open(id); PA.open(id); Snipe.open(id); SMC.open(id);
   if (tg) { tg.BackButton.show(); tg.BackButton.onClick(() => setTab(tab === 'alerts' ? 'alerts' : 'symbols')); }
   loadSymbol(); timer = setInterval(loadSymbol, 3000);          // live: the chart refreshes every 3 s
 }
@@ -158,10 +158,10 @@ function drawSymbol(v, alerts) {
   const menu = `<div class="tmenu" role="group" aria-label="Symbol tools">${MENU.map(([k, name, d, on]) => `<button data-m="${k}" class="${on ? 'on' : ''}" aria-expanded="${on}">${ic(d)}<span>${name}</span></button>`).join('')}</div>`;
   h += `<div class="ctl"><div class="ctl-g"><small class="ctl-t">Timeframe</small><div class="pills" role="group" aria-label="Timeframe">${['m5', 'h1', 'h4'].map(x => `<button data-tf="${x}" class="${x === tf ? 'on' : ''}">${x.toUpperCase()}</button>`).join('')}</div></div>
       <div class="ctl-g zg"><small class="ctl-t">Chart zoom</small><div class="pills zbtns" role="group" aria-label="Chart zoom"><button data-z="out" aria-label="Zoom out">&minus;</button><button data-z="in" aria-label="Zoom in">+</button><button data-z="reset" aria-label="Reset zoom">&#8634;</button></div></div></div>
-    <canvas id="chart"></canvas><div class="small"><span class="livedot"></span>LIVE &middot; updated <span id="lvUp">${T(s.updated)}</span> &middot; hold the chart: price alert, position box or draw</div>` + menu +
+    ${SMC.barHtml()}<canvas id="chart"></canvas><div class="small"><span class="livedot"></span>LIVE &middot; updated <span id="lvUp">${T(s.updated)}</span> &middot; hold the chart: price alert, position box or draw</div>` + menu +
     (showDetails ? `<div class="dtl"><div class="small">${done} of 4 steps cleared. ${nextWp ? `Next: <span class="px">${nextWp.k}</span> &middot; ${esc(nextWp.text)}` : 'All steps cleared.'}</div><div class="rts">${stp}</div>` + cards(s, d) + `</div>` : '') +
     (showAlerts ? `<h3>Alerts for this symbol</h3>` + symAlerts(alerts) + `<div class="row"><button class="btn" id="mute">Mute alerts for this symbol</button></div>` : '');
-  view.innerHTML = h; Pos.bind(); PA.bind(); Snipe.bind();
+  view.innerHTML = h; Pos.bind(); PA.bind(); Snipe.bind(); SMC.bind();
   document.getElementById('back').onclick = goBack;
   const redraw = () => chart(document.getElementById('chart'), s, tf, v.short);
   view.querySelectorAll('.pills button[data-tf]').forEach(b => b.onclick = () => { tf = b.dataset.tf; drawSymbol(v, alerts); });
@@ -378,8 +378,8 @@ function chart(cv, s, tf, name) {
     const t = { x: r.x + r.w + 6, y: 4, w: trW, h: TH }; taken.push(t);
     g.fillStyle = 'rgba(0,0,0,.92)'; g.strokeStyle = trCol; g.lineWidth = 1.5; g.beginPath(); g.roundRect ? g.roundRect(t.x, t.y, t.w, t.h, 3) : g.rect(t.x, t.y, t.w, t.h); g.fill(); g.stroke(); g.lineWidth = 1;
     g.fillStyle = trCol; g.fillText(trTxt, t.x + 7, t.y + t.h / 2 + .5); g.textBaseline = 'alphabetic'; g.font = `${FS}px ${MONO}`; }
-  if (main) { const E = { W, Hh, FS, LH, MONO, plotW, step, ivl, cs0: cs[0][0], lo, hi, TOP, tf, taken, tw, Y, digits: s.digits ?? 3, price: s.price, last: cs[cs.length - 1][4], atr: s.atr,
-    rrPlan: s.k && s.k.active && s.k.active.plan && s.k.active.plan.rr, toPrice: y => lo + (Hh - 14 - y) / (Hh - 14 - TOP) * (hi - lo), toTime: x => Math.round(cs[0][0] + (x - step / 2) / step * ivl) }; Pos.draw(g, cv, E); Snipe.draw(g, cv, E); PA.draw(g, cv, E); }
+  if (main) { const E = { marks: new Set(marks.map(o => o.t + '|' + o.label)), W, Hh, FS, LH, MONO, plotW, step, ivl, cs0: cs[0][0], lo, hi, TOP, tf, taken, tw, Y, digits: s.digits ?? 3, price: s.price, last: cs[cs.length - 1][4], atr: s.atr,
+    rrPlan: s.k && s.k.active && s.k.active.plan && s.k.active.plan.rr, toPrice: y => lo + (Hh - 14 - y) / (Hh - 14 - TOP) * (hi - lo), toTime: x => Math.round(cs[0][0] + (x - step / 2) / step * ivl) }; SMC.draw(g, cv, E); Pos.draw(g, cv, E); Snipe.draw(g, cv, E); PA.draw(g, cv, E); }
   const free = r => !taken.some(t => hit(r, t)) && !solid.some(t => hit(r, t));
   const place = (l, w) => {
     const bandTop = 4, ys = [];
