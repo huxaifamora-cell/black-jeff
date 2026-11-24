@@ -16,7 +16,11 @@
 //          The very first break after a cold start has no trend to compare with, so it is reported as a BOS.
 //  - Liquidity sweep: a candle WICKS beyond an unbroken swing (or an equal-highs / equal-lows pool) but CLOSES back on the near side of it.
 //          Wick above highs = buy-side liquidity taken (bearish reaction expected, dir -1). Wick below lows = sell-side liquidity taken (dir +1).
-//  - Inducement (IDM): in an up trend, the FIRST minor swing low (internal pivot, `internalLen`) that forms in the pullback after the latest major swing high.
+//  - Inducement (IDM), idmMode 'zone' (default): every BOS / CHoCH gets its own IDM, drawn on the zone that formed it. Up break = demand zone: the last bearish candle (A)
+//          at the lowest low between the broken swing and the break, plus the first bullish candle after it (B), body to body. Down break = supply zone, mirrored.
+//          A wick back into the zone = the inducement is taken (status 'swept'). A body closing through the far side of the zone = it failed (status 'void').
+//          At most `idmMaxOpen` untouched zones are kept; the oldest is dropped first.
+//  - Inducement (IDM), idmMode 'swing' (the old rule): in an up trend, the FIRST minor swing low (internal pivot, `internalLen`) that forms in the pullback after the latest major swing high.
 //          Price wicking below it = the inducement is taken (status 'swept'). Down trend: mirrored with the first minor swing high after the latest swing low.
 //          A new major swing replaces it (the old one is dropped if it was never taken).
 //  - EQH / EQL: two swings of the same side within `eqTolAtr` x ATR of each other. The pair becomes one liquidity pool at the outer price.
@@ -27,6 +31,8 @@ export const smcDefaults = {
   atrLen: 14,
   eqTolAtr: 0.1,        // equal highs / lows: within this x ATR
   sweepMinAtr: 0,       // a sweep wick must poke at least this x ATR beyond the level (0 = any)
+  idmMode: 'zone',      // 'zone': IDM on the demand / supply zone of each BOS / CHoCH. 'swing': IDM = first minor pullback swing (old rule)
+  idmMaxOpen: 4,        // zone mode: untouched IDM zones kept on the chart (the oldest is dropped first)
   idmMinDepthAtr: 0.3,  // the inducement must sit at least this x ATR away from the swing it pulled back from
   maxAge: 400,          // candles a swing stays sweepable
   keep: 300,            // annotations kept in memory
@@ -44,7 +50,8 @@ export class SmcEngine {
     this.swH = []; this.swL = []; this.inH = []; this.inL = [];
     this.top = null; this.btm = null;            // latest confirmed major swing high / low that is not yet broken
     this.trend = 0;
-    this.idm = { 1: null, '-1': null };          // current inducement annotation per trend direction
+    this.idm = { 1: null, '-1': null };          // current inducement annotation per trend direction (swing mode)
+    this.zones = [];                             // open IDM zone annotations (zone mode), oldest first
     this.ann = new Map();                        // id -> annotation (insertion ordered)
     this.atrV = 0;
   }
@@ -148,6 +155,12 @@ export class SmcEngine {
       const m = this.idm[d];
       if (m && m.status === 'open' && (d === 1 ? c.l < m.price : c.h > m.price)) f.push({ k: 'idm', ann: m });
     }
+    // zone mode: a body closing through the far side of an open zone kills it, otherwise a wick back into it takes it
+    for (const z of this.zones) {
+      if (z.status !== 'open') continue;
+      if (z.dir === 1 ? c.c < z.lo : c.c > z.hi) f.push({ k: 'idmvoid', ann: z });
+      else if (z.dir === 1 ? c.l <= z.hi : c.h >= z.lo) f.push({ k: 'idm', ann: z });
+    }
     return f;
   }
 
@@ -172,12 +185,15 @@ export class SmcEngine {
       if (x.k === 'break') {
         x.sw.crossed = true; this.trend = x.dir;
         this.#put(this.#breakAnn(x, c), changed);
+        if (p.idmMode === 'zone') this.#zoneIdm(x, i, changed);
       } else if (x.k === 'sweep') {
         for (const q of x.side === 'buy' ? this.swH : this.swL) if (q === x.sw || (x.sw.pool != null && q.pool === x.sw.pool)) q.swept = true;
         this.#put(this.#sweepAnn(x, c), changed);
       } else if (x.k === 'cross') x.sw.crossed = true;
       else if (x.k === 'idm') { x.ann.status = 'swept'; x.ann.t1 = c.t; this.#put(x.ann, changed); }
+      else if (x.k === 'idmvoid') { x.ann.status = 'void'; x.ann.t1 = c.t; this.#put(x.ann, changed); }
     }
+    if (this.zones.length) this.zones = this.zones.filter((z) => z.status === 'open');
     // a trend flip retires the open inducement of the old direction
     for (const d of [1, -1]) { const m = this.idm[d]; if (m && m.status === 'open' && d !== this.trend && this.trend !== 0) { m.status = 'void'; m.t1 = c.t; this.#put(m, changed); this.idm[d] = null; } }
     // 2. new major swings (confirmed swingLen candles later)
@@ -213,10 +229,35 @@ export class SmcEngine {
     if (isH) this.top = s; else this.btm = s;
   }
 
+  // Zone mode: the IDM of a BOS / CHoCH sits on the zone that formed the break (candle i is the breaking candle, x.sw the swing it broke).
+  // Up break: A = last bearish candle at or before the lowest low between the swing and the break, B = first bullish candle after A. Band over A and B, body to body.
+  // Down break: mirrored (A = last bullish candle at the highest high, B = first bearish candle after it).
+  #zoneIdm(x, i, changed) {
+    const cs = this.cs, d = x.dir, s = x.sw.idx;
+    if (s >= i) return;
+    let k = s;
+    for (let j = s; j < i; j++) if (d === 1 ? cs[j].l < cs[k].l : cs[j].h > cs[k].h) k = j;       // the pullback extreme that led into the break
+    const opp = (q) => (d === 1 ? q.c < q.o : q.c > q.o), same = (q) => (d === 1 ? q.c > q.o : q.c < q.o);
+    let a = k;
+    for (let j = k; j >= Math.max(0, k - this.p.maxAge); j--) if (opp(cs[j])) { a = j; break; }
+    let b = -1;
+    for (let j = a + 1; j <= i; j++) if (same(cs[j])) { b = j; break; }
+    let lo = Math.min(cs[a].o, cs[a].c), hi = Math.max(cs[a].o, cs[a].c);
+    if (b >= 0) { lo = Math.min(lo, cs[b].o, cs[b].c); hi = Math.max(hi, cs[b].o, cs[b].c); }
+    if (!(hi > lo)) { lo = cs[a].l; hi = cs[a].h; }                                                   // doji: use the whole candle
+    const type = x.choch ? 'choch' : 'bos';
+    const z = { id: `idm:${x.sw.t}:${d}`, type: 'idm', dir: d, t0: cs[a].t, t1: null, price: d === 1 ? hi : lo, lo, hi, zone: true, label: 'IDM', status: 'open', ref: `${type}:${x.sw.t}:${d}` };
+    this.zones.push(z);
+    this.#put(z, changed);
+    while (this.zones.length > this.p.idmMaxOpen) {                                                   // too many untouched zones: drop the oldest
+      const old = this.zones.shift(); old.status = 'void'; old.t1 = cs[i].t; this.#put(old, changed);
+    }
+  }
+
   // Inducement of the current trend: the FIRST minor pullback swing after the latest major swing (see the header).
   #updateIdm(changed) {
     const d = this.trend, atr = this.atrV;
-    if (d === 0) return;
+    if (d === 0 || this.p.idmMode === 'zone') return;
     const ref = d === 1 ? this.swH[this.swH.length - 1] : this.swL[this.swL.length - 1];
     if (!ref || ref.crossed) return;                            // the latest swing was already broken: wait for the new leg's swing, the old pullback is history
     const cur = this.idm[d];
