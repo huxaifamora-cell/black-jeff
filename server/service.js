@@ -50,7 +50,7 @@ const INVALID_KINDS = new Set(['kl_invalid', 'invalidated']);
 export const alertType = (a) => KIND_TYPE[a.kind] || String(TYPE_NAME[a.concept] || a.concept || 'ALERT').toUpperCase();
 export const formatAlert = (a) => {
   const esc = (t) => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  const type = esc(alertType(a));
+  const type = esc(alertType(a) + (a.kind === 'kl_entry' && a.payload && a.payload.conf ? ' · ' + String(a.payload.conf).toUpperCase() : ''));   // key level entry: which confirmation (BULLISH HARAMI, MORNING STAR ...)
   const head = INVALID_KINDS.has(a.kind) ? `⚪ <b>INVALIDATED · ${type}</b>`
     : a.dir === 1 ? `🟢 <b>${type}</b>`
     : a.dir === -1 ? `🔴 <b>${type}</b>`
@@ -58,7 +58,7 @@ export const formatAlert = (a) => {
   return `${head}\n${esc(a.symbol_name)}`;
 };
 // Short plain-text version of the headline for the chart image ("KEY LEVEL"). The colour of the tag and the arrow carry the direction.
-export const alertLabel = (a) => `${INVALID_KINDS.has(a.kind) ? 'INVALIDATED ' : ''}${alertType(a)}`;
+export const alertLabel = (a) => `${INVALID_KINDS.has(a.kind) ? 'INVALIDATED ' : ''}${alertType(a)}${a.kind === 'kl_entry' && a.payload && a.payload.conf ? ' ' + String(a.payload.conf).toUpperCase() : ''}`;
 
 // Sniper Mode (a person's own order flow): the same two lines, plus a third that says whose flow it is.
 export const formatSniperAlert = (a) => `${formatAlert(a)}\n🎯 <b>SNIPER MODE</b>${a.kind === 'invalidated' ? ' · your order flow is over, set a new one' : ''}`;

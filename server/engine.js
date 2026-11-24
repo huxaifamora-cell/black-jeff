@@ -474,6 +474,30 @@ export function confirmations(m5, lo, hi, d, sinceT) {
   return out;
 }
 
+// Key level confirmations on M5 (the key level POI box): bullish / bearish harami, bullish / bearish engulf, morning / evening star.
+//  harami: the candle's body sits inside the body of the opposite candle before it (inside the box).
+//  engulf: the candle's body covers the body of the opposite candle before it (inside the box).
+//  star:   a long candle, then a small body candle (at most half of the first body, sitting at the far end of it) that touches the box,
+//          then a candle of the other colour that closes beyond the middle of the first body (morning star for buys, evening star for sells).
+// The time of a confirmation is the candle that completes the pattern.
+export function klConfirmations(m5, lo, hi, d, sinceT) {
+  const out = [], mid = (c) => (c.o + c.c) / 2;
+  for (let i = 1; i < m5.length; i++) {
+    const c = m5[i], a = m5[i - 1];
+    if (c.t < sinceT) continue;
+    const inC = bot(c) >= lo && top(c) <= hi, inA = bot(a) >= lo && top(a) <= hi, nm = d === 1 ? 'bullish' : 'bearish';
+    const opp = d === 1 ? bear(a) && bull(c) : bull(a) && bear(c);
+    if (opp && inA && inC && bot(c) <= bot(a) && top(c) >= top(a)) out.push({ t: c.t, type: `${nm}_engulf` });
+    else if (opp && inC && body(a) > body(c) && top(c) <= top(a) && bot(c) >= bot(a)) out.push({ t: c.t, type: `${nm}_harami` });
+    if (i >= 2) {
+      const f = m5[i - 2], m = a, touches = m.l <= hi && m.h >= lo;
+      if (d === 1 && bear(f) && bull(c) && touches && body(f) > 0 && body(m) <= body(f) * 0.5 && top(m) <= bot(f) + body(f) * 0.25 && c.c > mid(f)) out.push({ t: c.t, type: 'morning_star' });
+      if (d === -1 && bull(f) && bear(c) && touches && body(f) > 0 && body(m) <= body(f) * 0.5 && bot(m) >= top(f) - body(f) * 0.25 && c.c < mid(f)) out.push({ t: c.t, type: 'evening_star' });
+    }
+  }
+  return out;
+}
+
 export function tradePlan(lo, hi, d, atr5, p) {
   const buf = p.slBufferAtr * atr5;
   if (d === 1) { const entry = hi, sl = lo - buf; return { entry, sl, tp: entry + p.rr * (entry - sl), rr: p.rr }; }
@@ -811,11 +835,12 @@ export function evaluate(h4Live, h1Live, m5, p = defaultParams, digits = 3, opts
       events.push(ev('K', 'kl_valid', act.dir, act.t_valid + H1, H1, `K: valid key level (${side(act.dir)} setup)`,
         `POI ${f(act.lo)} to ${f(act.hi)}, ${act.wicks} wick(s) inside (high probability). ${cap(side(act.dir))} limit ${f(plan.entry)}, SL ${f(plan.sl)}, TP (1:${p.rr}) ${f(plan.tp)}.`,
         uid, { lo: act.lo, hi: act.hi, t0: act.t0, ...plan, sub: act.type }));
-      const cfs = confirmations(m5c, act.lo, act.hi, act.dir, act.t_valid + H1).slice(-3);
+      const kb = mp || act;                                         // confirmations are read inside the M5 key level POI box (the H1 box when there is no M5 order block)
+      const cfs = klConfirmations(m5c, kb.lo, kb.hi, act.dir, act.t_valid + H1).slice(-3);
       state.signals = cfs;
       for (const cf of cfs) {
         events.push(ev('K', 'kl_entry', act.dir, cf.t + M5, M5, `K: ${side(act.dir)} confirmation on key level (${nice(cf.type, act.dir)})`,
-          `${cap(nice(cf.type, act.dir))} inside the POI. ${cap(side(act.dir))} limit ${f(plan.entry)}, SL ${f(plan.sl)}, TP ${f(plan.tp)}.`,
+          `${cap(nice(cf.type, act.dir))} inside the M5 key level POI. ${cap(side(act.dir))} limit ${f(plan.entry)}, SL ${f(plan.sl)}, TP ${f(plan.tp)}.`,
           `${uid}-${cf.t}-${cf.type}`, { lo: act.lo, hi: act.hi, t0: act.t0, ...plan, sub: act.type, conf: nice(cf.type, act.dir) }));
       }
       // The 50% POI sits inside the key level POI box DRAWN ON M5 (the M5 order block box; the H1 box when there is no M5 order block).
