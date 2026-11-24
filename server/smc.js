@@ -19,7 +19,7 @@
 //  - Inducement (IDM), idmMode 'zone' (default): every BOS / CHoCH gets its own IDM, drawn on the zone that formed it. Up break = demand zone: the last bearish candle (A)
 //          at the lowest low between the broken swing and the break, plus the first bullish candle after it (B), body to body. Down break = supply zone, mirrored.
 //          A wick back into the zone = the inducement is taken (status 'swept'). A body closing through the far side of the zone = it failed (status 'void').
-//          At most `idmMaxOpen` untouched zones are kept; the oldest is dropped first.
+//          At most `idmMaxOpen` (3) untouched zones are kept; the oldest is dropped first.
 //  - Inducement (IDM), idmMode 'swing' (the old rule): in an up trend, the FIRST minor swing low (internal pivot, `internalLen`) that forms in the pullback after the latest major swing high.
 //          Price wicking below it = the inducement is taken (status 'swept'). Down trend: mirrored with the first minor swing high after the latest swing low.
 //          A new major swing replaces it (the old one is dropped if it was never taken).
@@ -32,7 +32,7 @@ export const smcDefaults = {
   eqTolAtr: 0.1,        // equal highs / lows: within this x ATR
   sweepMinAtr: 0,       // a sweep wick must poke at least this x ATR beyond the level (0 = any)
   idmMode: 'zone',      // 'zone': IDM on the demand / supply zone of each BOS / CHoCH. 'swing': IDM = first minor pullback swing (old rule)
-  idmMaxOpen: 4,        // zone mode: untouched IDM zones kept on the chart (the oldest is dropped first)
+  idmMaxOpen: 3,        // zone mode: untouched IDM zones kept on the chart (the oldest is dropped first)
   idmMinDepthAtr: 0.3,  // the inducement must sit at least this x ATR away from the swing it pulled back from
   maxAge: 400,          // candles a swing stays sweepable
   keep: 300,            // annotations kept in memory
