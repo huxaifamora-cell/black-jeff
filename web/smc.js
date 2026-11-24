@@ -1,4 +1,4 @@
-// SMC overlay: market structure, BOS, CHoCH, inducement (IDM), liquidity sweeps and equal highs / lows drawn on the symbol chart.
+// SMC overlay: market structure, BOS, CHoCH, inducement (IDM, a box on the demand / supply zone of each BOS / CHoCH), liquidity sweeps and equal highs / lows drawn on the symbol chart.
 // The marks come from the server's SMC engine (server/smc.js) over a live Server-Sent Events stream (/api/smc/stream), which is fed by the Deriv WebSocket,
 // so a BOS or a sweep appears the moment the candle closes, and the forming candle shows a dashed provisional preview.
 //
@@ -131,8 +131,15 @@ const SMC = (() => {
         line(x0, x1, a.price, col, dash || (a.type === 'bos' ? [] : [6, 3]), al);
         label(a.type === 'choch' ? 4 : 3, lab, (x0 + x1) / 2, a.dir === 1 ? yy - 4 : yy + fs + 5, col, 'center', true, al, true);
       } else if (a.type === 'idm') {
-        if (!pref.idm) continue;
+        if (!pref.idm || a.status === 'void') continue;
         const sw = a.status === 'swept';
+        if (a.hi != null && a.lo != null) {                                                      // zone mode: the IDM is the demand / supply zone of a BOS / CHoCH
+          const yt = Math.round(y(a.hi)), yb = Math.round(y(a.lo)), h = Math.max(2, yb - yt);
+          g.globalAlpha = (pv ? .6 : sw ? .75 : 1) * .16; g.fillStyle = COL.idm; g.fillRect(x0, yt, Math.max(2, x1 - x0), h);
+          g.globalAlpha = pv ? .6 : sw ? .75 : 1; g.strokeStyle = COL.idm; g.setLineDash([1.5, 3.5]); g.strokeRect(x0 + .5, yt + .5, Math.max(2, x1 - x0), h); g.setLineDash([]); g.globalAlpha = 1;
+          label(1, 'IDM' + (sw ? ' \u2713' : pv ? ' …' : ''), x0 + 18, a.dir === 1 ? yb + fs + 5 : yt - 4, COL.idm, 'center', true, al, true);
+          continue;
+        }
         line(x0, x1, a.price, COL.idm, [1.5, 3.5], pv ? .6 : sw ? .75 : 1);
         label(1, 'IDM' + (sw ? ' \u2713' : pv ? ' …' : ''), Math.max(x0 + 18, 22), a.dir === 1 ? yy + fs + 5 : yy - 4, COL.idm, 'center', true, al, true);
       } else if (a.type === 'eq') {
