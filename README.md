@@ -264,4 +264,7 @@ Inside the M5 key level POI box (the H1 box when there is no M5 order block) the
 The 50% POI / bjeff zone and QML confirmations are unchanged.
 
 ## Chart look (TradingView style)
-Dark navy canvas (`#131722`), faint grid at round prices and round times, teal `#089981` / red `#F23645` candles with wicks in the body colour, a time axis along the bottom (hours, bold day numbers at midnight, month name on the 1st; in your local time), price numbers on the right edge (hidden where a label or zone sits), and the last price as a filled tag in the colour of the live candle. The Telegram alert charts use the same palette.
+Black canvas (`#000000`), faint grid at round prices and round times, teal `#089981` / red `#F23645` candles with wicks in the body colour, a time axis along the bottom (hours, bold day numbers at midnight, month name on the 1st; in your local time), price numbers on the right edge (hidden where a label or zone sits), and the last price as a filled tag in the colour of the live candle. The Telegram alert charts use the same palette.
+
+### Candle time and prices (like MT5)
+Tap a candle on the chart (or hover it with a mouse) to see a crosshair: the candle's open time on the time axis (`2026.11.24 12:00`, your local time), the price under your finger on the right edge, and an `O H L C` line at the bottom left. Tap another candle to move it, tap the same candle (or an empty spot) to hide it. Pressing and holding still starts a price alert / position box / drawing tools instead.
