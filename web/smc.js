@@ -14,8 +14,11 @@ const SMC = (() => {
   try { Object.assign(pref, JSON.parse(localStorage.getItem(KEY) || '{}')); } catch { /* storage blocked: defaults */ }
   const save = () => { try { localStorage.setItem(KEY, JSON.stringify(pref)); } catch { /* ignore */ } };
 
-  const fresh = (sym) => ({ sym, tf: null, ann: new Map(), live: [], trend: 0, state: 'idle', flash: null, ac: null, tried: 0 });
+  // Two streams: `main` = the timeframe on screen, `ref` = the H1 stream that the M5 chart follows (H1 trend and H1 IDM / DISR / LIQ zones). Other timeframes need no ref.
+  const feed = () => ({ tf: null, ann: new Map(), live: [], trend: 0, state: 'idle', ac: null, tried: 0 });
+  const fresh = (sym) => ({ sym, main: feed(), ref: feed(), flash: null });
   let st = fresh(null), lastDraw = 0, raf = 0;
+  const REF = { m5: 'h1' };                                           // chart timeframe -> the timeframe whose trend and zones it shows
 
   const redraw = () => {
     if (raf) return;
@@ -23,34 +26,35 @@ const SMC = (() => {
   };
 
   function open(id) { stop(); st = fresh(id); }
-  function stop() { if (st.ac) { try { st.ac.abort(); } catch { /* ignore */ } st.ac = null; } }
+  function halt(f) { if (f.ac) { try { f.ac.abort(); } catch { /* ignore */ } f.ac = null; } }
+  function stop() { halt(st.main); halt(st.ref); }
 
   // ------------------------------------------------------------ live stream
   const NOTABLE = { bos: 1 };
-  function onSnapshot(snap) {
-    st.ann = new Map((snap.annotations || []).map((a) => [a.id, a]));
-    st.live = snap.live || []; st.trend = snap.trend || 0; st.state = snap.state || 'live';
+  function onSnapshot(f, snap) {
+    f.ann = new Map((snap.annotations || []).map((a) => [a.id, a]));
+    f.live = snap.live || []; f.trend = snap.trend || 0; f.state = snap.state || 'live';
     redraw();
   }
-  function onUpdate(m) {
+  function onUpdate(f, m) {
     for (const a of m.changed || []) {
-      const old = st.ann.get(a.id); st.ann.set(a.id, a);
+      const old = f.ann.get(a.id); f.ann.set(a.id, a);
       if (NOTABLE[a.type] || (a.type === 'idm' && a.status === 'swept' && !(old && old.status === 'swept'))) st.flash = { a, at: Date.now() };
     }
-    if (st.ann.size > 500) for (const k of st.ann.keys()) { st.ann.delete(k); if (st.ann.size <= 400) break; }
-    st.trend = m.trend || 0; st.live = []; redraw();
+    if (f.ann.size > 500) for (const k of f.ann.keys()) { f.ann.delete(k); if (f.ann.size <= 400) break; }
+    f.trend = m.trend || 0; f.live = []; redraw();
   }
-  function onFrame(ev, data) {
-    if (ev === 'snapshot') onSnapshot(data); else if (ev === 'update') onUpdate(data);
-    else if (ev === 'live') { st.live = data.live || []; redraw(); }
+  function onFrame(f, ev, data) {
+    if (ev === 'snapshot') onSnapshot(f, data); else if (ev === 'update') onUpdate(f, data);
+    else if (ev === 'live') { f.live = data.live || []; redraw(); }
   }
 
-  async function connect(sym, tf) {
-    stop();
-    const ac = st.ac = new AbortController(), me = st; st.tf = tf; st.state = 'connecting'; st.tried = Date.now();
+  async function connect(f, sym, tf) {
+    halt(f);
+    const ac = f.ac = new AbortController(), me = st; f.tf = tf; f.state = 'connecting'; f.tried = Date.now();
     try {
       const res = await fetch(`/api/smc/stream?symbol=${encodeURIComponent(sym)}&tf=${tf}`, { headers: { 'X-Telegram-Init-Data': tg ? tg.initData : '' }, signal: ac.signal });
-      if (!res.ok) { me.state = res.status === 404 || res.status === 400 ? 'off' : 'error'; return; }
+      if (!res.ok) { f.state = res.status === 404 || res.status === 400 ? 'off' : 'error'; return; }
       const rd = res.body.getReader(), dec = new TextDecoder(); let buf = '';
       for (;;) {
         const { value, done } = await rd.read(); if (done) break;
@@ -58,21 +62,27 @@ const SMC = (() => {
         let k; while ((k = buf.indexOf('\n\n')) >= 0) {
           const raw = buf.slice(0, k); buf = buf.slice(k + 2);
           const m = /^event: (\w+)\ndata: (.*)$/s.exec(raw);
-          if (m && st === me && st.tf === tf) { try { onFrame(m[1], JSON.parse(m[2])); } catch { /* bad frame */ } }
+          if (m && st === me && f.tf === tf) { try { onFrame(f, m[1], JSON.parse(m[2])); } catch { /* bad frame */ } }
         }
       }
     } catch { /* aborted or dropped: draw() reconnects */ }
-    if (st === me && me.ac === ac) { me.ac = null; if (me.state !== 'off') me.state = 'down'; }
+    if (st === me && f.ac === ac) { f.ac = null; if (f.state !== 'off') f.state = 'down'; }
   }
 
-  // called on every chart draw: make sure the stream matches the timeframe on screen (and reconnect a dropped one, at most every 3 s)
+  // keep one feed on the wanted timeframe (null = none): switch, or reconnect a dropped stream (at most every 3 s)
+  function keep(f, tf) {
+    if (!tf) { if (f.tf) { halt(f); Object.assign(f, feed()); } return; }
+    if (f.tf !== tf) { Object.assign(f, feed()); connect(f, st.sym, tf); return; }
+    if (!f.ac && f.state !== 'off' && Date.now() - f.tried > 3000) connect(f, st.sym, tf);
+  }
+  // called on every chart draw: make sure the streams match the timeframe on screen
   function ensure(tf) {
     lastDraw = Date.now();
     if (!st.sym) return;
-    if (st.tf !== tf) { st.ann = new Map(); st.live = []; st.flash = null; st.state = 'idle'; connect(st.sym, tf); return; }
-    if (!st.ac && st.state !== 'off' && Date.now() - st.tried > 3000) connect(st.sym, tf);
+    if (st.main.tf !== tf) st.flash = null;
+    keep(st.main, tf); keep(st.ref, REF[tf] || null);
   }
-  setInterval(() => { if (st.ac && Date.now() - lastDraw > 25000) stop(); }, 10000);     // chart gone (left the symbol page): close the stream
+  setInterval(() => { if ((st.main.ac || st.ref.ac) && Date.now() - lastDraw > 25000) stop(); }, 10000);     // chart gone (left the symbol page): close the streams
 
   // ------------------------------------------------------------ chips under the timeframe buttons
   const barHtml = () => `<div class="chips smcbar" role="group" aria-label="SMC indicator"><button class="chip${pref.on ? ' on' : ''}" data-smc="on" aria-pressed="${pref.on}">SMC</button>` +
@@ -91,11 +101,13 @@ const SMC = (() => {
   // ------------------------------------------------------------ drawing
   function draw(g, cv, E) {
     ensure(E.tf);
-    if (!pref.on || st.state === 'off') return;
+    if (!pref.on || st.main.state === 'off') return;
+    const follow = !!REF[E.tf], rf = follow ? st.ref : null;                   // M5: trend and IDM / DISR / LIQ zones come from the H1 stream
     const { FS, MONO, Y, plotW, step, ivl, cs0, lo, hi } = E, fs = Math.max(9, FS - 1);
     const X = (t) => (t - cs0) / ivl * step + step / 2;
     const tEnd = cs0 + (plotW / step) * ivl, y = (p) => Y(p);
-    const items = [...st.ann.values(), ...st.live.filter((a) => !st.ann.has(a.id))];
+    const mf = st.main, items = [...mf.ann.values(), ...mf.live.filter((a) => !mf.ann.has(a.id))].filter((a) => !(follow && a.type === 'idm'));
+    if (rf) items.push(...[...rf.ann.values()].filter((a) => a.type === 'idm'));
     g.save(); g.textBaseline = 'alphabetic'; g.lineWidth = 1.2;
     const hit = (a, r) => a.x < r.x + r.w && a.x + a.w > r.x && a.y < r.y + r.h && a.y + a.h > r.y;
     // a label with a dark backing. nudge: when it would sit on another label (ours, the title, the app's own tags) move it up / down to the nearest free slot, or skip it
@@ -119,7 +131,8 @@ const SMC = (() => {
       g.globalAlpha = alpha; g.strokeStyle = col; g.setLineDash(dash); g.beginPath(); g.moveTo(x0, Math.round(y(p)) + .5); g.lineTo(x1, Math.round(y(p)) + .5); g.stroke(); g.setLineDash([]); g.globalAlpha = 1;
     };
     const padR = Math.min(E.W - 2, plotW + Math.max(54, step * 4));                                 // right edge of the IDM / DISR boxes: past the forming candle
-    for (const a of items.sort((p, q) => (p.t1 ?? p.t0) - (q.t1 ?? q.t0))) {
+    items.sort((p, q) => (p.t1 ?? p.t0) - (q.t1 ?? q.t0));
+    for (const a of items) {
       if (HIDE[a.type]) continue;
       const ext = a.type === 'idm' && a.zone && EXT[a.role] && a.status !== 'void';                // IDM / DISR box: keeps going to the right, taken or not
       const end = ext ? tEnd : a.t1 ?? (a.type === 'idm' ? tEnd : a.t0);
@@ -166,7 +179,7 @@ const SMC = (() => {
     }
     labels.sort((p, q) => q.prio - p.prio).forEach((l) => text(...l.args));
     // trend tag and the latest event, top right
-    const tr = st.trend, tag = `SMC ${tr === 1 ? '▲ BULL' : tr === -1 ? '▼ BEAR' : '● FLAT'}${st.state === 'live' ? '' : ' · ' + (st.state === 'connecting' ? '...' : st.state === 'idle' ? '...' : 'reconnecting')}`;
+    const tf_ = rf || mf, tr = tf_.trend, tag = `SMC${follow ? ' H1' : ''} ${tr === 1 ? '▲ BULL' : tr === -1 ? '▼ BEAR' : '● FLAT'}${tf_.state === 'live' ? '' : ' · ' + (tf_.state === 'connecting' ? '...' : tf_.state === 'idle' ? '...' : 'reconnecting')}`;
     text(tag, plotW - 4, 4 + fs + 6, tr === 1 ? '#26A69A' : tr === -1 ? '#EF5350' : '#787B86', 'right', true);
     if (st.flash && Date.now() - st.flash.at < 12000) {
       const a = st.flash.a, d = new Date(a.t1 * 1000), hm = String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
