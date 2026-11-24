@@ -39,5 +39,11 @@ export function loadConfig() {
     derivAppId: e.DERIV_APP_ID || '1089',
     requireAuth: e.DEV_ALLOW_NO_AUTH !== '1',
     pollSeconds: Number(e.POLL_SECONDS || 20),
+    // SMC indicator (market structure, BOS, CHoCH, inducement, liquidity sweeps drawn on the chart from the live Deriv WebSocket). SMC=0 turns it off.
+    smc: e.SMC !== '0',
+    smcSwingLen: Number(e.SMC_SWING_LEN || 5),                // candles each side of a major swing
+    smcInternalLen: Number(e.SMC_INTERNAL_LEN || 2),          // candles each side of a minor swing (inducement)
+    smcTimeframes: (e.SMC_TIMEFRAMES || 'm5,h1,h4').split(',').map((x) => x.trim().toLowerCase()).filter(Boolean),
+    smcPinned: (e.SMC_SYMBOLS || '').split(',').map((x) => x.trim()).filter(Boolean),    // symbol ids (V75, V100s ...) that are always watched, even with nobody on the chart
   };
 }

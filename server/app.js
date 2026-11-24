@@ -12,6 +12,7 @@ import { Bot } from './telegram.js';
 import { TelegramBackup } from './backup.js';
 import { Service, formatAlert, formatSniperAlert } from './service.js';
 import { renderChart } from './chartimg.js';
+import { SmcFeed, TF_SECONDS as SMC_TF } from './smcfeed.js';
 import { alertParam, alertId, checkParam, isAlertId, xpStatusText } from './alertlink.js';
 import { rankTag } from './ranks.js';
 import { ALL_CONCEPTS, MAX_PRICE_ALERTS, MAX_SNIPER_FLOWS, Store } from './store.js';
@@ -32,6 +33,13 @@ export function createApp({ cfg = loadConfig(), store, svc, deriv, bot, log = co
   let tasks = [];
   let warm = false;                                   // first feed pass only fills the alert list, it does not message anyone
   const backup = bot && cfg.stateChatId ? new TelegramBackup(bot, cfg.stateChatId, log) : null;
+
+  // SMC indicator: live market structure / BOS / CHoCH / inducement / sweeps from the Deriv WebSocket (see smcfeed.js). Off with SMC=0.
+  const smc = cfg.smc ? new SmcFeed({
+    deriv, log, codeOf: (id) => { const s = svc.byId.get(id); return (s && s.code) || null; },
+    params: { swingLen: cfg.smcSwingLen || 5, internalLen: cfg.smcInternalLen || 2 },
+    timeframes: (cfg.smcTimeframes || ['m5', 'h1', 'h4']).map((x) => SMC_TF[x]).filter(Boolean), pinned: cfg.smcPinned || [] }) : null;
+  const sseClients = new Set();
 
   const priceNow = (sid) => { const st = svc.states.get(sid); return st && st.price != null ? st.price : null; };
   // ------------------------------------------------------------ http
@@ -100,6 +108,25 @@ export function createApp({ cfg = loadConfig(), store, svc, deriv, bot, log = co
       if (q.get('live') === '1') await liveRefresh(id);          // the open chart asks for fresh data every few seconds
       const v = svc.symbolView(id);
       return v ? json(res, 200, v) : json(res, 404, { error: 'unknown symbol' });
+    }
+    // ---- SMC indicator. GET /api/smc?symbol=V75&tf=m5 = the current snapshot; GET /api/smc/stream = the same plus live pushes (Server-Sent Events).
+    if ((path === '/api/smc' || path === '/api/smc/stream') && req.method === 'GET') {
+      if (!smc) return json(res, 404, { error: 'SMC indicator is off' });
+      const sym = q.get('symbol') || '', tfKey = (q.get('tf') || 'm5').toLowerCase(), tf = SMC_TF[tfKey];
+      if (!svc.byId.has(sym) || !tf || !smc.supports(tf)) return json(res, 400, { error: 'unknown symbol or timeframe' });
+      const first = (await smc.watch(sym, tf)) || { sym, tf, state: 'starting', trend: 0, annotations: [], live: [] };
+      if (path === '/api/smc') return json(res, 200, first);
+      if (sseClients.size >= 300) return json(res, 503, { error: 'too many live viewers' });
+      res.writeHead(200, { 'Content-Type': 'text/event-stream; charset=utf-8', 'Cache-Control': 'no-store', Connection: 'keep-alive', 'X-Accel-Buffering': 'no' });
+      const send = (ev, data) => { try { res.write(`event: ${ev}\ndata: ${JSON.stringify(data)}\n\n`); } catch { /* closed */ } };
+      const mine = (m) => m.sym === sym && m.tf === tf;
+      const onSnap = (m) => mine(m) && send('snapshot', m.snap), onUpd = (m) => mine(m) && send('update', m), onLive = (m) => mine(m) && send('live', m);
+      smc.on('snapshot', onSnap); smc.on('update', onUpd); smc.on('live', onLive);
+      const hb = setInterval(() => { try { res.write(': hb\n\n'); } catch { /* closed */ } smc.touch(sym, tf); }, 15000);
+      const done = () => { clearInterval(hb); smc.off('snapshot', onSnap); smc.off('update', onUpd); smc.off('live', onLive); sseClients.delete(res); };
+      sseClients.add(res); req.on('close', done); res.on('close', done);
+      res.write('retry: 3000\n\n'); send('snapshot', first);
+      return;
     }
     if (path === '/api/alerts' && req.method === 'GET') {
       const chatC = cfg.chatConcepts || ['R', 'K', 'QML', 'ADV'];
@@ -362,12 +389,22 @@ export function createApp({ cfg = loadConfig(), store, svc, deriv, bot, log = co
     else if (cmd === '/alerts_off') { store.updateSettings(uid, { subscribed: false }); await bot.send(chat, 'Alerts are paused. /alerts_on turns them back on.'); }
   }
 
+  // SMC_SYMBOLS: keep these symbols watched even with nobody on the chart (waits until the symbol codes are known).
+  async function pinSmc() {
+    for (let n = 0; n < 60 && !abort.signal.aborted; n++) {
+      if (svc.symbols.some((s) => s.code)) break;
+      await sleep(5000, abort.signal);
+    }
+    for (const sym of smc.pinned) for (const tf of smc.timeframes) { if (abort.signal.aborted) return; await smc.watch(sym, tf).catch(() => null); }
+  }
+
   async function start(port = cfg.port) {
     await new Promise((r) => server.listen(port, '0.0.0.0', r));
     if (!background) return server.address().port;
     await restoreUsers();
     keepAlive();
     tasks.push(feedLoop());
+    if (smc && smc.pinned.size) tasks.push(pinSmc());
     if (bot) {
       if (cfg.webappUrl) bot.setMenuButton(cfg.webappUrl).catch((e) => log.warn('could not set the menu button:', e.message));
       if (cfg.pollCommands !== false) tasks.push(bot.poll(onUpdate, log));
@@ -378,6 +415,8 @@ export function createApp({ cfg = loadConfig(), store, svc, deriv, bot, log = co
 
   async function stop() {
     abort.abort();
+    smc?.stop();
+    for (const r of sseClients) { try { r.end(); } catch { /* ignore */ } }
     bot?.stop();
     await backup?.flush();
     deriv.close?.();
@@ -386,7 +425,7 @@ export function createApp({ cfg = loadConfig(), store, svc, deriv, bot, log = co
     store.close?.();
   }
 
-  return { server, start, stop, svc, store, notify, checkPriceAlerts, checkSniperFlows };
+  return { server, start, stop, svc, store, notify, checkPriceAlerts, checkSniperFlows, smc };
 }
 
 // ------------------------------------------------------------ main
