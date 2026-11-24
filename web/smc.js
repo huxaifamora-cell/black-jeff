@@ -6,6 +6,8 @@
 const SMC = (() => {
   const KEY = 'bj_smc_v1';
   const COL = { bos: '#6EA8FE', choch: '#FFA94D', idm: '#B197FC', sweep: '#F06292', eq: '#CBD5E1', swing: '#8A94A6' };
+  const HIDE = { choch: 1, sweep: 1 };                                // drawn nowhere: CHoCH marks and liquidity sweeps (the engine still tracks them)
+  const ZN = ['IDM', 'DISR', 'LIQ'];                                  // the 3 newest IDM zones, newest first: inducement, disruption, liquidity zone
   const LAYERS = [['st', 'STRUCTURE'], ['idm', 'IDM'], ['liq', 'LIQUIDITY']];
   let pref = { on: true, st: true, idm: true, liq: true };
   try { Object.assign(pref, JSON.parse(localStorage.getItem(KEY) || '{}')); } catch { /* storage blocked: defaults */ }
@@ -23,7 +25,7 @@ const SMC = (() => {
   function stop() { if (st.ac) { try { st.ac.abort(); } catch { /* ignore */ } st.ac = null; } }
 
   // ------------------------------------------------------------ live stream
-  const NOTABLE = { bos: 1, choch: 1, sweep: 1 };
+  const NOTABLE = { bos: 1 };
   function onSnapshot(snap) {
     st.ann = new Map((snap.annotations || []).map((a) => [a.id, a]));
     st.live = snap.live || []; st.trend = snap.trend || 0; st.state = snap.state || 'live';
@@ -115,7 +117,10 @@ const SMC = (() => {
     const line = (x0, x1, p, col, dash, alpha = 1) => {
       g.globalAlpha = alpha; g.strokeStyle = col; g.setLineDash(dash); g.beginPath(); g.moveTo(x0, Math.round(y(p)) + .5); g.lineTo(x1, Math.round(y(p)) + .5); g.stroke(); g.setLineDash([]); g.globalAlpha = 1;
     };
+    const zr = new Map();                                                                         // zone IDM id -> 0 (IDM), 1 (disruption), 2 (liquidity zone); older zones are not drawn
+    items.filter((a) => a.type === 'idm' && a.hi != null && a.status !== 'void').sort((p, q) => q.t0 - p.t0).slice(0, ZN.length).forEach((a, k) => zr.set(a.id, k));
     for (const a of items.sort((p, q) => (p.t1 ?? p.t0) - (q.t1 ?? q.t0))) {
+      if (HIDE[a.type]) continue;
       const end = a.t1 ?? (a.type === 'idm' ? tEnd : a.t0);
       if (end < cs0 - ivl || a.t0 > tEnd) continue;                                              // outside the visible candles
       const yy = y(a.price); if (yy < 0 || yy > E.Hh) continue;
@@ -133,11 +138,13 @@ const SMC = (() => {
       } else if (a.type === 'idm') {
         if (!pref.idm || a.status === 'void') continue;
         const sw = a.status === 'swept';
-        if (a.hi != null && a.lo != null) {                                                      // zone mode: the IDM is the demand / supply zone of a BOS / CHoCH
+        if (a.hi != null && a.lo != null) {
+          if (!zr.has(a.id)) continue;
+          const nm = ZN[zr.get(a.id)];                                                      // zone mode: the IDM is the demand / supply zone of a BOS / CHoCH
           const yt = Math.round(y(a.hi)), yb = Math.round(y(a.lo)), h = Math.max(2, yb - yt);
           g.globalAlpha = (pv ? .6 : sw ? .75 : 1) * .16; g.fillStyle = COL.idm; g.fillRect(x0, yt, Math.max(2, x1 - x0), h);
           g.globalAlpha = pv ? .6 : sw ? .75 : 1; g.strokeStyle = COL.idm; g.setLineDash([1.5, 3.5]); g.strokeRect(x0 + .5, yt + .5, Math.max(2, x1 - x0), h); g.setLineDash([]); g.globalAlpha = 1;
-          label(1, 'IDM' + (sw ? ' \u2713' : pv ? ' …' : ''), x0 + 18, a.dir === 1 ? yb + fs + 5 : yt - 4, COL.idm, 'center', true, al, true);
+          label(1, nm + (sw ? ' \u2713' : pv ? ' …' : ''), x0 + 18, a.dir === 1 ? yb + fs + 5 : yt - 4, COL.idm, 'center', true, al, true);
           continue;
         }
         line(x0, x1, a.price, COL.idm, [1.5, 3.5], pv ? .6 : sw ? .75 : 1);
@@ -162,7 +169,7 @@ const SMC = (() => {
     text(tag, plotW - 4, 4 + fs + 6, tr === 1 ? '#26A69A' : tr === -1 ? '#EF5350' : '#787B86', 'right', true);
     if (st.flash && Date.now() - st.flash.at < 12000) {
       const a = st.flash.a, d = new Date(a.t1 * 1000), hm = String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
-      text(`${a.dir === 1 ? '▲' : '▼'} ${a.type === 'idm' ? 'IDM \u2713' : a.label} ${hm}`, plotW - 4, 4 + 2 * (fs + 6) + 3, COL[a.type] || '#fff', 'right', true);
+      text(`${a.dir === 1 ? '▲' : '▼'} ${a.type === 'idm' ? (ZN[zr.get(a.id)] || 'IDM') + ' \u2713' : a.label} ${hm}`, plotW - 4, 4 + 2 * (fs + 6) + 3, COL[a.type] || '#fff', 'right', true);
       setTimeout(redraw, 12100 - (Date.now() - st.flash.at));
     }
     g.restore();
