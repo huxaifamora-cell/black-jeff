@@ -49,7 +49,7 @@ Definitions (all numbers are in `smcDefaults` in `server/smc.js`):
 | BOS | a candle **body** closes beyond the latest unbroken swing, in the direction of the trend |
 | CHoCH | a body closes beyond the latest unbroken swing **against** the trend; the trend flips. The first break after a cold start is reported as BOS |
 | Liquidity sweep | a **wick** goes beyond an unbroken swing (or an EQH / EQL pool) but the candle **closes back** inside. High swept = buy-side liquidity (dir -1), low swept = sell-side (dir +1) |
-| Inducement | up trend: the first minor swing low (`internalLen` = 2) after the latest major swing high, at least `idmMinDepthAtr` (0.3) ATR deep. A wick below it = taken (`IDM ✓`). Down trend: mirrored |
+| Inducement | `idmMode: 'zone'` (default): every BOS / CHoCH gets its own IDM, a box on the zone that formed it. Up break = demand zone: the last bearish candle at the lowest low between the broken swing and the break, plus the first bullish candle after it, body to body. Down break = supply zone, mirrored. A wick back into the zone = taken (`IDM ✓`); a body closing through its far side = failed (removed). At most `idmMaxOpen` (4) untouched zones stay on the chart. `idmMode: 'swing'` is the old rule: up trend, the first minor swing low (`internalLen` = 2) after the latest major swing high, at least `idmMinDepthAtr` (0.3) ATR deep; a wick below it = taken. Down trend: mirrored |
 | EQH / EQL | two swings of the same side within `eqTolAtr` (0.1) x ATR form one liquidity pool |
 
 Settings (environment variables, all optional): `SMC=0` (turn off), `SMC_SWING_LEN=5`, `SMC_INTERNAL_LEN=2`, `SMC_TIMEFRAMES=m5,h1,h4`, `SMC_SYMBOLS=V75,V100s` (always watched). Tests: `test/smc.test.js`, `test/smcfeed.test.js`, `test/derivstream.test.js`.
