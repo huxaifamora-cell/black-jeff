@@ -1,4 +1,4 @@
-// SMC overlay: market structure, BOS, CHoCH, inducement (IDM, a box on the demand / supply zone of each BOS / CHoCH), liquidity sweeps and equal highs / lows drawn on the symbol chart.
+// SMC overlay: market structure, BOS, CHoCH, inducement (IDM, a box on the demand / supply zone of the BOS: IDM = latest BOS in the trend direction, DISR = the one before, LIQ = before that), liquidity sweeps and equal highs / lows drawn on the symbol chart.
 // The marks come from the server's SMC engine (server/smc.js) over a live Server-Sent Events stream (/api/smc/stream), which is fed by the Deriv WebSocket,
 // so a BOS or a sweep appears the moment the candle closes, and the forming candle shows a dashed provisional preview.
 //
@@ -7,7 +7,8 @@ const SMC = (() => {
   const KEY = 'bj_smc_v1';
   const COL = { bos: '#6EA8FE', choch: '#FFA94D', idm: '#B197FC', sweep: '#F06292', eq: '#CBD5E1', swing: '#8A94A6' };
   const HIDE = { choch: 1, sweep: 1 };                                // drawn nowhere: CHoCH marks and liquidity sweeps (the engine still tracks them)
-  const ZN = ['IDM', 'DISR', 'LIQ'];                                  // the 3 newest IDM zones, newest first: inducement, disruption, liquidity zone
+  const ZN = { idm: 'IDM', disr: 'DISR', liq: 'LIQ' };                // zone roles set by the engine (latest BOS in the trend direction, the one before, the one before that)
+  const EXT = { idm: 1, disr: 1 };                                    // these boxes run on to the right, slightly past the forming candle
   const LAYERS = [['st', 'STRUCTURE'], ['idm', 'IDM'], ['liq', 'LIQUIDITY']];
   let pref = { on: true, st: true, idm: true, liq: true };
   try { Object.assign(pref, JSON.parse(localStorage.getItem(KEY) || '{}')); } catch { /* storage blocked: defaults */ }
@@ -98,9 +99,9 @@ const SMC = (() => {
     g.save(); g.textBaseline = 'alphabetic'; g.lineWidth = 1.2;
     const hit = (a, r) => a.x < r.x + r.w && a.x + a.w > r.x && a.y < r.y + r.h && a.y + a.h > r.y;
     // a label with a dark backing. nudge: when it would sit on another label (ours, the title, the app's own tags) move it up / down to the nearest free slot, or skip it
-    const text = (s, x, yy, col, align = 'center', bg = true, alpha = 1, nudge = false) => {
+    const text = (s, x, yy, col, align = 'center', bg = true, alpha = 1, nudge = false, lim = plotW) => {
       g.font = `700 ${fs}px ${MONO}`; const w = Math.ceil(g.measureText(s).width) + 6, h = fs + 3;
-      let bx = align === 'center' ? x - w / 2 : align === 'right' ? x - w : x; bx = Math.max(1, Math.min(plotW - w, bx));
+      let bx = align === 'center' ? x - w / 2 : align === 'right' ? x - w : x; bx = Math.max(1, Math.min(lim - w, bx));
       let by = yy - fs;
       if (nudge) {
         let ok = false;
@@ -117,14 +118,14 @@ const SMC = (() => {
     const line = (x0, x1, p, col, dash, alpha = 1) => {
       g.globalAlpha = alpha; g.strokeStyle = col; g.setLineDash(dash); g.beginPath(); g.moveTo(x0, Math.round(y(p)) + .5); g.lineTo(x1, Math.round(y(p)) + .5); g.stroke(); g.setLineDash([]); g.globalAlpha = 1;
     };
-    const zr = new Map();                                                                         // zone IDM id -> 0 (IDM), 1 (disruption), 2 (liquidity zone); older zones are not drawn
-    items.filter((a) => a.type === 'idm' && a.hi != null && a.status !== 'void').sort((p, q) => q.t0 - p.t0).slice(0, ZN.length).forEach((a, k) => zr.set(a.id, k));
+    const padR = Math.min(E.W - 2, plotW + Math.max(54, step * 4));                                 // right edge of the IDM / DISR boxes: past the forming candle
     for (const a of items.sort((p, q) => (p.t1 ?? p.t0) - (q.t1 ?? q.t0))) {
       if (HIDE[a.type]) continue;
-      const end = a.t1 ?? (a.type === 'idm' ? tEnd : a.t0);
+      const ext = a.type === 'idm' && a.zone && EXT[a.role] && a.status !== 'void';                // IDM / DISR box: keeps going to the right, taken or not
+      const end = ext ? tEnd : a.t1 ?? (a.type === 'idm' ? tEnd : a.t0);
       if (end < cs0 - ivl || a.t0 > tEnd) continue;                                              // outside the visible candles
       const yy = y(a.price); if (yy < 0 || yy > E.Hh) continue;
-      const x0 = Math.max(0, X(a.t0)), x1 = Math.min(plotW, X(end)), pv = a.provisional, al = pv ? .6 : 1, dash = pv ? [2, 3] : null;
+      const x0 = Math.max(0, X(a.t0)), x1 = ext ? padR : Math.min(plotW, X(end)), pv = a.provisional, al = pv ? .6 : 1, dash = pv ? [2, 3] : null;
       if (a.type === 'swing') {
         if (!pref.st || step < 5 || !/^(HH|HL|LH|LL)$/.test(a.label) || (E.marks && E.marks.has(a.t0 + '|' + a.label))) continue;      // the app already tags its own order flow swings
         const x = X(a.t0); if (x < 4 || x > plotW - 4) continue;
@@ -139,12 +140,12 @@ const SMC = (() => {
         if (!pref.idm || a.status === 'void') continue;
         const sw = a.status === 'swept';
         if (a.hi != null && a.lo != null) {
-          if (!zr.has(a.id)) continue;
-          const nm = ZN[zr.get(a.id)];                                                      // zone mode: the IDM is the demand / supply zone of a BOS / CHoCH
+          const nm = ZN[a.role]; if (!nm) continue;                                         // zone mode: the demand / supply zone of a BOS, named by its role
           const yt = Math.round(y(a.hi)), yb = Math.round(y(a.lo)), h = Math.max(2, yb - yt);
           g.globalAlpha = (pv ? .6 : sw ? .75 : 1) * .16; g.fillStyle = COL.idm; g.fillRect(x0, yt, Math.max(2, x1 - x0), h);
           g.globalAlpha = pv ? .6 : sw ? .75 : 1; g.strokeStyle = COL.idm; g.setLineDash([1.5, 3.5]); g.strokeRect(x0 + .5, yt + .5, Math.max(2, x1 - x0), h); g.setLineDash([]); g.globalAlpha = 1;
-          label(1, nm + (sw ? ' \u2713' : pv ? ' …' : ''), x0 + 18, a.dir === 1 ? yb + fs + 5 : yt - 4, COL.idm, 'center', true, al, true);
+          if (ext) label(1, nm + (sw ? ' \u2713' : pv ? ' …' : ''), padR - 3, Math.round((yt + yb) / 2) + fs / 2 - 1, COL.idm, 'right', true, al, true, padR);   // inside the box, after the forming candle
+          else label(1, nm + (sw ? ' \u2713' : pv ? ' …' : ''), x0 + 18, a.dir === 1 ? yb + fs + 5 : yt - 4, COL.idm, 'center', true, al, true);
           continue;
         }
         line(x0, x1, a.price, COL.idm, [1.5, 3.5], pv ? .6 : sw ? .75 : 1);
@@ -169,7 +170,7 @@ const SMC = (() => {
     text(tag, plotW - 4, 4 + fs + 6, tr === 1 ? '#26A69A' : tr === -1 ? '#EF5350' : '#787B86', 'right', true);
     if (st.flash && Date.now() - st.flash.at < 12000) {
       const a = st.flash.a, d = new Date(a.t1 * 1000), hm = String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
-      text(`${a.dir === 1 ? '▲' : '▼'} ${a.type === 'idm' ? (ZN[zr.get(a.id)] || 'IDM') + ' \u2713' : a.label} ${hm}`, plotW - 4, 4 + 2 * (fs + 6) + 3, COL[a.type] || '#fff', 'right', true);
+      text(`${a.dir === 1 ? '▲' : '▼'} ${a.type === 'idm' ? (ZN[a.role] || 'IDM') + ' \u2713' : a.label} ${hm}`, plotW - 4, 4 + 2 * (fs + 6) + 3, COL[a.type] || '#fff', 'right', true);
       setTimeout(redraw, 12100 - (Date.now() - st.flash.at));
     }
     g.restore();
