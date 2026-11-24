@@ -250,8 +250,8 @@ Structural liquidity (SLQ) is an opposite-coloured BODY candle between the point
 - The H1 chart labels the newest HH + HL (uptrend) or LL + LH (downtrend).
 - The trend still flips only when an H1 wick goes beyond the disruption POI.
 
-## Hold the chart: price alert, position box, draw
-There are no cards or menu buttons for these any more. Press and hold on the chart (about half a second) to put a line at that price; drag it to fine tune. Three chips under the line pick what it becomes:
-- **ALERT** (default, tag `PRICE ALERT`): `SET` creates the price alert for the timeframe you are on, `X` cancels. A saved alert has an `X` next to its tag to remove it; drag the tag to move it.
+## Hold the chart: price alert, position box, drawing tools
+There are no cards or menu buttons for these. Press and hold on the chart (about half a second) and drag to the price you want. Only three chips show on the line: **PRICE ALERT**, **POSITION BOX**, **DRAWING TOOLS** (and an `X` to cancel). Pick one and the other chips disappear:
+- **PRICE ALERT**: `SET` creates the alert for the timeframe you are on, `X` cancels. A saved alert has an `X` next to its tag to remove it; drag the tag to move it.
 - **POSITION BOX**: the held price is the entry. `BUY` / `SELL` deploys the box with a one-ATR stop and a target at your last risk:reward. Drag the handles to adjust; the selected box has an `X` to remove it.
-- **DRAW** (the bot's Sniper Mode): the held price is your inducement. `BULL` / `BEAR` draws the inducement and disruption boxes (drag the handles), then `ARM` on the chart starts the alerts. Once armed the chart shows `DRAW ARMED` with a `STOP` button. Hold the chart again to draw a new one.
+- **DRAWING TOOLS** (the bot's Sniper Mode): the held price is your inducement. `BULL` / `BEAR` draws the inducement and disruption boxes (drag the handles), then `ARM` on the chart starts the alerts. Once armed the chart shows `DRAW ARMED` with a `STOP` button. Hold the chart again to draw a new one.
