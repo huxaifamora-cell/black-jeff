@@ -11,7 +11,7 @@
 // and down() / move() / up() / near() from the chart's pointer handlers.
 const Snipe = (() => {
   const COL = { ind: '#FFFFFF', dis: '#F5D547' }, NAME = { ind: 'INDUCEMENT', dis: 'DISRUPTION' }, num = Number.isFinite;
-  let sym = null, flow = null, suggest = null, panel = false, draft = null, drag = null, lastLoad = 0, digits = 2, note = '', busy = false;
+  let sym = null, flow = null, suggest = null, panel = false, draft = null, drag = null, lastLoad = 0, digits = 2, note = '', busy = false, noteTimer = null;
 
   const canvas = () => document.getElementById('chart');
   const redraw = () => { const cv = canvas(), c = cv && cv._ctx; if (c) chart(cv, c.s, c.tf, c.name); };
@@ -56,8 +56,9 @@ const Snipe = (() => {
 
   // ---------------------------------------------------------------- card
   const SCOPE = 'M12 3v4M12 17v4M3 12h4M17 12h4M12 9a3 3 0 100 6 3 3 0 000-6zM5.6 5.6l2 2M16.4 16.4l2 2M18.4 5.6l-2 2M7.6 16.4l-2 2';
-  const btnHtml = () => `<button data-sn="panel" class="snbtn${panel ? ' on' : ''}" aria-label="Open Sniper Mode"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="${SCOPE}"/></svg><span>Sniper mode</span></button>`;
-  const toolsHtml = () => `<div class="pplan snipe" hidden>
+  const btnHtmlOld = () => `<button data-sn="panel" class="snbtn${panel ? ' on' : ''}" aria-label="Open Sniper Mode"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="${SCOPE}"/></svg><span>Sniper mode</span></button>`;
+  const btnHtml = () => '', toolsHtml = () => '';                              // no card and no menu button any more: Draw starts from holding the chart
+  const toolsHtmlOld = () => `<div class="pplan snipe" hidden>
       <div class="pp-head"><b>SNIPER MODE</b><span class="pinfo"></span></div>
       <p class="pa-help">Set your own order flow: pick the direction and drag the two boxes on the chart. Then arm it. The bot messages you for every new break of structure, change of structure, reclamation, key level and QML, and when your disruption is invalidated.</p>
       <div class="pp-dir"><button data-sn="bull">BULLISH FLOW</button><button data-sn="bear">BEARISH FLOW</button></div>
@@ -116,10 +117,10 @@ const Snipe = (() => {
       if (a === 'arm') {
         if (!draft) return;
         const r = await api('/api/sniper', { method: 'POST', body: JSON.stringify({ symbol: sym, dir: draft.dir, ind: draft.ind, dis: draft.dis }) });
-        flow = r.flow; draft = copy(flow); note = 'Armed. You will get a message here for every new event on this symbol.';
+        flow = r.flow; draft = null; panel = false; note = 'Armed. You will get a message here for every new event on this symbol.';
       } else if (a === 'stop' && flow) {
         await api('/api/sniper/delete', { method: 'POST', body: JSON.stringify({ id: flow.id }) });
-        flow = null; note = 'Sniper Mode is off for this symbol.';
+        flow = null; draft = null; panel = false; note = 'Draw is off for this symbol.';
       }
     } catch (e) { note = String(e.message || e); }
     busy = false; sync(); redraw();
@@ -127,10 +128,15 @@ const Snipe = (() => {
 
   // ---------------------------------------------------------------- chart hooks
   function draw(g, cv, E) {
-    const geo = cv._sn = { env: E, handles: [] };
+    const geo = cv._sn = { env: E, handles: [], btns: [] };
     digits = E.digits;
     if (Date.now() - lastLoad > 15000 && sym && !drag && !panel) load(sym);          // a flow that ended on the server shows up here
-    const shown = panel ? draft : flow; if (!shown) return;
+    const shown = panel ? draft : flow;
+    if (note && !noteTimer) noteTimer = setTimeout(() => { note = ''; noteTimer = null; redraw(); }, 6000);
+    if (note) { g.font = `700 ${E.FS}px ${E.MONO}`; g.fillStyle = /^Armed|^Draw/.test(note) ? '#5AFF64' : '#FF8A7A'; g.textBaseline = 'alphabetic'; const words = note.split(' '), lines = [''], mw = E.plotW - 10;
+      for (const w of words) { const t = (lines[lines.length - 1] + ' ' + w).trim(); if (g.measureText(t).width > mw && lines[lines.length - 1]) lines.push(w); else lines[lines.length - 1] = t; }
+      lines.slice(0, 3).forEach((l, i, a) => g.fillText(l, 6, E.Hh - 8 - (a.length - 1 - i) * (E.FS + 3))); }
+    if (!shown) return;
     const { FS, MONO, Y } = E, X = t => (t - E.cs0) / E.ivl * E.step + E.step / 2, editing = panel;
     g.font = `700 ${FS}px ${MONO}`; g.textBaseline = 'middle';
     for (const k of ['dis', 'ind']) {
@@ -148,6 +154,12 @@ const Snipe = (() => {
         }
       }
     }
+    // buttons, right-aligned just above the inducement box: ARM and X while you are placing it, a STOP button once it is armed
+    { const b = shown.ind, th = E.LH + 6, yT = Y(b.hi), by = Math.max(2, Math.min(E.Hh - th - 2, yT - th - 6 - (E.FS + 4)));
+      const btns = editing ? [['arm', busy ? 'ARMING...' : flow ? 'RE-ARM' : 'ARM', '#5AFF64', '#0C1109'], ['close', '✕', '#B03A2E', '#fff']] : [['stop', 'STOP', '#B03A2E', '#fff']];
+      let bx = E.plotW - 4; g.textBaseline = 'middle';
+      for (const [id, lab, bg, fg] of btns.reverse()) { const w = Math.ceil(g.measureText(lab).width) + 16; bx -= w; g.fillStyle = bg; g.fillRect(bx, by, w, th); g.fillStyle = fg; g.fillText(lab, bx + 8, by + th / 2 + .5); geo.btns.push({ id, x: bx, y: by, w, h: th }); bx -= 6; }
+      if (!editing) { g.fillStyle = '#5AFF64'; g.fillText('DRAW ARMED', bx - Math.ceil(g.measureText('DRAW ARMED').width) + 2, by + th / 2 + .5); } }
     g.lineWidth = 1; g.textBaseline = 'alphabetic'; g.font = `${FS}px ${MONO}`;
   }
 
@@ -160,9 +172,12 @@ const Snipe = (() => {
     for (const h of cv._sn.handles) { const d = Math.hypot(h.x - pt.x, h.y - pt.y); if (d <= bd) { bd = d; best = h; } }
     return best;
   };
-  const near = (cv, t) => !!(cv._sn && handleAt(cv, local(cv, t), 24));              // a finger on a handle: the page must not scroll
+  const btnAt = (cv, pt, reach) => (cv._sn ? cv._sn.btns : []).find(b => pt.x >= b.x - reach && pt.x <= b.x + b.w + reach && pt.y >= b.y - reach && pt.y <= b.y + b.h + reach) || null;
+  const near = (cv, t) => !!(cv._sn && (handleAt(cv, local(cv, t), 24) || btnAt(cv, local(cv, t), 6)));              // a finger on a handle: the page must not scroll
   function down(cv, e) {
-    if (!cv._sn || !panel || !draft) return false;
+    if (!cv._sn) return false;
+    const bt = btnAt(cv, local(cv, e), e.pointerType === 'mouse' ? 2 : 8); if (bt) { act(bt.id); return true; }
+    if (!panel || !draft) return false;
     const pt = local(cv, e), h = handleAt(cv, pt, e.pointerType === 'mouse' ? 11 : 22), E = cv._sn.env;
     if (!h) return false;
     drag = { id: h.id, k: h.k, pid: e.pointerId, start: { ...draft[h.id] }, price0: E.toPrice(pt.y), time0: E.toTime(pt.x) };

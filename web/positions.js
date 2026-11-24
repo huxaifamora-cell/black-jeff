@@ -52,7 +52,7 @@ const Pos = (() => {
   };
   const field = (f, label, hint) => `<label class="pf"><span>${label}<small>${hint}</small></span><input data-f="${f}" type="number" inputmode="decimal" step="any" autocomplete="off"></label>`;
   // the BATTLE PLAN button itself lives in the mini menu that app.js draws (.tmenu); this is the card it opens
-  const toolsHtml = () => `<div class="pplan" hidden>
+  const toolsHtmlOld = () => `<div class="pplan" hidden>
       <div class="pp-head"><b>BATTLE PLAN</b><span class="pp-mode"></span><span class="pinfo"></span><button data-p="eye" aria-label="Show or hide all plan boxes"></button></div>
       <div class="pp-dir"><button data-p="long">&#9650; BULLISH <small>(buy)</small></button><button data-p="short">&#9660; BEARISH <small>(sell)</small></button></div>
       <div class="pp-grid">${field('entry', 'ENTRY', 'where you get in')}${field('sl', 'STOP LOSS', 'where you admit you are wrong')}${field('tp', 'TAKE PROFIT', 'where you cash out')}
@@ -60,6 +60,8 @@ const Pos = (() => {
       <div class="pp-msg" role="alert"></div>
       <div class="pp-act"><button data-p="deploy" class="pp-go">DEPLOY ON CHART</button><button data-p="new">NEW PLAN</button><button data-p="lock"></button><button data-p="del" class="pp-del">REMOVE</button></div>
     </div>`;
+
+  const toolsHtml = () => '';                                                  // no card any more: a position box is made by holding the chart
 
   function sync() {
     const root = document.querySelector('.pplan'); if (!root) return;
@@ -188,7 +190,10 @@ const Pos = (() => {
         g.lineWidth = 1.5; g.strokeStyle = BLUE; g.fillStyle = '#0C1109';
         hs.forEach(h => { g.fillRect(h.x - 5, h.y - 5, 10, 10); g.strokeRect(h.x - 5, h.y - 5, 10, 10); });
       }
-      geo.items.push({ id: p.id, handles: hs, body: { x: L, y: Math.min(yS, yT), w: R - L, h: Math.abs(yS - yT) } });
+      let del = null;
+      if (isSel) { const bx = clamp(L + 24, 4, W - 26), by = clamp(Math.min(yS, yT) - 22, 2, Hh - 22); del = { x: bx, y: by, w: 22, h: 20 };
+        g.fillStyle = '#B03A2E'; g.fillRect(del.x, del.y, del.w, del.h); g.fillStyle = '#fff'; g.textAlign = 'center'; g.fillText('✕', del.x + 11, del.y + 10.5); g.textAlign = 'left'; taken.push(del); }
+      geo.items.push({ id: p.id, del, handles: hs, body: { x: L, y: Math.min(yS, yT), w: R - L, h: Math.abs(yS - yT) } });
     }
     g.lineWidth = 1; g.textBaseline = 'alphabetic'; g.font = `${FS}px ${MONO}`;
   }
@@ -211,11 +216,13 @@ const Pos = (() => {
   };
   const reachFor = e => e.pointerType === 'mouse' || e.type === 'mousemove' ? 11 : 22;     // fingers get a bigger target
   // true when this touch starts on a handle (app.js then stops the page from scrolling under the finger)
-  function near(cv, t) { if (!cv._pos) return false; return !!handleAt(cv, local(cv, t), 24); }
+  function near(cv, t) { if (!cv._pos) return false; const pt = local(cv, t); return !!handleAt(cv, pt, 24) || cv._pos.items.some(i => i.id === sel && i.del && pt.x >= i.del.x - 4 && pt.x <= i.del.x + i.del.w + 4 && pt.y >= i.del.y - 4 && pt.y <= i.del.y + i.del.h + 4); }
   // pointer went down: true = a handle was grabbed (no panning), false = let the chart pan as usual
   function down(cv, e) {
     if (!cv._pos || hidden) return false;
     const pt = local(cv, e), h = handleAt(cv, pt, reachFor(e)), E = cv._pos.env;
+    const dl = cv._pos.items.find(i => i.id === sel && i.del && pt.x >= i.del.x - 4 && pt.x <= i.del.x + i.del.w + 4 && pt.y >= i.del.y - 4 && pt.y <= i.del.y + i.del.h + 4);
+    if (dl) { items = items.filter(i => i.id !== dl.id); sel = items.length ? items[items.length - 1].id : null; save(); redraw(); return true; }     // X: remove this box
     if (h) {
       const p = items.find(i => i.id === h.id); if (!p || p.locked) return false;
       drag = { id: p.id, k: h.k, pid: e.pointerId, start: { ...p }, price0: E.toPrice(pt.y), time0: E.toTime(pt.x) };

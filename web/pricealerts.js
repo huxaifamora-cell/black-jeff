@@ -33,8 +33,8 @@ const PA = (() => {
 
   // ---------------------------------------------------------------- card
   const BELL = 'M6 9a6 6 0 0112 0c0 6 2 7 2 7H4s2-1 2-7M10 20a2 2 0 004 0';
-  const btnHtml = () => `<button data-pa="panel" class="pabtn${panel ? ' on' : ''}" aria-label="Set a price alert"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="${BELL}"/></svg><span>Price alert</span></button>`;
-  const toolsHtml = () => `<div class="pplan palert" hidden>
+  const btnHtmlOld = () => `<button data-pa="panel" class="pabtn${panel ? ' on' : ''}" aria-label="Set a price alert"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="${BELL}"/></svg><span>Price alert</span></button>`;
+  const toolsHtmlOld = () => `<div class="pplan palert" hidden>
       <div class="pp-head"><b>PRICE ALERT</b><span class="pinfo"></span></div>
       <p class="pa-help">Tap the chart where you want the alert, or drag the gold tag. The bot messages you when price gets there.</p>
       <label class="pf"><span>ALERT PRICE<small class="pa-dist"></small></span><input data-pa-f type="number" inputmode="decimal" step="any" autocomplete="off"></label>
@@ -42,6 +42,7 @@ const PA = (() => {
       <div class="pp-act"><button data-pa="set" class="pp-go">SET ALERT</button><button data-pa="cancel">CLOSE</button></div>
       <div class="pa-list"></div>
     </div>`;
+  const btnHtml = () => '', toolsHtml = () => '';                                // no card and no menu button any more: everything starts from holding the chart
   const root = () => document.querySelector('.palert');
 
   function sync() {
@@ -115,10 +116,14 @@ const PA = (() => {
       if (drag && drag.id === r.id && drag.price !== undefined) r.price = drag.price;
       const y0 = Y(r.price), y = Math.max(th / 2 + 2, Math.min(Hh - th / 2 - 2, y0)), off = y0 !== y, up = r.price > live();
       g.strokeStyle = r.isDraft ? '#FFFFFF' : GOLD; g.setLineDash(r.isDraft ? [3, 3] : [7, 4]); g.beginPath(); g.moveTo(0, y); g.lineTo(W, y); g.stroke(); g.setLineDash([]);
-      const text = r.quick && qm !== 'alert' ? `${qm === 'plan' ? 'BATTLE PLAN' : 'SNIPER MODE'} ${r.price.toFixed(E.digits)}` : `${r.isDraft ? 'PRICE ALERT' : 'ALERT'} ${up ? '▲' : '▼'} ${r.price.toFixed(E.digits)}`, w = tw(text) + 4, x = 4, top = y - th / 2;
+      const text = r.quick && qm !== 'alert' ? `${qm === 'plan' ? 'POSITION BOX' : 'DRAW'} ${r.price.toFixed(E.digits)}` : `${r.isDraft ? 'PRICE ALERT' : 'ALERT'} ${up ? '▲' : '▼'} ${r.price.toFixed(E.digits)}`, w = tw(text) + 4, x = 4, top = y - th / 2;
       g.fillStyle = r.isDraft ? '#FFFFFF' : GOLD; g.globalAlpha = off ? .75 : 1; g.fillRect(x, top, w, th); g.globalAlpha = 1;
       g.fillStyle = '#0C1109'; g.fillText(text, x + 7, y + .5);
       taken.push({ x, y: top, w, h: th }); geo.tags.push({ id: r.id, x, y: top, w, h: th, isDraft: r.isDraft });
+      if (!r.isDraft) {                                                           // a saved alert: an X next to its tag removes it
+        const bw = th + 4, bx = x + w + 6; g.fillStyle = '#B03A2E'; g.fillRect(bx, top, bw, th); g.fillStyle = '#fff'; g.fillText('✕', bx + 8, y + .5);
+        geo.tags.push({ id: 'del-' + r.id, x: bx, y: top, w: bw, h: th }); taken.push({ x: bx, y: top, w: bw, h: th });
+      }
       if (r.quick) {                                                              // action buttons next to the tag, mode chips under it, and a message when it did not work
         const btn = (id, label, bg, fg, bx, w0) => { const bw = w0 || tw(label) + 14; g.fillStyle = bg; g.fillRect(bx, top, bw, th); g.fillStyle = fg; g.fillText(label, bx + 7, y + .5); geo.tags.push({ id, x: bx, y: top, w: bw, h: th }); return bw; };
         let bx = x + w + 6;
@@ -134,7 +139,7 @@ const PA = (() => {
         taken.push({ x, y: top, w: bx - x, h: th });
         const cy = top + th + 4 + th > Hh - 2 ? top - th - 4 : top + th + 4;      // chips: PRICE ALERT / BATTLE PLAN / SNIPER (below the line, above it when there is no room)
         let cx = x;
-        for (const [m, lab] of [['alert', 'ALERT'], ['plan', 'PLAN'], ['snipe', 'SNIPER']]) {
+        for (const [m, lab] of [['alert', 'ALERT'], ['plan', 'POSITION BOX'], ['snipe', 'DRAW']]) {
           const cw = tw(lab) + 8, on = qm === m;
           g.fillStyle = on ? '#FFFFFF' : '#1B222B'; g.fillRect(cx, cy, cw, th - 4); g.strokeStyle = '#FFFFFF'; g.lineWidth = 1; g.strokeRect(cx + .5, cy + .5, cw - 1, th - 5); g.lineWidth = 1.5;
           g.fillStyle = on ? '#0C1109' : '#FFFFFF'; g.fillText(lab, cx + 4, cy + (th - 4) / 2 + .5);
@@ -157,13 +162,13 @@ const PA = (() => {
     if (!cv._pa) return false;
     const pt = local(cv, e), t = tagAt(cv, pt, e.pointerType === 'mouse' ? 4 : 14), E = cv._pa.env;
     if (t && t.id === 'qset') { quickSet(); return true; }                          // the buttons act at once
+    if (t && t.id.startsWith('del-')) { act('del', t.id.slice(4)); return true; }
     if (t && t.id === 'qx') { qd = null; qNote = ''; redraw(); return true; }
     if (t && t.id.startsWith('qm-')) { qm = t.id.slice(3); qNote = ''; redraw(); return true; }                    // pick what the held line becomes
     if (t && (t.id === 'qa+' || t.id === 'qa-')) { quickGo(t.id === 'qa+' ? 1 : -1); return true; }
     if (t) { drag = { id: t.id, pid: e.pointerId }; cv._freeze = { lo: E.lo, hi: E.hi }; tap = null; return true; }
     clearHold();
-    const blocked = (typeof Pos !== 'undefined' && Pos.isOpen()) || (typeof Snipe !== 'undefined' && Snipe.isOpen());
-    if (!panel && !blocked && pt.x < E.plotW && e.isPrimary !== false)               // hold the chart (about half a second, finger not moving) to make a quick alert
+    if (!panel && pt.x < E.plotW && e.isPrimary !== false)               // hold the chart (about half a second, finger not moving) to make a quick alert
       hold = { pid: e.pointerId, x: e.clientX, y: e.clientY, cv, e: { clientX: e.clientX, clientY: e.clientY }, timer: setTimeout(startHold, 450) };
     tap = panel ? { x: e.clientX, y: e.clientY, pid: e.pointerId } : null;          // with the card open, a tap on the chart picks the price
     return false;
@@ -172,7 +177,7 @@ const PA = (() => {
   function startHold() {
     const h = hold; hold = null; if (!h || !h.cv._pa || !h.cv.isConnected) return;
     const E = h.cv._pa.env, p = E.toPrice(local(h.cv, h.e).y); if (!(p > 0)) return;
-    qd = Math.round(p * Math.pow(10, digits)) / Math.pow(10, digits); qNote = ''; qt = E.toTime(local(h.cv, h.e).x);
+    qd = Math.round(p * Math.pow(10, digits)) / Math.pow(10, digits); qNote = ''; qm = 'alert'; qt = E.toTime(local(h.cv, h.e).x);
     drag = { id: 'quick', pid: h.pid, price: qd }; h.cv._freeze = { lo: E.lo, hi: E.hi };   // the finger can keep dragging the line to the exact price
     try { window.Telegram.WebApp.HapticFeedback.impactOccurred('medium'); } catch { /* not in Telegram */ }
     redraw();

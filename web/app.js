@@ -152,16 +152,13 @@ function drawSymbol(v, alerts) {
   const stp = v.steps.map(x => `<div class="rt ${x.state}"><i>${x.state === 'done' ? '&#10003;' : x.state === 'now' ? '&#9679;' : '&#9675;'}</i><b>${x.k}</b> ${esc(x.text)}</div>`).join('');
   const ic = d => `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${d}"/></svg>`;
   const MENU = [
-    ['panel', 'Battle plan', 'M12 2v5M12 17v5M2 12h5M17 12h5M12 8.5a3.5 3.5 0 100 7 3.5 3.5 0 000-7z', Pos.isOpen()],   // crosshair
     ['alerts', 'Symbol alerts', 'M12 3l10 17H2zM12 10v4.5M12 17.2v.3', showAlerts],                                      // warning triangle
     ['details', 'View details', 'M6 3h12v18H6zM9 7h6M9 11h6M9 15h4', showDetails],                                        // field dossier
   ];
-  const menu = `<div class="tmenu" role="group" aria-label="Symbol tools">${MENU.map(([k, name, d, on]) => k === 'panel'
-    ? `<button data-p="panel" class="planbtn${on ? ' on' : ''}" aria-label="Open the battle plan card">${ic(d)}<span>${name}</span></button>`
-    : `<button data-m="${k}" class="${on ? 'on' : ''}" aria-expanded="${on}">${ic(d)}<span>${name}</span></button>`).join('') + PA.btnHtml() + Snipe.btnHtml()}</div>`;
+  const menu = `<div class="tmenu" role="group" aria-label="Symbol tools">${MENU.map(([k, name, d, on]) => `<button data-m="${k}" class="${on ? 'on' : ''}" aria-expanded="${on}">${ic(d)}<span>${name}</span></button>`).join('')}</div>`;
   h += `<div class="ctl"><div class="ctl-g"><small class="ctl-t">Timeframe</small><div class="pills" role="group" aria-label="Timeframe">${['m5', 'h1', 'h4'].map(x => `<button data-tf="${x}" class="${x === tf ? 'on' : ''}">${x.toUpperCase()}</button>`).join('')}</div></div>
       <div class="ctl-g zg"><small class="ctl-t">Chart zoom</small><div class="pills zbtns" role="group" aria-label="Chart zoom"><button data-z="out" aria-label="Zoom out">&minus;</button><button data-z="in" aria-label="Zoom in">+</button><button data-z="reset" aria-label="Reset zoom">&#8634;</button></div></div></div>
-    <canvas id="chart"></canvas><div class="small"><span class="livedot"></span>LIVE &middot; updated <span id="lvUp">${T(s.updated)}</span> &middot; hold the chart for a price alert, battle plan or sniper mode</div>` + menu + Pos.toolsHtml() + PA.toolsHtml() + Snipe.toolsHtml() +
+    <canvas id="chart"></canvas><div class="small"><span class="livedot"></span>LIVE &middot; updated <span id="lvUp">${T(s.updated)}</span> &middot; hold the chart: price alert, position box or draw</div>` + menu +
     (showDetails ? `<div class="dtl"><div class="small">${done} of 4 steps cleared. ${nextWp ? `Next: <span class="px">${nextWp.k}</span> &middot; ${esc(nextWp.text)}` : 'All steps cleared.'}</div><div class="rts">${stp}</div>` + cards(s, d) + `</div>` : '') +
     (showAlerts ? `<h3>Alerts for this symbol</h3>` + symAlerts(alerts) + `<div class="row"><button class="btn" id="mute">Mute alerts for this symbol</button></div>` : '');
   view.innerHTML = h; Pos.bind(); PA.bind(); Snipe.bind();
@@ -171,7 +168,7 @@ function drawSymbol(v, alerts) {
   view.querySelectorAll('.pills button[data-z]').forEach(b => b.onclick = () => { const cv = document.getElementById('chart'); if (b.dataset.z === 'reset') zoomReset(cv); else zoomBy(cv, b.dataset.z === 'in' ? 1 / 1.3 : 1.3); });
   view.querySelectorAll('.snav button').forEach(b => b.onclick = () => { symConcept = b.dataset.sc; drawSymbol(v, alerts); });
   view.querySelectorAll('.ksub button').forEach(b => b.onclick = () => { kSub = b.dataset.ks; drawSymbol(v, alerts); });
-  view.querySelectorAll('.tmenu button[data-m]').forEach(b => b.onclick = () => { Pos.close(); if (b.dataset.m === 'alerts') { showAlerts = !showAlerts; showDetails = false; } else { showDetails = !showDetails; showAlerts = false; } drawSymbol(v, alerts); });   // one section open at a time
+  view.querySelectorAll('.tmenu button[data-m]').forEach(b => b.onclick = () => { if (b.dataset.m === 'alerts') { showAlerts = !showAlerts; showDetails = false; } else { showDetails = !showDetails; showAlerts = false; } drawSymbol(v, alerts); });   // one section open at a time
   const pb = view.querySelector('.tmenu .planbtn'); if (pb) pb.addEventListener('click', () => { if (showAlerts || showDetails) { showAlerts = showDetails = false; drawSymbol(v, alerts); } });   // opening the plan closes the other two
   const mute = document.getElementById('mute'); if (mute) mute.onclick = async () => {
     const { me } = await api('/api/me'); const m = new Set(me.muted); m.add(current);
@@ -242,7 +239,7 @@ function panBy(cv, dCandles) {
 }
 function zoomReset(cv) { const c = cv._ctx; if (!c) return; ZOOM[c.tf] = { n: ZOOM_DEF, off: 0 }; chart(cv, c.s, c.tf, c.name); }
 function bindZoom(cv) {                                   // once per canvas element: wheel, drag to pan, pinch, double tap to reset
-  if (cv._zoomBound) return; cv._zoomBound = true; cv.style.touchAction = 'pan-y'; cv.style.cursor = 'grab'; cv.addEventListener('contextmenu', e => e.preventDefault());     // holding the chart starts a price alert / battle plan / sniper mode, not a phone menu
+  if (cv._zoomBound) return; cv._zoomBound = true; cv.style.touchAction = 'pan-y'; cv.style.cursor = 'grab'; cv.addEventListener('contextmenu', e => e.preventDefault());     // holding the chart starts a price alert / position box / draw, not a phone menu
   const geo = () => cv._geom || { plotW: cv.clientWidth, step: 6 };
   const frac = x => Math.max(0, Math.min(1, x / Math.max(1, geo().plotW)));
   const pts = new Map(); let lastX = 0, pinch = 0, acc = 0, lastTap = 0;
