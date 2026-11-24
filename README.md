@@ -262,3 +262,6 @@ Inside the M5 key level POI box (the H1 box when there is no M5 order block) the
 - Engulf: its body covers the body of the opposite candle before it.
 - Star: a long candle, a small body (at most half of it, at its far end, touching the box), then a candle of the other colour that closes beyond the middle of the first body.
 The 50% POI / bjeff zone and QML confirmations are unchanged.
+
+## Chart look (TradingView style)
+Dark navy canvas (`#131722`), faint grid at round prices and round times, teal `#089981` / red `#F23645` candles with wicks in the body colour, a time axis along the bottom (hours, bold day numbers at midnight, month name on the 1st; in your local time), price numbers on the right edge (hidden where a label or zone sits), and the last price as a filled tag in the colour of the live candle. The Telegram alert charts use the same palette.
