@@ -34,8 +34,8 @@ const textWidth = (s, k) => Math.max(0, String(s).length * 6 * k - k);
 // ---------------------------------------------------------------- tiny raster
 const SS = 2;                                       // shapes are drawn at 2x and averaged down (smooth edges), text is drawn after at 1x
 const hex = (h) => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
-const C = { bg: hex('#0B0F14'), grid: hex('#1B232D'), text: hex('#8A94A6'), bright: hex('#E6EAF0'), up: hex('#5AFF64'), dn: hex('#FF6955'),
-  gold: hex('#E3C16A'), blue: hex('#59A7FF'), white: hex('#FFFFFF'), axis: hex('#B4BCC9') };
+const C = { bg: hex('#131722'), grid: hex('#2A2E39'), text: hex('#787B86'), bright: hex('#D1D4DC'), up: hex('#089981'), dn: hex('#F23645'),
+  gold: hex('#E3C16A'), blue: hex('#59A7FF'), white: hex('#FFFFFF'), axis: hex('#B2B5BE') };
 
 class Canvas {
   constructor(w, h) { this.w = w; this.h = h; this.W = w * SS; this.H = h * SS; this.px = new Uint8Array(this.W * this.H * 3); this.fill(C.bg); }
@@ -190,12 +190,12 @@ export function renderChart(snap, { width = 1280, height = 720 } = {}) {
   const lab = String(snap.label || '');
   if (lab) {
     const w = textWidth(lab, KH) + 32, x = Math.min(Math.max(L + 2, X(ei) - w / 2), L + pw - w), y0 = 16 + 7 * KH + 14;
-    cv.box(Math.round(x), y0, Math.round(x + w), y0 + TAGH, tone); cv.text(lab, x + 16, y0 + 7, KH, [11, 15, 20]);
+    cv.box(Math.round(x), y0, Math.round(x + w), y0 + TAGH, tone); cv.text(lab, x + 16, y0 + 7, KH, [255, 255, 255]);
   }
   for (const l of plan) { const y = Y(l.y), s = `${l.label} ${l.y.toFixed(dg)}`, col = l.tone === 'sl' ? C.dn : l.tone === 'tp' ? C.up : C.gold; const ty = Math.round(y - 7 * KA - GAPY - 5); cv.box(L + 4, ty - 4, L + 4 + textWidth(s, KA) + 12, ty + 7 * KA + 4, C.bg); cv.text(s, L + 10, ty, KA, col); }
   if (box && box.label) { const y = Y(Math.min(box.hi, hi)); cv.text(box.label, L + pw - textWidth(box.label, KA) - 10, y + 8, KA, C.bright); }
   // last price tag
-  cv.box(L + pw + 4, Math.round(ly - th / 2), width - 4, Math.round(ly + th / 2), lc); cv.text(lp.toFixed(dg), L + pw + 14, mid(ly, KA), KA, [11, 15, 20]);
+  cv.box(L + pw + 4, Math.round(ly - th / 2), width - 4, Math.round(ly + th / 2), lc); cv.text(lp.toFixed(dg), L + pw + 14, mid(ly, KA), KA, [255, 255, 255]);
   cv.text('UTC', L + pw + 14, T + ph + 12, KA, C.axis);
   return png(width, height, cv.out);
 }
