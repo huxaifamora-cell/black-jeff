@@ -26,6 +26,34 @@ The first plan starts at 1:1 and each new plan starts from the ratio you used la
 - Boxes are anchored to time and price, so they stay put across M5 / H1 / H4, zoom, pan and the live refresh. They are saved per symbol in the browser (`localStorage`, key `bj_pos_v1`).
 - The suggested stop is one ATR of the timeframe (never less than two label heights on screen).
 
+## SMC indicator (market structure, BOS, CHoCH, inducement, liquidity sweeps)
+
+A second overlay on the symbol chart, separate from the SORK engine. It maps **market structure** (HH / HL / LH / LL), **BOS**, **CHoCH**, **inducement (IDM)**,
+**liquidity sweeps** and **equal highs / lows** straight from the live Deriv WebSocket, and draws them on the chart as the candles close.
+Use the chips under the timeframe buttons: **SMC** (on / off), **STRUCTURE**, **IDM**, **LIQUIDITY**. The choice is remembered in the browser (`bj_smc_v1`).
+
+How the data flows (no polling, no extra dependencies):
+
+1. `server/deriv.js` has `subscribeCandles()`: a live `ticks_history` (`style: candles`, `subscribe: 1`) subscription on the same WebSocket the bot already uses. Its `ohlc` messages are routed by `req_id` (or the subscription id).
+2. `server/smcfeed.js` keeps one `SmcEngine` per (symbol, timeframe) that somebody is looking at, seeds it from the subscription history, closes a candle when the next `open_time` arrives
+   (it re-reads the official closed candle first), resubscribes after a dropped socket and rebuilds after a gap. Idle subscriptions stop after 10 minutes. `SMC_SYMBOLS` keeps chosen symbols always on.
+3. `server/smc.js` is the engine: pure and incremental, no repainting (a mark is only committed when a candle **closes**; the forming candle only shows a dashed `...` preview).
+4. `GET /api/smc?symbol=V75&tf=m5` returns the current marks. `GET /api/smc/stream?symbol=V75&tf=m5` is a Server-Sent Events stream with `snapshot`, `update` (a candle closed: new / changed marks) and `live` (provisional marks). Same Telegram login as the other API calls.
+5. `web/smc.js` draws the marks. Add your own consumer (alerts, a bot message, a strategy) by listening to the feed in `createApp`: `app.smc.on('update', ({ sym, tf, changed }) => ...)`.
+
+Definitions (all numbers are in `smcDefaults` in `server/smc.js`):
+
+| Mark | Rule |
+|---|---|
+| Swing | pivot with `swingLen` (5) candles on each side, confirmed that many candles later |
+| BOS | a candle **body** closes beyond the latest unbroken swing, in the direction of the trend |
+| CHoCH | a body closes beyond the latest unbroken swing **against** the trend; the trend flips. The first break after a cold start is reported as BOS |
+| Liquidity sweep | a **wick** goes beyond an unbroken swing (or an EQH / EQL pool) but the candle **closes back** inside. High swept = buy-side liquidity (dir -1), low swept = sell-side (dir +1) |
+| Inducement | up trend: the first minor swing low (`internalLen` = 2) after the latest major swing high, at least `idmMinDepthAtr` (0.3) ATR deep. A wick below it = taken (`IDM ✓`). Down trend: mirrored |
+| EQH / EQL | two swings of the same side within `eqTolAtr` (0.1) x ATR form one liquidity pool |
+
+Settings (environment variables, all optional): `SMC=0` (turn off), `SMC_SWING_LEN=5`, `SMC_INTERNAL_LEN=2`, `SMC_TIMEFRAMES=m5,h1,h4`, `SMC_SYMBOLS=V75,V100s` (always watched). Tests: `test/smc.test.js`, `test/smcfeed.test.js`, `test/derivstream.test.js`.
+
 ## Deploy on Render (plain Web Service)
 
 No Blueprint, no database and no disk. Everything is a normal Render **Web Service** with environment variables.
