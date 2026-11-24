@@ -211,6 +211,8 @@ function cards(s, d) {
   return h;
 }
 // Zone colours avoid the candle colours (green up, red-orange down) and the cyan live-price line.
+// TradingView look: dark navy canvas, faint grid, teal / red candles with wicks in the body colour, muted axis text.
+const TV = { bg: '#131722', grid: '#2A2E39', text: '#B2B5BE', dim: '#787B86', up: '#089981', dn: '#F23645', upTxt: '#26A69A', dnTxt: '#EF5350' };
 const TONE = { s: '#8A94A6', o: '#FFFFFF', k: '#8DC3FF', qml: '#A9B1BD', pending: '#5d6875', dead: '#6B7480', adv: '#E3C16A', adv2: '#4A7CFF', dis: '#F5D547', bos: '#9AA3B2' };   // dis = disruption POI, yellowish
 // Which overlays each timeframe shows (everything else is hidden, not deleted: the engine still computes and alerts on it).
 //  H4: BOS lines.  H1: inducement, disruption, key level POI, QML POI.  M5: key level POI with its 50% POI, and the bjeff zone.
@@ -271,7 +273,7 @@ function chart(cv, s, tf, name) {
   const dpr = Math.max(window.devicePixelRatio || 1, 2), Hh = wide ? 440 : 340;   // always draw at 2x or more, so a normal desktop screen is as sharp as a phone
   const FS = wide ? 13 : 11, MONO = '"JetBrains Mono", ui-monospace, monospace';
   cv.style.height = Hh + 'px'; cv.width = W * dpr; cv.height = Hh * dpr;
-  const g = cv.getContext('2d'); g.scale(dpr, dpr);
+  const g = cv.getContext('2d'); g.scale(dpr, dpr); g.fillStyle = TV.bg; g.fillRect(0, 0, W, Hh);
   const all = s.candles[tf] || []; if (!all.length) return;
   cv._ctx = { s, tf, name }; bindZoom(cv);
   const zm = zoomOf(tf); zoomSet(tf, all.length, zm.n, zm.off);                 // clamp to what exists
@@ -295,7 +297,7 @@ function chart(cv, s, tf, name) {
   const gutter = Math.min(Math.ceil(W * .4), Math.max(priceTxt ? tw(priceTxt) : 0, ...lines.map(o => tw(o.label)), ...boxes.map(o => tw(o.label) + 6)) + 8);
   const titleTxt = (name ? name + '  ' : '') + tf.toUpperCase();
   // every timeframe shows the H1 trend (internal order flow); H4 is never shown as a bias
-  const tr = s.s ? (s.s.trend || 0) : 0, trTxt = tr === 1 ? 'H1 \u25B2 BULLISH' : tr === -1 ? 'H1 \u25BC BEARISH' : 'H1 NO TREND', trCol = tr === 1 ? '#5AFF64' : tr === -1 ? '#FF6955' : '#8A94A6';
+  const tr = s.s ? (s.s.trend || 0) : 0, trTxt = tr === 1 ? 'H1 \u25B2 BULLISH' : tr === -1 ? 'H1 \u25BC BEARISH' : 'H1 NO TREND', trCol = tr === 1 ? TV.upTxt : tr === -1 ? TV.dnTxt : TV.dim;
   g.font = `700 ${FS + 1}px ${MONO}`; const titleW = Math.ceil(g.measureText(titleTxt).width) + 14, trW = Math.ceil(g.measureText(trTxt).width) + 14;
   g.font = `${FS}px ${MONO}`;
   const bandW = Math.max(40, W - 14 - titleW - trW), need = boxes.reduce((n, o) => n + tw(o.label) + 3, 0);
@@ -305,6 +307,21 @@ function chart(cv, s, tf, name) {
   const X = t => { const i = cs.findIndex(c => c[0] >= t); return i < 0 ? plotW : i === 0 ? 0 : i * step; };
   // A box starts at the LEFT EDGE of the first candle that formed it (the candle body is drawn 60% of a slot wide, centred).
   const XL = t => { const i = cs.findIndex(c => c[0] >= t); return i < 0 ? plotW : i === 0 && cs[0][0] > t ? 0 : i * step + step * .2; };
+  // grid (horizontal at round prices, vertical at round times) and the time axis along the bottom, like TradingView
+  const pxPerP = (Hh - 14 - TOP) / (hi - lo), tickP = [], tickT = [];
+  { const raw = 64 / pxPerP, mag = Math.pow(10, Math.floor(Math.log10(raw))), stp = [1, 2, 2.5, 5, 10].map(m => m * mag).find(v => v >= raw) || raw;
+    for (let v = Math.ceil(lo / stp) * stp; v <= hi; v += stp) tickP.push(+v.toFixed(10));
+    const offS = -new Date(cs[0][0] * 1000).getTimezoneOffset() * 60, need = Math.max(1, Math.ceil(78 / step)) * ivl;
+    const iv = [300, 900, 1800, 3600, 7200, 14400, 21600, 43200, 86400, 172800, 604800].find(v => v >= need) || 604800;
+    cs.forEach((c, i) => { if ((c[0] + offS) % iv === 0) tickT.push({ i, t: c[0] }); });
+    g.lineWidth = 1; g.strokeStyle = TV.grid;
+    g.beginPath(); tickP.forEach(v => { const y = Math.round(Y(v)) + .5; g.moveTo(0, y); g.lineTo(W, y); });
+    tickT.forEach(k => { const x = Math.round(k.i * step + step / 2) + .5; g.moveTo(x, TOP - 6); g.lineTo(x, Hh - 14); }); g.stroke();
+    g.fillStyle = TV.text; g.font = `${FS}px ${MONO}`; g.textAlign = 'center'; g.textBaseline = 'alphabetic';
+    tickT.forEach(k => { const d = new Date(k.t * 1000), mid = d.getHours() === 0 && d.getMinutes() === 0, x = k.i * step + step / 2;
+      const txt = mid ? (d.getDate() === 1 ? d.toLocaleDateString([], { month: 'short' }) : String(d.getDate())) : String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+      g.font = `${mid ? 700 : 400} ${FS}px ${MONO}`; if (x > 14 && x < plotW - 14) g.fillText(txt, x, Hh - 3); });
+    g.textAlign = 'left'; g.font = `${FS}px ${MONO}`; }
   const labels = [];
   ov.forEach(o => {
     const col = TONE[o.tone] || '#888';
@@ -320,13 +337,13 @@ function chart(cv, s, tf, name) {
     }
   });
   if (s.price != null && s.price >= lo && s.price <= hi) {                         // live price line
-    const y = Y(s.price), col = '#5CC8E6'; g.strokeStyle = col; g.setLineDash([2, 3]); g.beginPath(); g.moveTo(0, y); g.lineTo(W, y); g.stroke(); g.setLineDash([]);
+    const y = Y(s.price), col = cs[cs.length - 1][4] >= cs[cs.length - 1][1] ? TV.up : TV.dn; g.strokeStyle = col; g.setLineDash([4, 3]); g.beginPath(); g.moveTo(0, y); g.lineTo(W, y); g.stroke(); g.setLineDash([]);
     labels.unshift({ text: priceTxt, col, kind: 'line', y: y - LH / 2, live: true });
   }
   // candles, and a list of the space they occupy (labels must stay off it)
   const solid = [];
   cs.forEach((c, i) => {
-    const x = i * step + step / 2, up = c[4] >= c[1], col = up ? '#5AFF64' : '#D2603F';
+    const x = i * step + step / 2, up = c[4] >= c[1], col = up ? TV.up : TV.dn;
     g.strokeStyle = col; g.fillStyle = col; g.beginPath(); g.moveTo(x, Y(c[2])); g.lineTo(x, Y(c[3])); g.stroke();
     const y1 = Y(Math.max(c[1], c[4])), y2 = Y(Math.min(c[1], c[4])); g.fillRect(x - step * .3, y1, step * .6, Math.max(1, y2 - y1));
     solid.push({ x: x - step * .3 - 1, w: step * .6 + 2, y: Y(c[2]) - 1, h: Y(c[3]) - Y(c[2]) + 2 });
@@ -343,11 +360,11 @@ function chart(cv, s, tf, name) {
   const taken = [];
   // title tag: symbol name and timeframe, top left
   { const r = { x: 4, y: 4, w: titleW, h: TH }; taken.push(r);
-    g.fillStyle = 'rgba(12,17,9,.92)'; g.strokeStyle = '#5CC8E6'; g.beginPath(); g.roundRect ? g.roundRect(r.x, r.y, r.w, r.h, 3) : g.rect(r.x, r.y, r.w, r.h); g.fill(); g.stroke();
-    g.fillStyle = '#EDEBD8'; g.font = `700 ${FS + 1}px ${MONO}`; g.textBaseline = 'middle'; g.fillText(titleTxt, r.x + 7, r.y + r.h / 2 + .5);
+    g.fillStyle = 'rgba(19,23,34,.92)'; g.strokeStyle = TV.grid; g.beginPath(); g.roundRect ? g.roundRect(r.x, r.y, r.w, r.h, 3) : g.rect(r.x, r.y, r.w, r.h); g.fill(); g.stroke();
+    g.fillStyle = '#D1D4DC'; g.font = `700 ${FS + 1}px ${MONO}`; g.textBaseline = 'middle'; g.fillText(titleTxt, r.x + 7, r.y + r.h / 2 + .5);
     // H4 trend badge, right after the title tag: green = uptrend, red = downtrend, grey = no valid trend yet
     const t = { x: r.x + r.w + 6, y: 4, w: trW, h: TH }; taken.push(t);
-    g.fillStyle = 'rgba(12,17,9,.92)'; g.strokeStyle = trCol; g.lineWidth = 1.5; g.beginPath(); g.roundRect ? g.roundRect(t.x, t.y, t.w, t.h, 3) : g.rect(t.x, t.y, t.w, t.h); g.fill(); g.stroke(); g.lineWidth = 1;
+    g.fillStyle = 'rgba(19,23,34,.92)'; g.strokeStyle = trCol; g.lineWidth = 1.5; g.beginPath(); g.roundRect ? g.roundRect(t.x, t.y, t.w, t.h, 3) : g.rect(t.x, t.y, t.w, t.h); g.fill(); g.stroke(); g.lineWidth = 1;
     g.fillStyle = trCol; g.fillText(trTxt, t.x + 7, t.y + t.h / 2 + .5); g.textBaseline = 'alphabetic'; g.font = `${FS}px ${MONO}`; }
   if (main) { const E = { W, Hh, FS, LH, MONO, plotW, step, ivl, cs0: cs[0][0], lo, hi, TOP, tf, taken, tw, Y, digits: s.digits ?? 3, price: s.price, last: cs[cs.length - 1][4], atr: s.atr,
     rrPlan: s.k && s.k.active && s.k.active.plan && s.k.active.plan.rr, toPrice: y => lo + (Hh - 14 - y) / (Hh - 14 - TOP) * (hi - lo), toTime: x => Math.round(cs[0][0] + (x - step / 2) / step * ivl) }; Pos.draw(g, cv, E); Snipe.draw(g, cv, E); PA.draw(g, cv, E); }
@@ -387,9 +404,15 @@ function chart(cv, s, tf, name) {
       g.fillStyle = l.col; g.font = `600 ${FS}px ${MONO}`; g.textBaseline = 'middle'; g.fillText(l.text, r.x + 5, r.y + r.h / 2 + .5); g.textBaseline = 'alphabetic'; g.font = `${FS}px ${MONO}`;
       return;
     }
+    if (l.live) { g.fillStyle = l.col; g.fillRect(r.x, r.y, r.w, r.h); g.fillStyle = '#FFFFFF'; g.font = `700 ${FS}px ${MONO}`; g.textBaseline = 'middle'; g.fillText(l.text, r.x + 5, r.y + r.h / 2 + .5); g.textBaseline = 'alphabetic'; g.font = `${FS}px ${MONO}`; return; }   // last price: filled tag in the candle colour
     // labels have no background: just text in the colour of what they name
     g.fillStyle = l.col; g.font = `600 ${FS}px ${MONO}`; g.textBaseline = 'middle'; g.fillText(l.text, r.x + 5, r.y + r.h / 2 + .5); g.textBaseline = 'alphabetic'; g.font = `${FS}px ${MONO}`;
   });
+  // price scale numbers on the right edge, only where nothing else sits (the labels and tags win)
+  g.fillStyle = TV.dim; g.font = `${FS}px ${MONO}`; g.textAlign = 'right'; g.textBaseline = 'middle';
+  tickP.forEach(v => { const y = Y(v), txt = v.toFixed(Math.max(0, Math.min(8, (s.digits ?? 3)))), w = g.measureText(txt).width + 8, r = { x: W - w - 2, y: y - LH / 2, w, h: LH };
+    if (y > TOP - 4 && y < Hh - 18 && !taken.some(t => hit(r, t)) && !boxes.some(b => y >= Y(b.hi) - 2 && y <= Y(b.lo) + 2)) g.fillText(txt, W - 5, y + .5); });
+  g.textAlign = 'left'; g.textBaseline = 'alphabetic';
   cv._geom = { plotW, step };
   return { toPrice: y => lo + (Hh - 14 - y) / (Hh - 14 - TOP) * (hi - lo), xOf: X, step, lo, hi };
 }
