@@ -70,11 +70,11 @@ test('service: apply stores fresh alerts once', () => {
 
 test('telegram alert text is two lines: direction and type, then the symbol', () => {
   const sym = 'Volatility 25 Index';
-  assert.equal(formatAlert({ kind: 'reclamation', dir: 1, concept: 'R', symbol_name: sym }), `🟢 <b>BULLISH · RECLAMATION</b>\n${sym}`);
-  assert.equal(formatAlert({ kind: 'kl_valid', dir: -1, concept: 'K', symbol_name: sym }), `🔴 <b>BEARISH · KEY LEVEL</b>\n${sym}`);
-  assert.equal(formatAlert({ kind: 'qml_entry', dir: 1, concept: 'QML', symbol_name: sym }), `🟢 <b>BULLISH · QML</b>\n${sym}`);
-  assert.equal(formatAlert({ kind: 'bjeff_valid', dir: 1, concept: 'ADV', symbol_name: sym }), `🟢 <b>BULLISH · BJEFF ZONE</b>\n${sym}`);
-  assert.equal(formatAlert({ kind: 'adv_entry', dir: -1, concept: 'ADV', symbol_name: sym }), `🔴 <b>BEARISH · 50% KEYLEVEL POI</b>\n${sym}`);
+  assert.equal(formatAlert({ kind: 'reclamation', dir: 1, concept: 'R', symbol_name: sym }), `🟢 <b>RECLAMATION</b>\n${sym}`);
+  assert.equal(formatAlert({ kind: 'kl_valid', dir: -1, concept: 'K', symbol_name: sym }), `🔴 <b>KEY LEVEL</b>\n${sym}`);
+  assert.equal(formatAlert({ kind: 'qml_entry', dir: 1, concept: 'QML', symbol_name: sym }), `🟢 <b>QML</b>\n${sym}`);
+  assert.equal(formatAlert({ kind: 'bjeff_valid', dir: 1, concept: 'ADV', symbol_name: sym }), `🟢 <b>BJEFF ZONE</b>\n${sym}`);
+  assert.equal(formatAlert({ kind: 'adv_entry', dir: -1, concept: 'ADV', symbol_name: sym }), `🔴 <b>50% KEYLEVEL POI</b>\n${sym}`);
   assert.equal(formatAlert({ kind: 'kl_invalid', dir: 1, concept: 'K', symbol_name: sym }), `⚪ <b>INVALIDATED · KEY LEVEL</b>\n${sym}`);
 });
 
@@ -82,22 +82,29 @@ test('chart screenshot: PNG is drawn, and the alert carries its chart data', asy
   const { renderChart } = await import('../server/chartimg.js');
   const { Bot } = await import('../server/telegram.js');
   const cs = Array.from({ length: 60 }, (_, i) => ({ t: 1000 + i * 3600, o: 100 + i * 0.1, h: 101 + i * 0.1, l: 99 + i * 0.1, c: 100.5 + i * 0.1 }));
-  const png = renderChart({ candles: cs, tf: 3600, tfName: 'H1', t: cs[50].t + 3600, dir: -1, symbol: 'VOLATILITY 10 (1S) INDEX', label: 'BEARISH KEY LEVEL', digits: 2,
+  const png = renderChart({ candles: cs, tf: 3600, tfName: 'H1', t: cs[50].t + 3600, dir: -1, symbol: 'VOLATILITY 10 (1S) INDEX', label: 'KEY LEVEL', digits: 2,
     box: { lo: 103, hi: 104, t0: cs[40].t, label: 'KEY LEVEL' }, lines: [{ y: 103, label: 'ENTRY', tone: 'entry' }] });
   assert.equal(png.subarray(1, 4).toString(), 'PNG');
-  assert.equal(png.readUInt32BE(16), 1000);
+  assert.equal(png.readUInt32BE(16), 1280); assert.equal(png.readUInt32BE(20), 720);
+  {   // every chart carries the B-JEFF watermark: the gold tag in the header corner (the big faint one sits under the candles)
+    const { inflateSync } = await import('node:zlib');
+    const raw = inflateSync(png.subarray(png.indexOf('IDAT') + 4, png.indexOf('IEND') - 8)), stride = 1280 * 3 + 1;
+    let gold = 0;
+    for (let y = 16; y < 44; y++) for (let x = 1100; x < 1280; x++) { const i = y * stride + 1 + x * 3; if (raw[i] > 200 && raw[i + 1] > 170 && raw[i + 2] < 140) gold++; }
+    assert.ok(gold > 30, 'B-JEFF tag drawn in the corner');
+  }
   assert.equal(renderChart({ candles: cs.slice(0, 3), tf: 3600, t: 0 }), null);          // too little data: no picture, text alert only
   const { chartSnap, alertLabel } = await import('../server/service.js');
   const snap = chartSnap({ kind: 'kl_valid', dir: -1, concept: 'K', symbol_name: 'Volatility 10 (1s) Index' },
     { tf: 3600, t: cs[50].t + 3600, extra: { lo: 103, hi: 104, t0: cs[40].t, entry: 103, sl: 104.5, tp: 100 } }, cs, 2);
-  assert.equal(snap.label, 'BEARISH KEY LEVEL'); assert.equal(snap.tfName, 'H1'); assert.equal(snap.box.hi, 104); assert.equal(snap.lines.length, 3);
+  assert.equal(snap.label, 'KEY LEVEL'); assert.equal(snap.tfName, 'H1'); assert.equal(snap.box.hi, 104); assert.equal(snap.lines.length, 3);
   assert.equal(alertLabel({ kind: 'kl_invalid', dir: 1, concept: 'K' }), 'INVALIDATED KEY LEVEL');
   assert.equal(renderChart(snap).subarray(1, 4).toString(), 'PNG');
   // Bot.sendPhoto: caption above the picture, keyboard as JSON
   const bot = new Bot('T'); let form;
   const realFetch = globalThis.fetch;
   globalThis.fetch = async (url, o) => { form = { url, body: o.body }; return { json: async () => ({ ok: true, result: {} }) }; };
-  try { await bot.sendPhoto(5, png, '🔴 <b>BEARISH · KEY LEVEL</b>\nV', { text: 'Open', url: 'https://t.me/b/app', plain: true, style: 'danger' }); }
+  try { await bot.sendPhoto(5, png, '🔴 <b>KEY LEVEL</b>\nV', { text: 'Open', url: 'https://t.me/b/app', plain: true, style: 'danger' }); }
   finally { globalThis.fetch = realFetch; }
   assert.ok(form.url.endsWith('/sendPhoto'));
   assert.equal(form.body.get('show_caption_above_media'), 'true');
@@ -109,15 +116,20 @@ test('chart screenshot: PNG is drawn, and the alert carries its chart data', asy
 test('price alerts: store, limits, backup round trip', async () => {
   const { MAX_PRICE_ALERTS } = await import('../server/store.js');
   const st = new Store(':memory:');
-  const a = st.paAdd(7, 'V10', 6500, 1, 1000);
+  const a = st.paAdd(7, 'V10', 6500, 1, 3600, 1000);
   assert.deepEqual(st.paList(7, 'V10').map((x) => [x.price, x.side]), [[6500, 1]]);
   assert.deepEqual(st.paList(8, 'V10'), []);                                       // other people do not see it
   assert.equal(st.paUpdate(8, a.id, 1, 1), false);                                 // and cannot change or delete it
   assert.equal(st.paDelete(8, a.id), false);
-  assert.equal(st.paUpdate(7, a.id, 6400, -1, 2000), true);
-  assert.equal(st.paList(7)[0].created, 2000);
+  assert.equal(a.tf, 3600); assert.equal(st.paList(7)[0].tf, 3600);               // the timeframe it was set on is kept
+  assert.equal(st.paUpdate(7, a.id, 6400, -1, 0, 2000), true);                       // moved with no timeframe given: keeps H1
+  assert.equal(st.paList(7)[0].created, 2000); assert.equal(st.paList(7)[0].tf, 3600);
+  assert.equal(st.paUpdate(7, a.id, 6400, -1, 14400, 2100), true); assert.equal(st.paList(7)[0].tf, 14400);   // moved on the H4 chart: now H4
   const st2 = new Store(':memory:');
   assert.equal(st2.importPriceAlerts(JSON.parse(JSON.stringify(st.exportPriceAlerts()))), 1);
+  assert.equal(st2.paList(7)[0].tf, 14400);                                          // timeframe survives the backup
+  assert.equal(st2.importPriceAlerts([{ id: 'old', tg_id: 7, symbol: 'V10', price: 1, side: 1, created: 5 }]), 1);   // an old backup without tf: M5
+  assert.equal(st2.paList(7).find((x) => x.id === 'old').tf, 300);
   assert.equal(st2.importPriceAlerts([{ id: 'x', tg_id: 'bad' }]), 0);
   assert.equal(st.paDelete(7, a.id), true);
   for (let i = 0; i < MAX_PRICE_ALERTS; i++) assert.ok(st.paAdd(9, 'V10', 100 + i, 1));
@@ -138,6 +150,11 @@ test('price alerts: hit when price reaches the level, also from a spike between 
   assert.deepEqual(svc.hitPriceAlerts('V10', [dn]).map((a) => a.id), ['d']);
   assert.deepEqual(svc.hitPriceAlerts('NOPE', [up]), []);
   assert.ok(svc.priceSnap('V10', 105).lines[0].y === 105);
+  assert.equal(svc.priceSnap('V10', 105).tfName, 'M5');
+  svc.cache.get('V10')[3600] = { cs: Array.from({ length: 10 }, (_, i) => ({ t: i * 3600, o: 100, h: 101, l: 99, c: 100 })) };
+  const h = svc.priceSnap('V10', 105, 3600);                                           // the picture is the timeframe the alert was set on
+  assert.equal(h.tfName, 'H1'); assert.equal(h.tf, 3600); assert.equal(h.candles.length, 10);
+  assert.equal(svc.priceSnap('V10', 105, 14400).tfName, 'M5');                         // no H4 candles yet: falls back to M5
 });
 
 test('price alerts: API creates, moves and removes, and the bot is messaged once', async () => {
@@ -150,8 +167,8 @@ test('price alerts: API creates, moves and removes, and the bot is messaged once
   assert.equal((await call('/api/price-alerts', { symbol: 'V10', price: 105 }))[0], 400);          // no live price yet
   app.svc.states.set('V10', { price: 100, digits: 2 });
   app.svc.cache.get('V10')[300] = { cs: [{ t: 0, o: 100, h: 100, l: 100, c: 100 }] };
-  const [c1, r1] = await call('/api/price-alerts', { symbol: 'V10', price: 105 });
-  assert.equal(c1, 200); assert.equal(r1.alert.side, 1);
+  const [c1, r1] = await call('/api/price-alerts', { symbol: 'V10', price: 105, tf: 'h4' });
+  assert.equal(c1, 200); assert.equal(r1.alert.side, 1); assert.equal(r1.alert.tf, 14400);         // set on the H4 chart
   assert.equal((await call('/api/price-alerts', { symbol: 'V10', price: 100 }))[0], 400);          // not at the current price
   const [, r2] = await call('/api/price-alerts/update', { id: r1.alert.id, price: 95 });
   assert.equal(r2.alert.side, -1);

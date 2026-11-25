@@ -303,14 +303,29 @@ test('M5 POI: the original order block is used as is when it is unmitigated itse
   assert.equal(r.source, 'original'); assert.equal(r.t, 900); assert.equal(r.gap, 0);
 });
 
-test('order flow always uses the most current valid BOS as the inducement (a stale older BOS is dropped, not the new one skipped)', () => {
+test('inducement = swing start of the MOST RECENT BOS, disruption = the BOS before it (a swing needs 2+ candles)', () => {
   const h1 = mk([[0.5, 6], [-0.4, 3], [0.5, 6], [-0.4, 3], [0.5, 8], [-0.4, 3], [0.5, 8], [-0.4, 5], [0.5, 10]], { start: 1000 });
-  const valid = markValid(h1, findBos(h1, P.swingK)).filter((b) => b.valid && b.dir === 1);
+  const valid = markValid(h1, findBos(h1, P.swingK)).filter((b) => b.dir === 1 && b.idx - b.tip_idx >= 2);
   const of = orderFlow(h1, 1, P);
   const ind = of.pois.find((x) => x.role === 'inducement'), dis = of.pois.find((x) => x.role === 'disruption');
   assert.ok(ind && dis, 'both mapped');
-  assert.equal(ind.bos_idx, valid[valid.length - 1].idx, 'inducement = the latest valid BOS');
-  assert.ok(dis.hi < ind.lo, 'disruption POI sits below the inducement POI in an uptrend');
+  assert.equal(ind.bos_idx, valid[valid.length - 1].idx, 'inducement = the most recent BOS');
+  assert.ok(dis.bos_idx < ind.bos_idx && dis.ob_t !== ind.ob_t, 'the disruption is the BOS before it, from a different swing');
+  assert.deepEqual(of.labels.map((l) => l.kind), ['HL', 'HH'], 'the newest HL and HH are labelled');
+  const hh = of.labels[1], hl = of.labels[0];
+  assert.ok(hh.price >= Math.max(...h1.map((c) => c.h)) - 1e-9 && hl.t < hh.t);
+});
+
+test('downtrend mirror: inducement = swing start of the newest BOS, labels are LH + LL, and no BOS comes from a one-candle swing', () => {
+  const up = mk([[0.5, 6], [-0.4, 3], [0.5, 6], [-0.4, 3], [0.5, 8], [-0.4, 3], [0.5, 8], [-0.4, 5], [0.5, 10]], { start: 1000 });
+  const cs = up.map((c) => ({ t: c.t, o: 2000 - c.o, h: 2000 - c.l, l: 2000 - c.h, c: 2000 - c.c }));
+  const of = orderFlow(cs, -1, P);
+  const bos = markValid(cs, findBos(cs, P.swingK)).filter((b) => b.dir === -1 && b.idx - b.tip_idx >= 2);
+  assert.equal(of.pois.find((x) => x.role === 'inducement').bos_idx, bos[bos.length - 1].idx);
+  assert.deepEqual(of.labels.map((l) => l.kind), ['LH', 'LL']);
+  assert.ok(of.labels[1].price <= Math.min(...cs.map((c) => c.l)) + 1e-9, 'LL is the lowest low');
+  const used = new Set([of.pois[0].bos_idx, of.pois[1].bos_idx]);
+  for (const b of markValid(cs, findBos(cs, P.swingK))) if (b.idx - b.tip_idx < 2) assert.ok(!used.has(b.idx), 'a one-candle swing is never used');
 });
 
 test('trend flips at once when an H1 WICK goes beyond the disruption POI; a new BOS alone never flips it', () => {
@@ -325,18 +340,18 @@ test('trend flips at once when an H1 WICK goes beyond the disruption POI; a new 
   assert.equal(orderFlow(up, null, P).dir, 1, 'no flip without a disruption invalidation');
 });
 
-test('invalid BOS count as points of liquidity, but an invalid NEWEST BOS is never the inducement (the one before it is)', () => {
+test('the most recent BOS is the inducement even when it has no structural liquidity yet', () => {
   const h1 = mk([[0.5, 6], [-0.4, 3], [0.5, 6], [-0.4, 3], [0.5, 8], [-0.4, 3], [0.5, 8], [-0.4, 3], [0.5, 8]], { start: 1000 });
-  const all = markValid(h1, findBos(h1, P.swingK)).filter((b) => b.dir === 1);
+  const all = markValid(h1, findBos(h1, P.swingK)).filter((b) => b.dir === 1 && b.idx - b.tip_idx >= 2);
   const of = orderFlow(h1, 1, P);
   const ind = of.pois.find((x) => x.role === 'inducement'), dis = of.pois.find((x) => x.role === 'disruption');
   assert.ok(ind && dis);
   const newest = all[all.length - 1];
-  if (newest.valid) assert.equal(ind.bos_idx, newest.idx); else assert.equal(ind.bos_idx, all[all.length - 2].idx);
-  assert.ok(dis.bos_idx < ind.bos_idx && dis.hi < ind.lo);
+  assert.equal(ind.bos_idx, newest.idx);
+  assert.ok(dis.bos_idx < ind.bos_idx);
 });
 
-test('a BOS between the inducement and the disruption does not move the inducement (bullish and bearish)', () => {
+test('a newer BOS always becomes the inducement, bullish and bearish', () => {
   for (const dir of [1, -1]) {
     // staircase: each BOS POI beyond the previous one, then a pullback that breaks structure BELOW the inducement (above it in a downtrend)
     const up = mk([[0.5, 6], [-0.4, 3], [0.5, 6], [-0.4, 3], [0.5, 8], [-0.4, 3], [0.5, 8], [-0.4, 2], [0.5, 3]], { start: 1000 });
@@ -344,8 +359,33 @@ test('a BOS between the inducement and the disruption does not move the induceme
     const before = orderFlow(cs.slice(0, 29), dir, P), after = orderFlow(cs, dir, P);
     const ib = before.pois.find((x) => x.role === 'inducement'), ia = after.pois.find((x) => x.role === 'inducement');
     if (!ib || !ia) continue;
-    // whatever BOS formed later, the inducement is never moved to a POI on the wrong side of the earlier inducement
-    if (ia.bos_idx !== ib.bos_idx) assert.ok(dir === 1 ? ia.lo > ib.hi : ia.hi < ib.lo, 'only a BOS beyond the inducement replaces it');
+    assert.ok(ia.bos_idx >= ib.bos_idx, 'the inducement never goes back to an older BOS');
     assert.equal(after.dir, dir);
   }
+});
+
+// Every symbol always has an order flow: when the current leg has no second BOS, the disruption comes from the BOS before it (previous candle data).
+test('order flow is always mapped: inducement and disruption come from earlier BOS, no waiting for new ones', () => {
+  const rnd = (seed) => () => (seed = (seed * 1664525 + 1013904223) % 4294967296) / 4294967296;
+  let mapped = 0, total = 0;
+  for (let seed = 1; seed <= 40; seed++) {
+    const r = rnd(seed * 7 + 2000); let px = 1000; const cs = [];
+    for (let i = 0; i < 2000; i++) { const o = px, c = o + (r() - 0.5) * 4; cs.push(C(i * 3600, o, Math.max(o, c) + r() * 1.2, Math.min(o, c) - r() * 1.2, c)); px = c; }
+    const f = orderFlow(cs, null, P); total++;
+    const ind = f.pois.find((x) => x.role === 'inducement'), dis = f.pois.find((x) => x.role === 'disruption');
+    if (ind && dis) { mapped++; assert.ok(dis.bos_idx < ind.bos_idx && dis.ob_t !== ind.ob_t, 'the disruption is the BOS before the inducement, from another swing'); }
+  }
+  assert.ok(mapped >= total - 1, `order flow mapped for ${mapped} of ${total}`);
+});
+
+test('BOS must be a true new HH / LL of the leg (minor swing breaks are not BOS)', () => {
+  const rows = [[100,104,99,103],[103,110,102,109],[109,109.5,104,105],[105,106,98,99],[99,100,94,95],[95,99,94.5,98],
+    [98,104,97,103],[103,103.5,100,101],[101,102,99.5,100],[100,105,99.8,104.8],[104.8,106,103,105.5],[105.5,106.5,104,105]]
+    .map((r, i) => C(i * 3600, ...r));
+  assert.equal(findBos(rows, 1).filter((b) => b.dir === 1).length, 0, 'close above the minor 104 high while 110 is intact: no BOS');
+  assert.equal(findBos(rows, 1, false).filter((b) => b.dir === 1).length, 1, 'old latest-swing behaviour marked it');
+  const up = [...rows, C(12 * 3600, 105, 112, 104.5, 111)];
+  const b = findBos(up, 1).filter((x) => x.dir === 1);
+  assert.equal(b.length, 1, 'a body close above 110 is the real BOS');
+  assert.equal(b[0].level, 110);
 });
