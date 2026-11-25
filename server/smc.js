@@ -12,11 +12,16 @@
 // Definitions used (all numbers are in `smcDefaults` and can be tuned per timeframe):
 //  - Swing (major): a pivot with `swingLen` candles on each side. It is confirmed `swingLen` candles after it formed. Labelled HH / LH (highs), HL / LL (lows).
 //  - BOS : a candle BODY closes beyond the latest unbroken swing in the direction of the current trend (continuation).
-//  - Counter-trend break (type 'choch', hidden on the chart): the same against the current trend. It does NOT flip the trend any more (a rally against the trend
-//          between the IDM and the DISR is only a pullback). The very first break after a cold start has no trend yet: it is a BOS and sets the trend.
-//  - Trend flip (SORK rule): the trend changes only when the DISR zone is invalidated, i.e. a candle BODY closes beyond its far side
-//          (bull trend: close below the DISR zone, bear trend: close above it). Order flow is then mapped again in the new direction. No look-back window (the original SMC rule):
+//  - Trend (zone mode): a trend needs at least 2 breaks in ONE direction (IDM + DISR). One break, or a lone break against older ones, is not a trend.
+//          With no trend (cold start, loaded candles, or right after an invalidation) the LATEST break sets it, but only if its direction already has 2 breaks.
+//          While a trend stands, the newest breaks the other way (even 2 of them) are only counter-trend breaks (type 'choch', hidden on the chart):
+//          they cannot make the new trend until the DISR of the standing trend is invalidated.
+//  - Trend flip (SORK rule): the trend ends only when the DISR zone is invalidated, i.e. a candle BODY closes beyond its far side
+//          (bull trend: close below the DISR zone, bear trend: close above it). The other side becomes the trend AT ONCE, using the breaks that already exist in that direction
+//          (no waiting for new ones): the most recent one is the IDM, the one before it the DISR, then LIQ. With only one existing break there is an IDM and no DISR yet (the next break in the new direction is the new IDM, this one becomes the DISR).
+//          Only when the other side has no break at all is there no trend (0). No look-back window (the original SMC rule):
 //          the new IDM / DISR / LIQ are simply the newest BOS zones of the new direction, whenever they formed, including the counter-trend break of the pullback that led to the flip.
+//          (idmMode 'swing', the old rule, has no zones: there the first break still sets the trend.)
 //  - Liquidity sweep: a candle WICKS beyond an unbroken swing (or an equal-highs / equal-lows pool) but CLOSES back on the near side of it.
 //          Wick above highs = buy-side liquidity taken (bearish reaction expected, dir -1). Wick below lows = sell-side liquidity taken (dir +1).
 //  - Inducement (IDM), idmMode 'zone' (default): every BOS gets a zone, drawn where it formed. Up break = demand zone: the last bearish candle (A)
@@ -193,7 +198,7 @@ export class SmcEngine {
     for (const x of found) {
       if (x.k === 'break') {
         if (!x.choch && this.pb && !this.pb.resume_t) this.pb.resume_t = c.t;                 // a BOS in the trend direction after the pullback = the trend resumes
-        x.sw.crossed = true; if (this.trend === 0) this.trend = x.dir;                 // only the first break sets the trend; after that only a DISR invalidation flips it
+        x.sw.crossed = true; if (this.trend === 0 && p.idmMode !== 'zone') this.trend = x.dir;   // zone mode: the trend needs 2 breaks in one direction (IDM + DISR), see #mapZones. Swing mode (old rule) has no zones: the first break sets it
         this.#put(this.#breakAnn(x, c), changed);
         if (p.idmMode === 'zone') this.#zoneOf(x, i);
       } else if (x.k === 'sweep') {
@@ -284,14 +289,23 @@ export class SmcEngine {
   #mapZones(i, c, changed) {
     const p = this.p, ROLES = ['idm', 'disr', 'liq'].slice(0, Math.max(1, Math.min(3, p.idmMaxOpen)));
     let d = this.trend;
-    if (d === 0) return;
     const cands = (dir) => this.brks.filter((b) => b.dir === dir);
-    let cand = cands(d);
-    const dis = cand.length >= 2 ? cand[cand.length - 2] : null;
-    if (dis && dis.idx < i && (d === 1 ? c.c < dis.zone.lo : c.c > dis.zone.hi)) {
-      this.flip = { dir: d, t: c.t, idx: i, by: 'disruption' }; this.pb = null;
-      this.trend = d = -d;                                        // flipped: map the new direction (no look-back, like the original SMC rule)
-      cand = cands(d);
+    let cand = d ? cands(d) : [];
+    if (d === 0) {
+      // No trend yet (cold start / loaded candles, or the old trend was invalidated and the other side has no break at all). The LATEST break sets the trend,
+      // but only when its direction already has 2 breaks (IDM + DISR). One break, or a lone break against older ones, is not a trend.
+      const lb = this.brks[this.brks.length - 1];
+      if (lb && lb.idx === i && cands(lb.dir).length >= 2) { this.trend = d = lb.dir; cand = cands(d); }
+    } else {
+      // A trend only ends when its DISR is invalidated. Until then the 2 newest breaks the other way can NOT make a new trend, however recent they are.
+      const dis = cand.length >= 2 ? cand[cand.length - 2] : null;
+      if (dis && dis.idx < i && (d === 1 ? c.c < dis.zone.lo : c.c > dis.zone.hi)) {
+        this.flip = { dir: d, t: c.t, idx: i, by: 'disruption' }; this.pb = null;
+        // the other side takes over at once with the breaks that already exist in its direction (most recent = IDM, the one before = DISR, then LIQ), no waiting for new ones;
+        // only if it has no break at all is there no trend
+        this.trend = d = cands(-d).length >= 1 ? -d : 0;
+        cand = d ? cands(d) : [];
+      }
     }
     const roles = cand.slice(-ROLES.length).reverse();             // newest first
     for (const b of this.brks) if (b.ann && b.ann.status !== 'void' && !roles.includes(b)) { b.ann.status = 'void'; b.ann.t1 = c.t; this.#put(b.ann, changed); }
