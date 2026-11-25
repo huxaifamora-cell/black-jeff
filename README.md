@@ -165,9 +165,9 @@ On a symbol's page, the **Sniper mode** button (crosshair) opens a card and puts
 
 1. Pick **bullish flow** or **bearish flow**. In a bullish flow the inducement sits above the disruption, in a bearish flow below it. The boxes start from the bot's own reading when it has one (button **use the bot's reading**), or from two thin boxes near the price.
 2. Drag each box: the top and bottom squares set its price range, the round handle on its left edge moves it to where the POI formed (the bot only looks at candles after that time). You can also type the prices.
-3. Tap **Arm Sniper Mode**. You can arm one flow per symbol (up to 10 symbols); arming again replaces it, **Stop** removes it.
+3. Tap **Set Sniper Mode**. You can set one flow per symbol (up to 10 symbols); setting again replaces it, **Stop** removes it.
 
-From then on the bot sends **you** a private message, with a chart picture, for every new event on that symbol that comes after you armed it:
+From then on the bot sends **you** a private message, with a chart picture, for every new event on that symbol that comes after you set it:
 
 | Alert | When |
 |---|---|
