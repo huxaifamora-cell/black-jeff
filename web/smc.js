@@ -2,21 +2,24 @@
 // The marks come from the server's SMC engine (server/smc.js) over a live Server-Sent Events stream (/api/smc/stream), which is fed by the Deriv WebSocket,
 // so a BOS or a sweep appears the moment the candle closes, and the forming candle shows a dashed provisional preview.
 //
+// It also draws the SORK rules run on this SMC order flow (IDM = inducement, DISR = disruption): the key level box (H1), its M5 POI box, the 50% POI and the bjeff zone (M5),
+// the QML and the reclamation progress. Those come from the server (/api/smc/flow, polled every few seconds), not from the stream.
+//
 // app.js calls: open(id) when a symbol opens, barHtml() + bind() when its page is drawn, and draw(g, cv, E) from chart() (the main chart only).
 const SMC = (() => {
   const KEY = 'bj_smc_v1';
-  const COL = { bos: '#6EA8FE', choch: '#FFA94D', idm: '#B197FC', sweep: '#F06292', eq: '#CBD5E1', swing: '#8A94A6' };
+  const COL = { bos: '#6EA8FE', choch: '#FFA94D', idm: '#B197FC', sweep: '#F06292', eq: '#CBD5E1', swing: '#8A94A6', kl: '#FFD166', qml: '#FF8A65', adv: '#FFF59D', dead: '#8A94A6', rec: '#69F0AE' };
   const HIDE = { choch: 1, sweep: 1 };                                // drawn nowhere: CHoCH marks and liquidity sweeps (the engine still tracks them)
   const ZN = { idm: 'IDM', disr: 'DISR', liq: 'LIQ' };                // zone roles set by the engine (latest BOS in the trend direction, the one before, the one before that)
   const EXT = { idm: 1, disr: 1 };                                    // these boxes run on to the right, slightly past the forming candle
-  const LAYERS = [['st', 'STRUCTURE'], ['idm', 'IDM'], ['liq', 'LIQUIDITY']];
-  let pref = { on: true, st: true, idm: true, liq: true };
+  const LAYERS = [['st', 'STRUCTURE'], ['idm', 'IDM'], ['kl', 'KEY LEVEL'], ['liq', 'LIQUIDITY']];
+  let pref = { on: true, st: true, idm: true, kl: true, liq: true };
   try { Object.assign(pref, JSON.parse(localStorage.getItem(KEY) || '{}')); } catch { /* storage blocked: defaults */ }
   const save = () => { try { localStorage.setItem(KEY, JSON.stringify(pref)); } catch { /* ignore */ } };
 
   // Two streams: `main` = the timeframe on screen, `ref` = the H1 stream that the M5 chart follows (H1 trend and H1 IDM / DISR / LIQ zones). Other timeframes need no ref.
   const feed = () => ({ tf: null, ann: new Map(), live: [], trend: 0, state: 'idle', ac: null, tried: 0 });
-  const fresh = (sym) => ({ sym, main: feed(), ref: feed(), flash: null });
+  const fresh = (sym) => ({ sym, main: feed(), ref: feed(), flash: null, flow: { state: null, at: 0, busy: false, off: false } });
   let st = fresh(null), lastDraw = 0, raf = 0;
   const REF = { m5: 'h1' };                                           // chart timeframe -> the timeframe whose trend and zones it shows
 
@@ -75,10 +78,24 @@ const SMC = (() => {
     if (f.tf !== tf) { Object.assign(f, feed()); connect(f, st.sym, tf); return; }
     if (!f.ac && f.state !== 'off' && Date.now() - f.tried > 3000) connect(f, st.sym, tf);
   }
+  // The SORK rules on the SMC order flow (key level, M5 POI, 50% POI, bjeff zone, QML, reclamation): read from the server at most every 5 s while the chart is on screen.
+  async function loadFlow() {
+    const fl = st.flow, me = st;
+    if (fl.busy || fl.off || Date.now() - fl.at < 5000) return;
+    fl.busy = true; fl.at = Date.now();
+    try {
+      const res = await fetch(`/api/smc/flow?symbol=${encodeURIComponent(st.sym)}`, { headers: { 'X-Telegram-Init-Data': tg ? tg.initData : '' } });
+      if (res.status === 404) fl.off = true;                                  // SMC flow is switched off on the server
+      else if (res.ok) { const j = await res.json(); if (st === me) { fl.state = j.state || null; redraw(); } }
+    } catch { /* offline: try again later */ }
+    fl.busy = false;
+  }
+
   // called on every chart draw: make sure the streams match the timeframe on screen
   function ensure(tf) {
     lastDraw = Date.now();
     if (!st.sym) return;
+    if (pref.on && pref.kl && (tf === 'h1' || tf === 'm5')) loadFlow();
     if (st.main.tf !== tf) st.flash = null;
     keep(st.main, tf); keep(st.ref, REF[tf] || null);
   }
@@ -177,7 +194,33 @@ const SMC = (() => {
         }
       }
     }
+    // SORK rules on the SMC order flow. H1 chart: the key level box and the QML. M5 chart: the key level POI box (from the M5 order block), its 50% POI and the bjeff zone.
+    const fs_ = st.flow.state;
+    if (pref.kl && fs_ && Array.isArray(fs_.overlays) && (E.tf === 'h1' || E.tf === 'm5')) {
+      const mine = (o) => o.type === 'box' && (E.tf === 'h1' ? o.grp === 'k' || o.label === 'QML' : o.grp === 'k5' || o.label === '50% POI' || o.label === 'bjeff zone');
+      for (const o of fs_.overlays.filter(mine)) {
+        if (o.t0 > tEnd) continue;
+        const dead = o.tone === 'dead', low = /low probability/.test(o.label || '');
+        const nm = o.label === 'QML' ? 'QML' : o.label === '50% POI' ? '50% POI' : o.label === 'bjeff zone' ? 'BJEFF ZONE' : 'KEY LEVEL' + (low ? ' (LOW PROB)' : '');
+        const col = dead ? COL.dead : o.label === 'QML' ? COL.qml : o.label === '50% POI' ? COL.adv : o.label === 'bjeff zone' ? COL.rec : COL.kl;
+        const x0 = Math.max(0, X(o.t0)), yt = Math.round(y(o.hi)), yb = Math.round(y(o.lo)), h = Math.max(2, yb - yt);
+        if (yb < 0 || yt > E.Hh) continue;
+        const al = dead ? .45 : 1;
+        g.globalAlpha = al * .15; g.fillStyle = col; g.fillRect(x0, yt, Math.max(2, padR - x0), h);
+        g.globalAlpha = al; g.strokeStyle = col; g.setLineDash(o.label === '50% POI' ? [4, 3] : dead ? [2, 3] : []); g.strokeRect(x0 + .5, yt + .5, Math.max(2, padR - x0), h); g.setLineDash([]); g.globalAlpha = 1;
+        label(5, nm + (dead ? ' \u2717' : ''), padR - 3, Math.round((yt + yb) / 2) + fs / 2 - 1, col, 'right', true, al, true, padR);
+      }
+      // reclamation: a tick where it completed, and the step it is on (of 5) while it is in progress
+      for (const r of fs_.r || []) {
+        if (r.last_complete) {
+          const xr = X(r.last_complete) + step, ym = y((r.lo + r.hi) / 2);
+          if (xr > 4 && xr < plotW - 4 && ym > 6 && ym < E.Hh - 14) label(4, 'RECLAIM \u2713', xr, ym - 6, COL.rec, 'center', true, 1, true);
+        }
+      }
+    }
     labels.sort((p, q) => q.prio - p.prio).forEach((l) => text(...l.args));
+    const prog = fs_ && pref.kl && (E.tf === 'h1' || E.tf === 'm5') ? (fs_.r || []).filter((r) => r.state > 0) : [];
+    if (prog.length) text(`RECLAIM ${Math.max(...prog.map((r) => r.state))}/5`, plotW - 4, 4 + 3 * (fs + 6) + 6, COL.rec, 'right', true);
     // trend tag and the latest event, top right
     const tf_ = rf || mf, tr = tf_.trend, tag = `SMC${follow ? ' H1' : ''} ${tr === 1 ? '▲ BULL' : tr === -1 ? '▼ BEAR' : '● FLAT'}${tf_.state === 'live' ? '' : ' · ' + (tf_.state === 'connecting' ? '...' : tf_.state === 'idle' ? '...' : 'reconnecting')}`;
     text(tag, plotW - 4, 4 + fs + 6, tr === 1 ? '#26A69A' : tr === -1 ? '#EF5350' : '#787B86', 'right', true);
