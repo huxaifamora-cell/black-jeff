@@ -27,7 +27,7 @@ const HELP = '<b>B-JEFF bot</b>\nOpen the B-Jeff terminal';
 export function createApp({ cfg = loadConfig(), store, svc, deriv, bot, log = console, background = true } = {}) {
   store ||= new Store(cfg.dbPath);
   svc ||= new Service(store, undefined, log);
-  svc.smcAlerts = !!cfg.smcAlerts; svc.smcParams = { swingLen: cfg.smcSwingLen || 5, internalLen: cfg.smcInternalLen || 2 };
+  svc.smcAlerts = !!cfg.smcAlerts; svc.smcPrimary = !!cfg.smcPrimary; svc.sorkAlerts = cfg.sorkAlerts !== false; svc.sorkBoxes = cfg.sorkBoxes !== false; svc.smcParams = { swingLen: cfg.smcSwingLen || 5, internalLen: cfg.smcInternalLen || 2 };
   deriv ||= new Deriv(cfg.derivUrls, cfg.derivAppId, log);
   bot ||= cfg.botToken ? new Bot(cfg.botToken) : null;
   const abort = new AbortController();

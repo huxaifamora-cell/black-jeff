@@ -114,6 +114,9 @@ export class Service {
     this.states = new Map();
     this.smcStates = new Map();                  // sid -> the SORK rules evaluated on the SMC order flow (IDM / DISR / LIQ)
     this.smcAlerts = false;                      // turned on by createApp (SMC_ALERTS)
+    this.smcPrimary = false;                     // true = apply() runs on the SMC order flow: the symbol page, checklist, radar and alerts all show SMC values
+    this.sorkAlerts = true;                      // false = the SORK rules still run (checklist, Sniper Mode) but send no alerts
+    this.sorkBoxes = true;                       // false = the SORK POI boxes are left out of the chart overlays
     this.smcParams = {};                         // SMC engine settings for the order flow (swingLen, internalLen ...)
   }
 
@@ -128,17 +131,22 @@ export class Service {
   // Evaluate one symbol and return the NEW alerts (already stored).
   apply(sid, h4, h1, m5, now = Date.now() / 1000) {
     const s = this.byId.get(sid);
-    const digits = digitsFor(m5), res = evaluate(h4, h1, m5, this.p, digits);
+    const smc = this.smcPrimary;
+    const digits = digitsFor(m5), res = evaluate(h4, h1, m5, this.p, digits, smc ? { flowOf: (h1c) => smcFlow(h1c, this.smcParams) } : {});
     res.state.updated = Math.floor(now);
     res.state.price = m5.length ? m5[m5.length - 1].c : null;
+    const noBoxes = (o) => o.type !== 'box';
+    if (smc) this.smcStates.set(sid, { ...res.state, candles: undefined });                     // the chart draws the SMC boxes itself (web/smc.js), from this copy
+    if ((smc || !this.sorkBoxes) && Array.isArray(res.state.overlays)) res.state.overlays = res.state.overlays.filter(noBoxes);   // lines and marks stay, the POI boxes go
     this.states.set(sid, res.state);
     const fresh = [];
+    if (!smc && !this.sorkAlerts) return fresh;
     for (const ev of res.events) {
       if (now - ev.t > 3 * ev.tf) continue;                    // stale events are not alerted
       const a = {
-        key: `${sid}|${ev.concept}|${ev.kind}|${ev.uid}`, ts: Math.min(ev.t, Math.floor(now)), symbol: sid, symbol_name: s.name, concept: ev.concept,
+        key: `${sid}|${smc ? 'smc|' : ''}${ev.concept}|${ev.kind}|${ev.uid}`, ts: Math.min(ev.t, Math.floor(now)), symbol: sid, symbol_name: s.name, concept: ev.concept,
         kind: ev.kind, dir: ev.dir, title: ev.title, body: ev.body,
-        payload: { ...ev.extra, tf: ev.tf, bias: res.state.s ? res.state.s.bias : 0 },
+        payload: { ...ev.extra, tf: ev.tf, bias: res.state.s ? res.state.s.bias : 0, ...(smc ? { src: 'smc' } : {}) },
       };
       a.id = this.store.addAlert(a);
       if (a.id) {
@@ -189,7 +197,7 @@ export class Service {
     }
     if (!changed && this.states.has(sid)) return [];
     const fresh = this.apply(sid, cache[H4].cs, cache[H1].cs, cache[M5].cs, now);
-    if (this.smcAlerts) { try { fresh.push(...this.applySmc(sid, cache[H4].cs, cache[H1].cs, cache[M5].cs, now)); } catch (e) { this.log.warn('smc flow', sid, 'failed:', e.message); } }
+    if (this.smcAlerts && !this.smcPrimary) { try { fresh.push(...this.applySmc(sid, cache[H4].cs, cache[H1].cs, cache[M5].cs, now)); } catch (e) { this.log.warn('smc flow', sid, 'failed:', e.message); } }
     return fresh;
   }
 
