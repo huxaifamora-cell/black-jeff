@@ -310,7 +310,7 @@ function chart(cv, s, tf, name) {
   const gutter = Math.min(Math.ceil(W * .4), Math.max(priceTxt ? tw(priceTxt) : 0, ...lines.map(o => tw(o.label)), ...boxes.map(o => tw(o.label) + 6)) + 8);
   const titleTxt = (name ? name + '  ' : '') + tf.toUpperCase();
   // every timeframe shows the H1 trend (internal order flow); H4 is never shown as a bias
-  const sm = SMC.trend(tf), tr = sm.tr, showTr = sm.state !== 'off';              // the SMC trend (H1), in the spot of the old Black Jeff trend badge
+  const sm = SMC.trend(tf), tr = sm.tr, showTr = main && sm.state !== 'off';              // the SMC trend (H1), in the spot of the old Black Jeff trend badge
   const trTxt = `H1 TREND ${tr === 1 ? '\u25B2 BULL' : tr === -1 ? '\u25BC BEAR' : '\u25CF FLAT'}${sm.state === 'live' ? '' : ' \u2026'}`, trCol = tr === 1 ? TV.upTxt : tr === -1 ? TV.dnTxt : TV.dim;
   g.font = `700 ${FS + 1}px ${MONO}`; const titleW = Math.ceil(g.measureText(titleTxt).width) + 14, trW = !showTr ? 0 : Math.ceil(g.measureText(trTxt).width) + 14;
   g.font = `${FS}px ${MONO}`;

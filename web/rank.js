@@ -326,28 +326,97 @@ function runQuiz(ch) {
   ask();
 }
 
-// ---- chart reading drill: tap the zone on a chart that has the zones hidden
+// ---- SMC chart reading drill: an H1 chart with every SMC mark hidden. Read it and answer: BOS, trend, IDM, DISR, KLV, swing highs and lows, trend direction.
+// The answers come from the server's SMC engine (/api/smc, /api/smc/flow), the same marks the live chart draws, so the drill teaches the rules the bot really uses.
+// Rank mechanics (XP, daily cap, 30% miss rule for a Private) are unchanged: every pass counts as a drill, right or wrong is all that matters.
+let lastDrill = '';
+const DRILL_COL = { idm: '#B197FC', disr: '#B197FC', klv: '#FFD166', bos: '#6EA8FE', swing: '#E6EDF7' };
+
+// Everything the chart needs to show the answer after the person has answered (the live chart draws nothing in a drill, so the reveal is drawn here).
+function drillReveal(cv, map, items) {
+  const G = cv._geom, g = cv.getContext('2d'); if (!G || !map) return;
+  const dpr = cv.width / cv.clientWidth, y0 = map.toPrice(0), y1 = map.toPrice(1), Y = p => (p - y0) / (y1 - y0);
+  const xl = t => { const i = G.cs.findIndex(c => c[0] >= t); return i < 0 ? G.plotW : i === 0 && G.cs[0][0] > t ? 0 : i * G.step + G.step * .2; };
+  const xc = t => { const i = G.cs.findIndex(c => c[0] >= t); return (i < 0 ? G.cs.length - 1 : i) * G.step + G.step / 2; };
+  g.save(); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.font = '700 11px ui-monospace, monospace'; g.textBaseline = 'alphabetic';
+  for (const o of items) {
+    g.strokeStyle = o.col; g.fillStyle = o.col;
+    if (o.k === 'box') {
+      const x = xl(o.t0), w = cv.clientWidth - x; g.globalAlpha = .22; g.fillRect(x, Y(o.hi), w, Y(o.lo) - Y(o.hi)); g.globalAlpha = 1; g.lineWidth = 1.2; g.strokeRect(x, Y(o.hi), w, Y(o.lo) - Y(o.hi));
+      g.fillText(o.label, Math.max(3, x + 3), Y(o.hi) - 3);
+    } else if (o.k === 'line') {
+      const x0 = xc(o.t0), x1 = xc(o.t1), y = Y(o.y); g.lineWidth = 1.6; g.beginPath(); g.moveTo(x0, y); g.lineTo(x1, y); g.stroke();
+      g.fillText(o.label, (x0 + x1) / 2 - 8, y + (o.below ? 13 : -4));
+    } else if (o.k === 'dot') {
+      const x = xc(o.t), y = Y(o.y); g.beginPath(); g.arc(x, y, 5, 0, 7); g.lineWidth = 2; g.stroke(); g.fillText(o.label, x - 8, y + (o.below ? 17 : -9));
+    }
+  }
+  g.restore();
+}
+
+// The questions a chart can ask, from the marks that are inside the candles on screen (cs = the visible candles). Tap questions have `hit(x, price)`; choice questions have `options` + `answer`.
+function drillQuestions(cv, map, sm, fl) {
+  const G = cv._geom, cs = G.cs, t0 = cs[0][0], tN = cs[cs.length - 1][0], step = G.step, tol = (map.hi - map.lo) * .03;
+  const inView = t => t >= t0 && t <= tN - 3 * 3600;
+  const xl = t => { const i = cs.findIndex(c => c[0] >= t); return i < 0 ? G.plotW : i === 0 && cs[0][0] > t ? 0 : i * step + step * .2; };
+  const xc = t => { const i = cs.findIndex(c => c[0] >= t); return (i < 0 ? cs.length - 1 : i) * step + step / 2; };
+  const ann = ((sm && sm.annotations) || []).filter(a => a.status !== 'void'), out = [];
+  const latest = (list, key) => list.slice().sort((a, b) => (b[key] ?? b.t0) - (a[key] ?? a.t0))[0];
+  const zoneQ = (kind, role, title, why) => {
+    const z = latest(ann.filter(a => a.type === 'idm' && a.role === role && Number.isFinite(a.lo) && inView(a.t0)), 't0'); if (!z) return;
+    out.push({ kind, type: 'tap', title, hint: 'The SMC marks are hidden. Tap the price zone where you think it sits.', why,
+      hit: (x, p) => p >= z.lo - tol && p <= z.hi + tol && x >= xl(z.t0) - 2 * step, reveal: [{ k: 'box', lo: z.lo, hi: z.hi, t0: z.t0, label: role.toUpperCase(), col: DRILL_COL[role] }] });
+  };
+  zoneQ('idm', 'idm', 'Tap the IDM zone', 'The IDM is the demand (or supply) zone of the most recent HH/HL leg (LH/LL in a downtrend): the pullback low that led into the latest BOS in the trend direction.');
+  zoneQ('disr', 'disr', 'Tap the DISR zone', 'The DISR is the zone of the leg before the IDM, from the stepping HH/HL (LH/LL) sequence. In an uptrend it sits below the IDM, in a downtrend above it. A body close through its far side flips the trend.');
+  const k = fl && fl.state && (fl.state.overlays || []).find(o => o.type === 'box' && o.grp === 'k' && o.tone !== 'dead' && inView(o.t0));
+  if (k) out.push({ kind: 'klv', type: 'tap', title: 'Tap the KLV (key level)', hint: 'The SMC marks are hidden. Tap the price zone where you think the key level sits.', why: 'The KLV is the key level zone the SORK rules take from the IDM and DISR order flow. It is the area price is expected to react from.',
+    hit: (x, p) => p >= k.lo - tol && p <= k.hi + tol && x >= xl(k.t0) - 2 * step, reveal: [{ k: 'box', lo: k.lo, hi: k.hi, t0: k.t0, label: 'KLV', col: DRILL_COL.klv }] });
+  const bos = latest(ann.filter(a => a.type === 'bos' && inView(a.t0) && a.t1 != null && a.t1 <= tN), 't1');
+  const bosShow = bos ? [{ k: 'line', y: bos.price, t0: bos.t0, t1: bos.t1, label: 'BOS', col: DRILL_COL.bos, below: bos.dir === -1 }] : [];
+  if (bos) {
+    out.push({ kind: 'bos', type: 'tap', title: 'Tap the latest BOS', hint: 'Tap the swing level that price broke: from the swing to the candle that closed through it.', why: 'A BOS is a candle BODY closing beyond the latest unbroken swing. The line runs from the broken swing to the candle that closed through it. A wick through it is only a sweep.',
+      hit: (x, p) => Math.abs(p - bos.price) <= tol && x >= xl(bos.t0) - 2 * step && x <= xc(bos.t1) + 3 * step, reveal: bosShow });
+    out.push({ kind: 'bosdir', type: 'choice', title: 'Which way did the latest BOS break?', hint: 'Read the last break of structure on the chart.', options: ['Up (a body closed above a swing high)', 'Down (a body closed below a swing low)'], answer: bos.dir === 1 ? 0 : 1,
+      why: (bos.dir === 1 ? 'A bullish BOS: a body closed above the swing high.' : 'A bearish BOS: a body closed below the swing low.') + (bos.counter ? ' It went against the trend, so it is only a counter-trend BOS: the trend flips only when the DISR zone is closed through.' : ''), reveal: bosShow });
+  }
+  const sw = (hi) => latest(ann.filter(a => a.type === 'swing' && (hi ? /^(HH|LH|H|EQH)$/ : /^(HL|LL|L|EQL)$/).test(a.label || '') && inView(a.t0)), 't0');
+  for (const [hi, kind] of [[true, 'swingh'], [false, 'swingl']]) {
+    const w = sw(hi); if (!w) continue;
+    out.push({ kind, type: 'tap', title: hi ? 'Tap the most recent swing high' : 'Tap the most recent swing low', hint: 'Tap the pivot itself: the candle with lower highs (higher lows) on both sides.',
+      why: `A swing ${hi ? 'high is a pivot high with lower highs' : 'low is a pivot low with higher lows'} on both sides, confirmed a few candles later. This one is ${w.label}: ${hi ? (w.label === 'HH' ? 'higher than the swing high before it' : w.label === 'LH' ? 'lower than the swing high before it' : 'a swing high') : (w.label === 'HL' ? 'higher than the swing low before it' : w.label === 'LL' ? 'lower than the swing low before it' : 'a swing low')}.`,
+      hit: (x, p) => Math.abs(p - w.price) <= tol * 1.3 && Math.abs(x - xc(w.t0)) <= 2.5 * step, reveal: [{ k: 'dot', y: w.price, t: w.t0, label: w.label || (hi ? 'High' : 'Low'), col: DRILL_COL.swing, below: !hi }] });
+  }
+  if (sm && [1, -1, 0].includes(sm.trend)) {
+    const zs = ann.filter(a => a.type === 'idm' && (a.role === 'idm' || a.role === 'disr') && Number.isFinite(a.lo) && a.t0 >= t0).map(z => ({ k: 'box', lo: z.lo, hi: z.hi, t0: z.t0, label: z.role.toUpperCase(), col: DRILL_COL[z.role] }));
+    out.push({ kind: 'trend', type: 'choice', title: 'What is the H1 trend?', hint: 'Read the structure: the swings, the BOS and where the IDM and DISR would sit.', options: ['Bullish (HH + HL)', 'Bearish (LH + LL)', 'No trend yet'], answer: sm.trend === 1 ? 0 : sm.trend === -1 ? 1 : 2, reveal: [...zs, ...bosShow],
+      why: sm.trend === 1 ? 'Bullish: structure steps up (HH + HL), the BOS break highs, and the DISR below has not been closed through.' : sm.trend === -1 ? 'Bearish: structure steps down (LH + LL), the BOS break lows, and the DISR above has not been closed through.' : 'No trend yet: a trend needs 2 BOS in one direction (IDM + DISR). One break, or a lone break against older ones, is not a trend.' });
+  }
+  return out;
+}
+
 async function renderDrill() {
   view.innerHTML = '<p class="mut">Finding a chart...</p>';
   try {
-    const { symbols } = await api('/api/symbols'); let pick = null;
-    for (const sy of shuffle(symbols.filter(x => x.available && x.price != null)).slice(0, 8)) {
-      const v = await api('/api/symbol/' + sy.id), st = v.state; if (!st || !st.candles || !(st.candles.h1 || []).length) continue;
-      const cs = st.candles.h1.slice(-80), first = cs[0][0], last = cs[cs.length - 1][0];
-      const boxes = (st.overlays || []).filter(o => o.type === 'box' && (o.grp === 'o' || o.grp === 'k') && o.tone !== 'dead' && o.t0 >= first && o.t0 <= last - 3 * 3600);
-      if (boxes.length) { pick = { v, st, box: boxes[Math.floor(Math.random() * boxes.length)] }; break; }
+    const { symbols } = await api('/api/symbols'), s = await rk();
+    let ready = null;
+    for (const sy of shuffle(symbols.filter(x => x.available && x.price != null)).slice(0, 6)) {
+      const id = encodeURIComponent(sy.id);
+      const [v, sm, fl] = await Promise.all([api('/api/symbol/' + id), api('/api/smc?symbol=' + id + '&tf=h1').catch(() => null), api('/api/smc/flow?symbol=' + id).catch(() => null)]);
+      const st = v.state; if (!st || !st.candles || (st.candles.h1 || []).length < 30 || !sm || sm.state === 'starting') continue;
+      view.innerHTML = `<div class="row"><button class="back" id="qb">&#8249; Drill</button><span class="small">${esc(v.short)} &middot; H1</span></div><div class="card" id="dq"></div><canvas id="dc"></canvas><div id="dr"></div>`;
+      document.getElementById('qb').onclick = renderRank;
+      const cv = document.getElementById('dc'), map = chart(cv, { ...st, overlays: [], candles: { ...st.candles, h1: st.candles.h1.slice(-80) } }, 'h1');
+      if (!map || !cv._geom) continue;
+      let qs = drillQuestions(cv, map, sm, fl); if (qs.length > 1) qs = qs.filter(q => q.kind !== lastDrill);
+      if (qs.length) { ready = { cv, map, q: qs[Math.floor(Math.random() * qs.length)] }; break; }
     }
-    if (!pick) { view.innerHTML = '<div class="row"><button class="back" id="qb">&#8249; Drill</button></div><p class="mut">No chart is ready for a drill yet. Try again when the markets have more data.</p>'; document.getElementById('qb').onclick = renderRank; return; }
-    const { v, st, box } = pick, s = await rk(), name = box.label.toLowerCase().includes('key') ? 'key level' : box.label.toLowerCase();
-    view.innerHTML = `<div class="row"><button class="back" id="qb">&#8249; Drill</button><span class="small">${esc(v.short)} &middot; H1</span></div>
-      <div class="card"><h4>Tap the ${esc(name)} zone</h4><p class="small">The zones are hidden. Tap the price level where you think the ${esc(name)} sits.</p></div><canvas id="dc"></canvas><div id="dr"></div>`;
-    document.getElementById('qb').onclick = renderRank;
-    const cv = document.getElementById('dc'); let map = chart(cv, { ...st, overlays: [] }, 'h1'), answered = false;
-    cv.onclick = async e => {
-      if (answered || !map) return; answered = true;
-      const r = cv.getBoundingClientRect(), y = e.clientY - r.top - cv.clientTop, x = e.clientX - r.left;
-      const price = map.toPrice(y), tol = (map.hi - map.lo) * .03, ok = price >= box.lo - tol && price <= box.hi + tol && x >= map.xOf(box.t0) - 2 * map.step;
-      chart(cv, { ...st, overlays: [box] }, 'h1');
+    if (!ready) { view.innerHTML = '<div class="row"><button class="back" id="qb">&#8249; Drill</button></div><p class="mut">No chart is ready for a drill yet. Try again when the markets have more data.</p>'; document.getElementById('qb').onclick = renderRank; return; }
+    const { cv, map, q } = ready; lastDrill = q.kind;
+    document.getElementById('dq').innerHTML = `<h4>${esc(q.title)}</h4><p class="small">${esc(q.hint)}</p>` + (q.type === 'choice' ? q.options.map((o, i) => `<button class="opt" data-i="${i}">${esc(o)}</button>`).join('') : '');
+    let answered = false;
+    const finish = async ok => {
+      answered = true; drillReveal(cv, map, q.reveal);
       const left = s.d.drill < DAILY_CAP.drill;
       let note = '', restarted = false;
       if (!ok && rankOf(s) === PRIVATE) {   // promotional drill mission: more than 30% missed fails the person and restarts it
@@ -356,10 +425,22 @@ async function renderDrill() {
         else note = ` Misses ${s.drillMiss}/${DRILL_MISS_MAX} allowed.`;
         rkSave();
       }
-      document.getElementById('dr').innerHTML = `<div class="card"><h4 class="${ok ? 'up' : 'down'}">${restarted ? 'Failed' : ok ? 'On target' : 'Missed'}</h4><p class="small">${ok ? (left ? '+10 XP.' : 'Daily drill XP limit reached, keep practising.') : 'The zone is now shown on the chart. Study where it formed.' + note}</p><button class="btn" id="nd">Next drill</button></div>`;
+      document.getElementById('dr').innerHTML = `<div class="card"><h4 class="${ok ? 'up' : 'down'}">${restarted ? 'Failed' : ok ? 'On target' : 'Missed'}</h4><p class="small">${ok ? (left ? '+10 XP. ' : 'Daily drill XP limit reached, keep practising. ') : 'The answer is now shown on the chart. '}${esc(q.why)}${note}</p><button class="btn" id="nd">Next drill</button></div>`;
       document.getElementById('nd').onclick = renderDrill;
-      if (ok) { s.drillOk++; if (left) { s.d.drill++; await award(10, 'chart drill: zone found'); } else { const pm = promoMsg(s); rkSave(); if (pm) toast(pm, true); } }
+      if (ok) { s.drillOk++; if (left) { s.d.drill++; await award(10, 'chart drill: ' + q.kind); } else { const pm = promoMsg(s); rkSave(); if (pm) toast(pm, true); } }
     };
+    if (q.type === 'choice') {
+      document.querySelectorAll('#dq .opt').forEach(b => b.onclick = () => {
+        if (answered) return; const ok = Number(b.dataset.i) === q.answer;
+        document.querySelectorAll('#dq .opt').forEach(x => { x.disabled = true; if (Number(x.dataset.i) === q.answer) x.classList.add('ok'); }); if (!ok) b.classList.add('bad');
+        finish(ok);
+      });
+    } else {
+      cv.onclick = e => {
+        if (answered) return; const r = cv.getBoundingClientRect();
+        finish(q.hit(e.clientX - r.left, map.toPrice(e.clientY - r.top - cv.clientTop)));
+      };
+    }
   } catch (e) { view.innerHTML = `<p class="down">${esc(e.message)}</p>`; }
 }
 
@@ -531,7 +612,7 @@ async function renderRank() {
       <div class="plan"><div><small>ROLL CALL STREAK</small><span class="px">${s.streak} d</span></div><div><small>CHAPTERS</small><span class="px">${s.ch.length}/${CHAPTERS.length}</span></div><div><small>EXAMS</small><span class="px">${examsPassed}/${CHAPTERS.length}</span></div></div>
       ${m('Roll Call', 'Report in once a day. 7, 30 and 90 days earn a medal and bonus XP.', `best ${s.best} d`, null, null, 'roll')}
       ${m('Intercept Analysis', 'Open a new alert from its Telegram button, then check it against the SORK steps on the chart. Required to become Lieutenant: complete ${ANALYSES_REQ}.', `${Math.min(s.anTotal || 0, ANALYSES_REQ)}/${ANALYSES_REQ}`, 'Analyse an alert', 'g5', 'intercept')}
-      ${m('Chart reading drill', `Tap where the inducement or key level is on a chart with the zones hidden. Required to become Corporal: pass ${DRILLS_REQ} drills (daily XP limit ${DAILY_CAP.drill}, but every pass counts). As a Private you may miss at most ${DRILL_MISS_MAX}: missing more than 30% fails you and restarts the drills from 0.`, `${Math.min(s.drillOk || 0, DRILLS_REQ)}/${DRILLS_REQ}`, 'Start a drill', 'g3', 'drill')}
+      ${m('Chart reading drill', `SMC chart reading on an H1 chart with the marks hidden: tap the BOS, IDM, DISR, KLV and swing highs and lows, and read the trend and the BOS direction. Required to become Corporal: pass ${DRILLS_REQ} drills (daily XP limit ${DAILY_CAP.drill}, but every pass counts). As a Private you may miss at most ${DRILL_MISS_MAX}: missing more than 30% fails you and restarts the drills from 0.`, `${Math.min(s.drillOk || 0, DRILLS_REQ)}/${DRILLS_REQ}`, 'Start a drill', 'g3', 'drill')}
       ${m('Field guide', 'Finish a chapter (scroll to its end) for a stripe and XP. Required to become Private: finish all chapters.', `${s.ch.length}/${CHAPTERS.length}`, 'Open the guide', 'g1', 'guide')}
       ${m('Proficiency Exam', 'Three questions per chapter. Pass with all 3 right for XP. Required to become Sergeant: pass every chapter. Failing more than 30% of any chapter exam fails you and restarts the exam from chapter 1.', `${examsPassed}/${CHAPTERS.length}`, 'Sit the exam', 'g2', 'exam')}`,
     medals: `<h3 class="ctr" style="margin-top:0">Medals</h3><div class="medals">${Object.entries(MEDALS).map(([k, [t, d]]) => `<div class="medal ${s.medals.includes(k) ? 'on' : ''}">${ico(k)}<b>${t}</b><span>${d}</span></div>`).join('')}</div>`,
