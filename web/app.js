@@ -216,6 +216,7 @@ const TV = { bg: '#000000', grid: '#2A2E39', text: '#B2B5BE', dim: '#787B86', up
 const TONE = { s: '#8A94A6', o: '#FFFFFF', k: '#8DC3FF', qml: '#A9B1BD', pending: '#5d6875', dead: '#6B7480', adv: '#E3C16A', adv2: '#4A7CFF', dis: '#F5D547', bos: '#9AA3B2' };   // dis = disruption POI, yellowish
 // Which overlays each timeframe shows (everything else is hidden, not deleted: the engine still computes and alerts on it).
 //  H4: BOS lines.  H1: inducement, disruption, key level POI, QML POI.  M5: key level POI with its 50% POI, and the bjeff zone.
+const SMC_ONLY = true;                                      // true: the chart shows only the SMC overlay (web/smc.js); the old engine's boxes, lines, swing tags and H1 badge are hidden. false: bring them back.
 const SHOW = {
   h4: o => o.type === 'line' && /BOS$/.test(o.label),
   h1: o => o.grp === 'o' || o.grp === 'k' || o.label === 'QML',
@@ -292,7 +293,7 @@ function chart(cv, s, tf, name) {
   const cs = all.slice(Math.max(0, all.length - zm.n - zm.off), all.length - zm.off);
   const main = cv.id === 'chart', ivl = { m5: 300, h1: 3600, h4: 14400 }[tf] || (cs.length > 1 ? cs[1][0] - cs[0][0] : 3600);   // main = the live symbol chart (not a training drill)
   let lo = Math.min(...cs.map(c => c[3])), hi = Math.max(...cs.map(c => c[2]));
-  const shown = (s.overlays || []).filter(SHOW[tf] || (() => true));
+  const shown = SMC_ONLY ? [] : (s.overlays || []).filter(SHOW[tf] || (() => true));
   const span = hi - lo || 1, ov = shown.filter(o => o.type === 'box' ? (o.hi >= lo - span * .3 && o.lo <= hi + span * .3)
     : (o.tf === tf && o.y >= lo - span * .3 && o.y <= hi + span * .3));
   ov.forEach(o => { lo = Math.min(lo, o.lo ?? o.y); hi = Math.max(hi, o.hi ?? o.y); });
@@ -310,7 +311,7 @@ function chart(cv, s, tf, name) {
   const titleTxt = (name ? name + '  ' : '') + tf.toUpperCase();
   // every timeframe shows the H1 trend (internal order flow); H4 is never shown as a bias
   const tr = s.s ? (s.s.trend || 0) : 0, trTxt = tr === 1 ? 'H1 \u25B2 BULLISH' : tr === -1 ? 'H1 \u25BC BEARISH' : 'H1 NO TREND', trCol = tr === 1 ? TV.upTxt : tr === -1 ? TV.dnTxt : TV.dim;
-  g.font = `700 ${FS + 1}px ${MONO}`; const titleW = Math.ceil(g.measureText(titleTxt).width) + 14, trW = Math.ceil(g.measureText(trTxt).width) + 14;
+  g.font = `700 ${FS + 1}px ${MONO}`; const titleW = Math.ceil(g.measureText(titleTxt).width) + 14, trW = SMC_ONLY ? 0 : Math.ceil(g.measureText(trTxt).width) + 14;
   g.font = `${FS}px ${MONO}`;
   const bandW = Math.max(40, W - 14 - titleW - trW), need = boxes.reduce((n, o) => n + tw(o.label) + 3, 0);
   const rows = Math.min(3, Math.max(1, Math.ceil(need / bandW)));
@@ -375,9 +376,10 @@ function chart(cv, s, tf, name) {
     g.fillStyle = 'rgba(0,0,0,.92)'; g.strokeStyle = TV.grid; g.beginPath(); g.roundRect ? g.roundRect(r.x, r.y, r.w, r.h, 3) : g.rect(r.x, r.y, r.w, r.h); g.fill(); g.stroke();
     g.fillStyle = '#D1D4DC'; g.font = `700 ${FS + 1}px ${MONO}`; g.textBaseline = 'middle'; g.fillText(titleTxt, r.x + 7, r.y + r.h / 2 + .5);
     // H4 trend badge, right after the title tag: green = uptrend, red = downtrend, grey = no valid trend yet
-    const t = { x: r.x + r.w + 6, y: 4, w: trW, h: TH }; taken.push(t);
+    if (!SMC_ONLY) { const t = { x: r.x + r.w + 6, y: 4, w: trW, h: TH }; taken.push(t);
     g.fillStyle = 'rgba(0,0,0,.92)'; g.strokeStyle = trCol; g.lineWidth = 1.5; g.beginPath(); g.roundRect ? g.roundRect(t.x, t.y, t.w, t.h, 3) : g.rect(t.x, t.y, t.w, t.h); g.fill(); g.stroke(); g.lineWidth = 1;
-    g.fillStyle = trCol; g.fillText(trTxt, t.x + 7, t.y + t.h / 2 + .5); g.textBaseline = 'alphabetic'; g.font = `${FS}px ${MONO}`; }
+    g.fillStyle = trCol; g.fillText(trTxt, t.x + 7, t.y + t.h / 2 + .5); }
+    g.textBaseline = 'alphabetic'; g.font = `${FS}px ${MONO}`; }
   if (main) { const E = { marks: new Set(marks.map(o => o.t + '|' + o.label)), W, Hh, FS, LH, MONO, plotW, step, ivl, cs0: cs[0][0], lo, hi, TOP, tf, taken, tw, Y, digits: s.digits ?? 3, price: s.price, last: cs[cs.length - 1][4], atr: s.atr,
     rrPlan: s.k && s.k.active && s.k.active.plan && s.k.active.plan.rr, toPrice: y => lo + (Hh - 14 - y) / (Hh - 14 - TOP) * (hi - lo), toTime: x => Math.round(cs[0][0] + (x - step / 2) / step * ivl) }; SMC.draw(g, cv, E); Pos.draw(g, cv, E); Snipe.draw(g, cv, E); PA.draw(g, cv, E); }
   const free = r => !taken.some(t => hit(r, t)) && !solid.some(t => hit(r, t));
