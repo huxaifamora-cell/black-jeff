@@ -220,17 +220,27 @@ const SMC = (() => {
     }
     labels.sort((p, q) => q.prio - p.prio).forEach((l) => text(...l.args));
     const prog = fs_ && pref.kl && (E.tf === 'h1' || E.tf === 'm5') ? (fs_.r || []).filter((r) => r.state > 0) : [];
-    if (prog.length) text(`RECLAIM ${Math.max(...prog.map((r) => r.state))}/5`, plotW - 4, 4 + 3 * (fs + 6) + 6, COL.rec, 'right', true);
-    // trend tag and the latest event, top right
-    const tf_ = rf || mf, tr = tf_.trend, tag = `SMC${follow ? ' H1' : ''} ${tr === 1 ? '▲ BULL' : tr === -1 ? '▼ BEAR' : '● FLAT'}${tf_.state === 'live' ? '' : ' · ' + (tf_.state === 'connecting' ? '...' : tf_.state === 'idle' ? '...' : 'reconnecting')}`;
-    text(tag, plotW - 4, 4 + fs + 6, tr === 1 ? '#26A69A' : tr === -1 ? '#EF5350' : '#787B86', 'right', true);
+    if (prog.length) text(`RECLAIM ${Math.max(...prog.map((r) => r.state))}/5`, plotW - 4, 4 + 2 * (fs + 6) + 3, COL.rec, 'right', true);
+    // the latest event, top right (the SMC trend itself is the badge next to the chart title, see tag())
     if (st.flash && Date.now() - st.flash.at < 12000) {
       const a = st.flash.a, d = new Date(a.t1 * 1000), hm = String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
-      text(`${a.dir === 1 ? '▲' : '▼'} ${a.type === 'idm' ? (ZN[a.role] || 'IDM') + ' \u2713' : a.label} ${hm}`, plotW - 4, 4 + 2 * (fs + 6) + 3, COL[a.type] || '#fff', 'right', true);
+      text(`${a.dir === 1 ? '▲' : '▼'} ${a.type === 'idm' ? (ZN[a.role] || 'IDM') + ' \u2713' : a.label} ${hm}`, plotW - 4, 4 + fs + 6, COL[a.type] || '#fff', 'right', true);
       setTimeout(redraw, 12100 - (Date.now() - st.flash.at));
     }
     g.restore();
   }
 
-  return { open, barHtml, bind, draw };
+  // The SMC trend of the timeframe on screen, for the badge next to the chart title (replaces the old SORK H1 trend badge). M5 follows H1, so it says "SMC H1 ...".
+  // null when the SMC overlay is off or has nothing yet: the caller then shows its own fallback.
+  function tag(tf) {
+    if (!st.sym) return null;
+    ensure(tf);
+    if (!pref.on || st.main.state === 'off') return null;
+    const f = REF[tf] ? st.ref : st.main;
+    if (f.state === 'idle' || f.state === 'connecting' || (f.state === 'error')) return null;
+    const tr = f.trend;
+    return { tr, txt: `SMC${REF[tf] ? ' H1' : ''} ${tr === 1 ? '\u25B2 BULLISH' : tr === -1 ? '\u25BC BEARISH' : 'NO TREND'}${f.state === 'live' ? '' : ' \u00B7 ...'}` };
+  }
+
+  return { open, barHtml, bind, draw, tag };
 })();

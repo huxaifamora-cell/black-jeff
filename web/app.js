@@ -309,7 +309,9 @@ function chart(cv, s, tf, name) {
   const gutter = Math.min(Math.ceil(W * .4), Math.max(priceTxt ? tw(priceTxt) : 0, ...lines.map(o => tw(o.label)), ...boxes.map(o => tw(o.label) + 6)) + 8);
   const titleTxt = (name ? name + '  ' : '') + tf.toUpperCase();
   // every timeframe shows the H1 trend (internal order flow); H4 is never shown as a bias
-  const tr = s.s ? (s.s.trend || 0) : 0, trTxt = tr === 1 ? 'H1 \u25B2 BULLISH' : tr === -1 ? 'H1 \u25BC BEARISH' : 'H1 NO TREND', trCol = tr === 1 ? TV.upTxt : tr === -1 ? TV.dnTxt : TV.dim;
+  // replaced by the SMC trend of the timeframe on screen (M5 follows H1); the app's own H1 trend is only the fallback while the SMC has no data
+  const sm = main ? SMC.tag(tf) : null;
+  const tr = sm ? sm.tr : s.s ? (s.s.trend || 0) : 0, trTxt = sm ? sm.txt : tr === 1 ? 'H1 \u25B2 BULLISH' : tr === -1 ? 'H1 \u25BC BEARISH' : 'H1 NO TREND', trCol = tr === 1 ? TV.upTxt : tr === -1 ? TV.dnTxt : TV.dim;
   g.font = `700 ${FS + 1}px ${MONO}`; const titleW = Math.ceil(g.measureText(titleTxt).width) + 14, trW = Math.ceil(g.measureText(trTxt).width) + 14;
   g.font = `${FS}px ${MONO}`;
   const bandW = Math.max(40, W - 14 - titleW - trW), need = boxes.reduce((n, o) => n + tw(o.label) + 3, 0);
