@@ -39,7 +39,8 @@ How the data flows (no polling, no extra dependencies):
    (it re-reads the official closed candle first), resubscribes after a dropped socket and rebuilds after a gap. Idle subscriptions stop after 10 minutes. `SMC_SYMBOLS` keeps chosen symbols always on.
 3. `server/smc.js` is the engine: pure and incremental, no repainting (a mark is only committed when a candle **closes**; the forming candle only shows a dashed `...` preview).
 4. `GET /api/smc?symbol=V75&tf=m5` returns the current marks. `GET /api/smc/stream?symbol=V75&tf=m5` is a Server-Sent Events stream with `snapshot`, `update` (a candle closed: new / changed marks) and `live` (provisional marks). Same Telegram login as the other API calls.
-5. `web/smc.js` draws the marks. Add your own consumer (alerts, a bot message, a strategy) by listening to the feed in `createApp`: `app.smc.on('update', ({ sym, tf, changed }) => ...)`.
+5. **M5 follows H1.** On the M5 chart `web/smc.js` opens a second stream for H1 (`REF` in the file) and draws the H1 trend (tag `SMC H1 ▲ BULL`) and the H1 `IDM` / `DISR` / `LIQ` zones; M5's own zones and trend are not shown. M5's own BOS lines and swing labels stay. The H1 timeframe must be in `SMC_TIMEFRAMES` (it is by default). H1 and H4 charts use their own engine.
+6. `web/smc.js` draws the marks. Add your own consumer (alerts, a bot message, a strategy) by listening to the feed in `createApp`: `app.smc.on('update', ({ sym, tf, changed }) => ...)`.
 
 Definitions (all numbers are in `smcDefaults` in `server/smc.js`):
 
@@ -53,7 +54,15 @@ Definitions (all numbers are in `smcDefaults` in `server/smc.js`):
 | Inducement | `idmMode: 'zone'` (default): every BOS gets a box on the zone that formed it. Up break = demand zone: the last bearish candle at the lowest low between the broken swing and the break, plus the first bullish candle after it, body to body. Down break = supply zone, mirrored. **IDM = the zone of the latest BOS in the trend direction**, `DISR` = the BOS before it, `LIQ` = the one before that (`idmMaxOpen` = 3). A wick back into a zone = taken (`IDM ✓`). **50% rule:** a candle with a long body (more than `longBodyMult` (1.5) x the average body of the previous `avgBodyLen` (20) candles) only gives the half of its body on the zone side (demand: bottom 50%, supply: top 50%); a long first candle is the zone on its own, like the long order block body in SORK. The IDM and DISR boxes run on to the right, slightly past the forming candle, with their label inside. `idmMode: 'swing'` is the old rule: up trend, the first minor swing low (`internalLen` = 2) after the latest major swing high, at least `idmMinDepthAtr` (0.3) ATR deep; a wick below it = taken. Down trend: mirrored |
 | EQH / EQL | two swings of the same side within `eqTolAtr` (0.1) x ATR form one liquidity pool |
 
-Settings (environment variables, all optional): `SMC=0` (turn off), `SMC_SWING_LEN=5`, `SMC_INTERNAL_LEN=2`, `SMC_TIMEFRAMES=m5,h1,h4`, `SMC_SYMBOLS=V75,V100s` (always watched). Tests: `test/smc.test.js`, `test/smcfeed.test.js`, `test/derivstream.test.js`.
+### SORK rules on the SMC order flow (reclamation, key level, M5 POI, 50% POI, bjeff zone, QML)
+The SMC order flow is translated into the shape the SORK rules expect (`server/smcflow.js`): **IDM = inducement, DISR = disruption, LIQ = point of liquidity**. Then the same code that runs SORK (`evaluate()` in `server/engine.js`, option `flowOf`) runs on it, unchanged:
+reclamation at the IDM and DISR, key levels (RKL / SKL to RBS / SBR, valid on a body close past the tip, 2 wicks = high probability, must fit the IDM / DISR, M5 invalidation, the key level bias flip after an invalidation), the pullback rule (a wick back into the IDM zone with an IDM and a DISR mapped; the first valid key level after the trend resumes is skipped), the M5 POI box, the 50% POI, the bjeff zone, the QML and the trade plan.
+What the SMC decides is the trend (it flips when a body closes beyond the DISR zone) and the pullback / resume (a BOS in the trend direction after the pullback). The SORK order flow keeps running next to it until you switch.
+- **Alerts:** the same alerts as SORK (reclamation, key level, entries, invalidation, QML, bjeff zone, 50% POI, trend and order flow), keyed `<symbol>|smc|...`, with a third line `🧭 SMC`. They go to the people subscribed to those alert types as private messages. They are **not** posted to groups and channels unless `SMC_ALERT_CHATS=1` (so the groups do not get every alert twice). `SMC_ALERTS=0` turns the SMC alerts off.
+- **Chart (H1 and M5):** key level box (gold), the M5 key level POI box, 50% POI (dashed), bjeff zone, QML, `RECLAIM ✓` where a reclamation completed and `RECLAIM n/5` while it is in progress. Layer chip `KEY LEVEL`. Read from `GET /api/smc/flow?symbol=V75` (polled every 5 s).
+- **Cost:** one extra evaluation per symbol per refresh (about 50 ms on 20,000 M5 candles). Tests: `test/smcflow.test.js` and the last tests of `test/smc.test.js`.
+
+Settings (environment variables, all optional): `SMC=0` (turn off), `SMC_ALERTS=0`, `SMC_ALERT_CHATS=1`, `SMC_SWING_LEN=5`, `SMC_INTERNAL_LEN=2`, `SMC_TIMEFRAMES=m5,h1,h4`, `SMC_SYMBOLS=V75,V100s` (always watched). Tests: `test/smc.test.js`, `test/smcfeed.test.js`, `test/derivstream.test.js`.
 
 ## Deploy on Render (plain Web Service)
 
