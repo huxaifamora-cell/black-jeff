@@ -1,4 +1,4 @@
-// SMC overlay: market structure, BOS, CHoCH, inducement (IDM, a box on the demand / supply zone of the BOS: IDM = latest BOS in the trend direction, DISR = the one before, LIQ = before that), liquidity sweeps and equal highs / lows drawn on the symbol chart.
+// SMC overlay: market structure, BOS, inducement (IDM, a box on the demand / supply zone of the BOS: IDM = latest BOS in the trend direction, DISR = the one before, LIQ = before that), liquidity sweeps and equal highs / lows drawn on the symbol chart.
 // The marks come from the server's SMC engine (server/smc.js) over a live Server-Sent Events stream (/api/smc/stream), which is fed by the Deriv WebSocket,
 // so a BOS or a sweep appears the moment the candle closes, and the forming candle shows a dashed provisional preview.
 //
@@ -8,8 +8,8 @@
 // app.js calls: open(id) when a symbol opens, barHtml() + bind() when its page is drawn, and draw(g, cv, E) from chart() (the main chart only).
 const SMC = (() => {
   const KEY = 'bj_smc_v1';
-  const COL = { bos: '#6EA8FE', choch: '#FFA94D', idm: '#B197FC', sweep: '#F06292', eq: '#CBD5E1', swing: '#8A94A6', kl: '#FFD166', qml: '#FF8A65', adv: '#FFF59D', dead: '#8A94A6', rec: '#69F0AE' };
-  const HIDE = { choch: 1, sweep: 1 };                                // drawn nowhere: CHoCH marks and liquidity sweeps (the engine still tracks them)
+  const COL = { bos: '#6EA8FE', idm: '#B197FC', sweep: '#F06292', eq: '#CBD5E1', swing: '#8A94A6', kl: '#FFD166', qml: '#FF8A65', adv: '#FFF59D', dead: '#8A94A6', rec: '#69F0AE' };
+  const HIDE = { sweep: 1 };                                          // drawn nowhere: liquidity sweeps (the engine still tracks them)
   const ZN = { idm: 'IDM', disr: 'DISR', liq: 'LIQ' };                // zone roles set by the engine (latest BOS in the trend direction, the one before, the one before that)
   const EXT = { idm: 1, disr: 1 };                                    // these boxes run on to the right, slightly past the forming candle
   const LAYERS = [['st', 'STRUCTURE'], ['idm', 'IDM'], ['kl', 'KEY LEVEL'], ['liq', 'LIQUIDITY']];
@@ -42,7 +42,7 @@ const SMC = (() => {
   function onUpdate(f, m) {
     for (const a of m.changed || []) {
       const old = f.ann.get(a.id); f.ann.set(a.id, a);
-      if (NOTABLE[a.type] || (a.type === 'idm' && a.status === 'swept' && !(old && old.status === 'swept'))) st.flash = { a, at: Date.now() };
+      if ((NOTABLE[a.type] && f === st.main && f.tf === 'h1') || (a.type === 'idm' && a.status === 'swept' && !(old && old.status === 'swept'))) st.flash = { a, at: Date.now() };
     }
     if (f.ann.size > 500) for (const k of f.ann.keys()) { f.ann.delete(k); if (f.ann.size <= 400) break; }
     f.trend = m.trend || 0; f.live = []; redraw();
@@ -142,13 +142,15 @@ const SMC = (() => {
       g.fillStyle = col; g.textAlign = 'left'; g.fillText(s, bx + 3, by + fs); g.globalAlpha = 1;
       E.taken.push({ x: bx, y: by, w, h });
     };
-    const labels = [];                                                // drawn after all lines, most important first: CHoCH > BOS > sweep > IDM
+    const labels = [];                                                // drawn after all lines, most important first: BOS > sweep > IDM
     const label = (prio, ...args) => labels.push({ prio, args });
     const line = (x0, x1, p, col, dash, alpha = 1) => {
       g.globalAlpha = alpha; g.strokeStyle = col; g.setLineDash(dash); g.beginPath(); g.moveTo(x0, Math.round(y(p)) + .5); g.lineTo(x1, Math.round(y(p)) + .5); g.stroke(); g.setLineDash([]); g.globalAlpha = 1;
     };
     const padR = Math.min(E.W - 2, plotW + Math.max(54, step * 4));                                 // right edge of the IDM / DISR boxes: past the forming candle
     items.sort((p, q) => (p.t1 ?? p.t0) - (q.t1 ?? q.t0));
+    // BOS lines: H1 chart only, and only the 2 BOS that carry the IDM and the DISR (the 2 most recent in the trend direction). Counter-trend BOS (the old CHoCH) are BOS like any other but get no line unless they are one of those 2.
+    const showBos = new Set(E.tf === 'h1' ? items.filter((a) => a.type === 'idm' && a.zone && a.status !== 'void' && (a.role === 'idm' || a.role === 'disr')).map((a) => a.ref) : []);
     for (const a of items) {
       if (HIDE[a.type]) continue;
       const ext = a.type === 'idm' && a.zone && EXT[a.role] && a.status !== 'void';                // IDM / DISR box: keeps going to the right, taken or not
@@ -161,11 +163,11 @@ const SMC = (() => {
         const x = X(a.t0); if (x < 4 || x > plotW - 4) continue;
         const hi_ = a.label === 'HH' || a.label === 'LH';
         g.font = `600 ${fs - 1}px ${MONO}`; g.textAlign = 'center'; g.fillStyle = COL.swing; if (hi_ ? yy - 15 > 12 : yy + 16 < E.Hh - 18) g.fillText(a.label, x, hi_ ? yy - 15 : yy + 16);
-      } else if (a.type === 'bos' || a.type === 'choch') {
-        if (!pref.st) continue;
-        const col = COL[a.type], lab = a.label + (pv ? ' …' : '');
-        line(x0, x1, a.price, col, dash || (a.type === 'bos' ? [] : [6, 3]), al);
-        label(a.type === 'choch' ? 4 : 3, lab, (x0 + x1) / 2, a.dir === 1 ? yy - 4 : yy + fs + 5, col, 'center', true, al, true);
+      } else if (a.type === 'bos') {
+        if (!pref.st || !showBos.has(a.id)) continue;
+        const col = COL.bos, lab = 'BOS' + (pv ? ' …' : '');
+        line(x0, x1, a.price, col, dash || [], al);
+        label(3, lab, (x0 + x1) / 2, a.dir === 1 ? yy - 4 : yy + fs + 5, col, 'center', true, al, true);
       } else if (a.type === 'idm') {
         if (!pref.idm || a.status === 'void') continue;
         const sw = a.status === 'swept';
@@ -220,27 +222,17 @@ const SMC = (() => {
     }
     labels.sort((p, q) => q.prio - p.prio).forEach((l) => text(...l.args));
     const prog = fs_ && pref.kl && (E.tf === 'h1' || E.tf === 'm5') ? (fs_.r || []).filter((r) => r.state > 0) : [];
-    if (prog.length) text(`RECLAIM ${Math.max(...prog.map((r) => r.state))}/5`, plotW - 4, 4 + 2 * (fs + 6) + 3, COL.rec, 'right', true);
-    // the latest event, top right (the SMC trend itself is the badge next to the chart title, see tag())
+    if (prog.length) text(`RECLAIM ${Math.max(...prog.map((r) => r.state))}/5`, plotW - 4, 4 + 3 * (fs + 6) + 6, COL.rec, 'right', true);
+    // trend tag and the latest event, top right
+    const tf_ = rf || mf, tr = tf_.trend, tag = `SMC${follow ? ' H1' : ''} ${tr === 1 ? '▲ BULL' : tr === -1 ? '▼ BEAR' : '● FLAT'}${tf_.state === 'live' ? '' : ' · ' + (tf_.state === 'connecting' ? '...' : tf_.state === 'idle' ? '...' : 'reconnecting')}`;
+    text(tag, plotW - 4, 4 + fs + 6, tr === 1 ? '#26A69A' : tr === -1 ? '#EF5350' : '#787B86', 'right', true);
     if (st.flash && Date.now() - st.flash.at < 12000) {
       const a = st.flash.a, d = new Date(a.t1 * 1000), hm = String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
-      text(`${a.dir === 1 ? '▲' : '▼'} ${a.type === 'idm' ? (ZN[a.role] || 'IDM') + ' \u2713' : a.label} ${hm}`, plotW - 4, 4 + fs + 6, COL[a.type] || '#fff', 'right', true);
+      text(`${a.dir === 1 ? '▲' : '▼'} ${a.type === 'idm' ? (ZN[a.role] || 'IDM') + ' \u2713' : a.label} ${hm}`, plotW - 4, 4 + 2 * (fs + 6) + 3, COL[a.type] || '#fff', 'right', true);
       setTimeout(redraw, 12100 - (Date.now() - st.flash.at));
     }
     g.restore();
   }
 
-  // The SMC trend of the timeframe on screen, for the badge next to the chart title (replaces the old SORK H1 trend badge). M5 follows H1, so it says "SMC H1 ...".
-  // null when the SMC overlay is off or has nothing yet: the caller then shows its own fallback.
-  function tag(tf) {
-    if (!st.sym) return null;
-    ensure(tf);
-    if (!pref.on || st.main.state === 'off') return null;
-    const f = REF[tf] ? st.ref : st.main;
-    if (f.state === 'idle' || f.state === 'connecting' || (f.state === 'error')) return null;
-    const tr = f.trend;
-    return { tr, txt: `SMC${REF[tf] ? ' H1' : ''} ${tr === 1 ? '\u25B2 BULLISH' : tr === -1 ? '\u25BC BEARISH' : 'NO TREND'}${f.state === 'live' ? '' : ' \u00B7 ...'}` };
-  }
-
-  return { open, barHtml, bind, draw, tag };
+  return { open, barHtml, bind, draw };
 })();
