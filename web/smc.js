@@ -13,9 +13,10 @@ const SMC = (() => {
   const HIDE = { sweep: 1 };                                          // drawn nowhere: liquidity sweeps (the engine still tracks them)
   const ZN = { idm: 'IDM', disr: 'DISR', liq: 'LIQ' };                // zone roles set by the engine (latest BOS in the trend direction, the one before, the one before that)
   const EXT = { idm: 1, disr: 1 };                                    // these boxes run on to the right, slightly past the forming candle
-  const LAYERS = [['st', 'STRUCTURE'], ['idm', 'IDM'], ['kl', 'KEY LEVEL'], ['liq', 'LIQUIDITY']];
+  const LAYERS = [['st', 'BOS'], ['idm', 'IDM'], ['kl', 'KLV'], ['liq', 'LIQUIDITY']];
   let pref = { on: true, st: true, idm: true, kl: true, liq: true };
   try { Object.assign(pref, JSON.parse(localStorage.getItem(KEY) || '{}')); } catch { /* storage blocked: defaults */ }
+  pref.on = true;                                                     // SMC is always on: it has no button any more (an old saved 'off' is ignored)
   const save = () => { try { localStorage.setItem(KEY, JSON.stringify(pref)); } catch { /* ignore */ } };
 
   // Two streams: `main` = the timeframe on screen, `ref` = the H1 stream that the M5 chart follows (H1 trend and H1 IDM / DISR / LIQ zones). Other timeframes need no ref.
@@ -103,7 +104,7 @@ const SMC = (() => {
   setInterval(() => { if ((st.main.ac || st.ref.ac) && Date.now() - lastDraw > 25000) stop(); }, 10000);     // chart gone (left the symbol page): close the streams
 
   // ------------------------------------------------------------ chips under the timeframe buttons
-  const barHtml = () => `<div class="chips smcbar" role="group" aria-label="SMC indicator"><button class="chip${pref.on ? ' on' : ''}" data-smc="on" aria-pressed="${pref.on}">SMC</button>` +
+  const barHtml = () => `<div class="chips smcbar" role="group" aria-label="SMC indicator">` +
     LAYERS.map(([k, name]) => `<button class="chip${pref.on && pref[k] ? ' on' : ''}" data-smc="${k}" aria-pressed="${pref.on && pref[k]}"${pref.on ? '' : ' disabled'}>${name}</button>`).join('') + '</div>';
   function bind() {
     document.querySelectorAll('.smcbar button[data-smc]').forEach((b) => b.onclick = () => {
@@ -156,6 +157,7 @@ const SMC = (() => {
     const bosFrom = E.tf === 'h4' ? -Infinity : E.tf === 'h1' && zd ? zd.bos_t : Infinity;
     for (const a of items) {
       if (HIDE[a.type]) continue;
+      if (a.type === 'idm' && E.tf === 'h4') continue;                                           // H4 shows the breaks only, no IDM / DISR / LIQ
       const ext = a.type === 'idm' && a.zone && EXT[a.role] && a.status !== 'void';                // IDM / DISR box: keeps going to the right, taken or not
       const end = ext ? tEnd : a.t1 ?? (a.type === 'idm' ? tEnd : a.t0);
       if (end < cs0 - ivl || a.t0 > tEnd) continue;                                              // outside the visible candles
@@ -203,7 +205,7 @@ const SMC = (() => {
       for (const o of fs_.overlays.filter(mine)) {
         if (o.t0 > tEnd) continue;
         const dead = o.tone === 'dead', low = /low probability/.test(o.label || '');
-        const nm = o.label === 'QML' ? 'QML' : o.label === '50% POI' ? '50% POI' : o.label === 'bjeff zone' ? 'BJEFF ZONE' : 'KEY LEVEL' + (low ? ' (LOW PROB)' : '');
+        const nm = o.label === 'QML' ? 'QML' : o.label === '50% POI' ? '50% POI' : o.label === 'bjeff zone' ? 'BJEFF ZONE' : 'KLV' + (low ? ' (LOW PROB)' : '');
         const col = dead ? COL.dead : o.label === 'QML' ? COL.qml : o.label === '50% POI' ? COL.adv : o.label === 'bjeff zone' ? COL.rec : COL.kl;
         const x0 = Math.max(0, X(o.t0)), yt = Math.round(y(o.hi)), yb = Math.round(y(o.lo)), h = Math.max(2, yb - yt);
         if (yb < 0 || yt > E.Hh) continue;
