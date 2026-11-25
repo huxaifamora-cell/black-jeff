@@ -165,7 +165,11 @@ const PA = (() => {
     if (t && t.id === 'qset') { quickSet(); return true; }                          // the buttons act at once
     if (t && t.id.startsWith('del-')) { act('del', t.id.slice(4)); return true; }
     if (t && t.id === 'qx') { qd = null; qNote = ''; redraw(); return true; }
-    if (t && t.id.startsWith('qm-')) { qm = t.id.slice(3); qNote = ''; redraw(); return true; }                    // pick what the held line becomes
+    if (t && t.id.startsWith('qm-')) {                                                                               // pick what the held line becomes
+      qm = t.id.slice(3); qNote = '';
+      if (qm === 'snipe' && typeof Snipe !== 'undefined') { quickGo(Snipe.autoDir()); return true; }                  // drawing tools: no BULL / BEAR step, the boxes open at once (a chip on them flips the direction)
+      redraw(); return true;
+    }
     if (t && (t.id === 'qa+' || t.id === 'qa-')) { quickGo(t.id === 'qa+' ? 1 : -1); return true; }
     if (t) { drag = { id: t.id, pid: e.pointerId }; cv._freeze = { lo: E.lo, hi: E.hi }; tap = null; return true; }
     clearHold();

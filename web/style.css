@@ -131,6 +131,7 @@ main{max-width:760px;margin:0 auto}
 /* alerts page: one slim list, details on tap */
 .chips{display:flex;gap:6px;overflow-x:auto;padding-bottom:4px;margin-bottom:6px;scrollbar-width:none}.chips::-webkit-scrollbar{display:none}
 .chips .chip{flex:none;min-height:36px;padding:4px 14px}
+.smcbar .chip:first-child{margin-left:auto}.smcbar .chip:last-child{margin-right:auto}
 .alist{background:var(--card);border:1px solid var(--edge)}
 .alist .grp{margin:0;padding:6px 12px;background:var(--inner);border-bottom:1px solid var(--edge);font-size:12px}
 .arow{border-bottom:1px solid var(--edge)}.arow:last-child{border-bottom:0}
