@@ -330,7 +330,7 @@ function runQuiz(ch) {
 // The answers come from the server's SMC engine (/api/smc, /api/smc/flow), the same marks the live chart draws, so the drill teaches the rules the bot really uses.
 // Rank mechanics (XP, daily cap, 30% miss rule for a Private) are unchanged: every pass counts as a drill, right or wrong is all that matters.
 let lastDrill = '';
-const DRILL_COL = { idm: '#B197FC', disr: '#B197FC', klv: '#FFD166', bos: '#6EA8FE', swing: '#E6EDF7' };
+const DRILL_COL = { idm: '#B197FC', disr: '#B197FC', klv: '#FFD166', bos: '#6EA8FE', swing: '#E6EDF7', qml: '#FF8A65', rec: '#69F0AE', cand: '#FFF59D' };
 
 // Everything the chart needs to show the answer after the person has answered (the live chart draws nothing in a drill, so the reveal is drawn here).
 function drillReveal(cv, map, items) {
@@ -341,8 +341,12 @@ function drillReveal(cv, map, items) {
   g.save(); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.font = '700 11px ui-monospace, monospace'; g.textBaseline = 'alphabetic';
   for (const o of items) {
     g.strokeStyle = o.col; g.fillStyle = o.col;
-    if (o.k === 'box') {
-      const x = xl(o.t0), w = cv.clientWidth - x; g.globalAlpha = .22; g.fillRect(x, Y(o.hi), w, Y(o.lo) - Y(o.hi)); g.globalAlpha = 1; g.lineWidth = 1.2; g.strokeRect(x, Y(o.hi), w, Y(o.lo) - Y(o.hi));
+    if (o.k === 'cands') {                                              // a bracket around the named candles
+      const cc = G.cs.filter(c => o.ts.includes(c[0])); if (!cc.length) continue;
+      const hi = Math.max(...cc.map(c => c[2])), lo = Math.min(...cc.map(c => c[3])), x0 = xl(cc[0][0]) - 3, x1 = xc(cc[cc.length - 1][0]) + G.step * .35;
+      g.lineWidth = 1.8; g.strokeRect(x0, Y(hi) - 4, x1 - x0, Y(lo) - Y(hi) + 8); g.fillText(o.label, Math.max(3, x0), Y(hi) - 8);
+    } else if (o.k === 'box') {
+      const x = xl(o.t0), w = cv.clientWidth - x; g.globalAlpha = .22; g.fillRect(x, Y(o.hi), w, Y(o.lo) - Y(o.hi)); g.globalAlpha = 1; g.lineWidth = 1.2; if (o.dash) g.setLineDash([6, 4]); g.strokeRect(x, Y(o.hi), w, Y(o.lo) - Y(o.hi)); g.setLineDash([]);
       g.fillText(o.label, Math.max(3, x + 3), Y(o.hi) - 3);
     } else if (o.k === 'line') {
       const x0 = xc(o.t0), x1 = xc(o.t1), y = Y(o.y); g.lineWidth = 1.6; g.beginPath(); g.moveTo(x0, y); g.lineTo(x1, y); g.stroke();
@@ -395,6 +399,54 @@ function drillQuestions(cv, map, sm, fl) {
   return out;
 }
 
+// Drills that need a different window than "the last 80 H1 candles": the M5 entry candle at the key level (KLV), the QML and the reclamation.
+// Each descriptor says which timeframe and which end time to draw (endT = the newest candle shown, so an older pattern can still be drilled); make(cv, map) builds the question once that chart is drawn.
+// Context (what the question is about, e.g. the key level POI) is drawn BEFORE the answer; the answer (reveal) after.
+const ENTRY_NAME = ['Engulfing', 'Harami', 'Star (morning or evening)'];
+const REC_STEPS = (d) => [`Step 1: price came ${d === 1 ? 'down' : 'up'} into the POI`, `Step 2: a body closed ${d === 1 ? 'below' : 'above'} the POI`, `Step 3: a body closed back ${d === 1 ? 'above' : 'below'} the POI`, 'Step 4: price came back into the POI without a body break'];
+function drillSpecials(st, sm, fl) {
+  const f = fl && fl.state, out = [], H = 3600, M = 300, m5 = (st.candles && st.candles.m5) || [], h1 = (st.candles && st.candles.h1) || [];
+  if (!f) return out;
+  // ---- KLV entry candle names: harami / engulfing / star completed inside the key level POI on M5
+  const act = f.k && f.k.active, kb = act && !act.invalidated ? (f.m5poi || act) : null;
+  if (kb && Array.isArray(f.signals)) for (const sg of f.signals) {
+    const i = m5.findIndex(c => c[0] === sg.t); if (i < 2) continue;
+    const star = /star/.test(sg.type), ts = (star ? [m5[i - 2][0]] : []).concat([m5[i - 1][0], m5[i][0]]), nm = sg.type.replace('_', ' ').replace(/^./, (c) => c.toUpperCase());
+    out.push({ kind: 'entry', tf: 'm5', endT: sg.t + 5 * M, make: () => ({ kind: 'entry', type: 'choice', title: 'Name the entry candle pattern', hint: 'The shaded box is the key level (KLV) POI on M5. The candles at the end of the chart complete an entry confirmation inside it.',
+      options: ENTRY_NAME, answer: star ? 2 : /harami/.test(sg.type) ? 1 : 0, context: [{ k: 'box', lo: kb.lo, hi: kb.hi, t0: kb.t ?? kb.t0, label: 'KLV POI', col: DRILL_COL.klv, dash: true }], reveal: [{ k: 'cands', ts, label: nm, col: DRILL_COL.cand }],
+      why: `${nm}. ` + (star ? 'A star: a long candle, then a small body (at most half of the first body) that touches the POI, then a candle of the other colour closing beyond the middle of the first body (morning star for buys, evening star for sells).'
+        : /harami/.test(sg.type) ? 'A harami: the candle body sits INSIDE the body of the opposite candle before it, inside the POI.' : 'An engulfing: the candle body covers the whole body of the opposite candle before it, inside the POI.') }) });
+  }
+  // ---- QML: the inverse of an invalidated key level
+  const q = f.qml;
+  if (q && Number.isFinite(q.lo) && Number.isFinite(q.hi) && Number.isFinite(q.t)) {
+    const endT = q.t + 8 * H, qbox = { k: 'box', lo: q.lo, hi: q.hi, t0: q.t, label: 'QML', col: DRILL_COL.qml }, rev = [qbox, ...(Number.isFinite(q.extreme_t) ? [{ k: 'dot', y: q.extreme, t: q.extreme_t, label: 'Reversal', col: DRILL_COL.qml, below: q.dir === 1 }] : [])];
+    const seen = (cv) => Number.isFinite(q.extreme_t) ? q.extreme_t >= cv._geom.cs[0][0] : true;     // the reversal must be on screen
+    out.push({ kind: 'qml', tf: 'h1', endT, make: (cv, map) => { if (!seen(cv)) return null; const G = cv._geom, tol = (map.hi - map.lo) * .03, i = G.cs.findIndex(c => c[0] >= q.t), x0 = (i < 0 ? G.cs.length : i) * G.step;
+      return { kind: 'qml', type: 'tap', title: 'Tap the QML zone', hint: 'A key level was just invalidated: an M5 body closed outside its POI. Tap the Quasimodo level (QML) it left behind.', why: 'The QML (inverse key level) runs from the edge of the invalidated key level to the extreme of the move that led into the break. It only counts when that reversal sits at or close to a point of liquidity.',
+        hit: (x, p) => p >= q.lo - tol && p <= q.hi + tol && x >= x0 - 2 * G.step, reveal: rev }; } });
+    out.push({ kind: 'qmldir', tf: 'h1', endT, make: (cv) => seen(cv) ? ({ kind: 'qmldir', type: 'choice', title: 'Which way does this QML trade?', hint: 'The QML is the inverse of the key level that was invalidated. Read where the reversal came from.', options: ['Buy', 'Sell'], answer: q.dir === 1 ? 0 : 1, reveal: rev,
+      why: q.dir === 1 ? 'Buy: an SBR (sell key level) was invalidated, so the QML buys from the low of the move.' : 'Sell: an RBS (buy key level) was invalidated, so the QML sells from the high of the move.' }) : null });
+    if (typeof q.at_liquidity === 'boolean') out.push({ kind: 'qmlvalid', tf: 'h1', endT, make: (cv) => seen(cv) ? ({ kind: 'qmlvalid', type: 'choice', title: 'Does this QML count?', hint: 'A QML only counts when its reversal point is at or close to a point of liquidity (an older BOS zone).', options: ['Yes: the reversal is at or near a point of liquidity', 'No: there is no point of liquidity near the reversal'], answer: q.at_liquidity ? 0 : 1, reveal: rev,
+      why: q.at_liquidity ? 'It counts: the reversal formed at or close to an H1 point of liquidity that already existed.' : 'It does not count: no point of liquidity sits at or near the reversal, so this QML is not valid.' }) : null });
+  }
+  // ---- reclamation: 5 steps at the IDM / DISR POI
+  for (const r of f.r || []) {
+    if (!Number.isFinite(r.lo) || !Number.isFinite(r.hi)) continue;
+    const role = r.role === 'inducement' ? 'IDM' : 'DISR', band = (cv) => ({ k: 'box', lo: r.lo, hi: r.hi, t0: cv._geom.cs[0][0], label: role + ' POI', col: DRILL_COL.idm, dash: true });
+    if (Number.isFinite(r.last_complete) && h1.some(c => c[0] === r.last_complete)) out.push({ kind: 'reclaim', tf: 'h1', endT: r.last_complete + 4 * H, make: (cv, map) => {
+      const G = cv._geom, tol = (map.hi - map.lo) * .03, c = G.cs.find(k => k[0] === r.last_complete); if (!c) return null;
+      const xc = G.cs.indexOf(c) * G.step + G.step / 2;
+      return { kind: 'reclaim', type: 'tap', title: 'Tap the candle that completed the reclamation', hint: `The ${role} POI is shaded. A valid reclamation has 5 steps; tap the candle that completed them.`, context: [band(cv)],
+        why: 'The reclamation completes (step 5) with the body closing out of the POI in the trend direction, after: price into the POI (1), a body through it (2), a body back out (3) and back into it without a body break (4). It is a confirmation, not an entry.',
+        hit: (x, p) => Math.abs(x - xc) <= 1.5 * G.step && p >= c[3] - tol && p <= c[2] + tol, reveal: [{ k: 'cands', ts: [c[0]], label: 'Reclamation complete', col: DRILL_COL.rec }] }; } });
+    if (r.state >= 1 && r.state <= 4) out.push({ kind: 'reclaimstep', tf: 'h1', endT: null, make: (cv) => ({ kind: 'reclaimstep', type: 'choice', title: 'How far has the reclamation got?', hint: `The ${role} POI is shaded. Pick the latest step that has happened.`, options: REC_STEPS(r.dir), answer: r.state - 1, context: [band(cv)], reveal: [],
+      why: `${REC_STEPS(r.dir)[r.state - 1]}. Step 5 is a body closing out of the POI in the trend direction. A body close through the far side again sends it back to step 2.` }) });
+  }
+  return out;
+}
+
+
 async function renderDrill() {
   view.innerHTML = '<p class="mut">Finding a chart...</p>';
   try {
@@ -404,15 +456,26 @@ async function renderDrill() {
       const id = encodeURIComponent(sy.id);
       const [v, sm, fl] = await Promise.all([api('/api/symbol/' + id), api('/api/smc?symbol=' + id + '&tf=h1').catch(() => null), api('/api/smc/flow?symbol=' + id).catch(() => null)]);
       const st = v.state; if (!st || !st.candles || (st.candles.h1 || []).length < 30 || !sm || sm.state === 'starting') continue;
-      view.innerHTML = `<div class="row"><button class="back" id="qb">&#8249; Drill</button><span class="small">${esc(v.short)} &middot; H1</span></div><div class="card" id="dq"></div><canvas id="dc"></canvas><div id="dr"></div>`;
+      view.innerHTML = `<div class="row"><button class="back" id="qb">&#8249; Drill</button><span class="small">${esc(v.short)} &middot; <span id="dtf">H1</span></span></div><div class="card" id="dq"></div><canvas id="dc"></canvas><div id="dr"></div>`;
       document.getElementById('qb').onclick = renderRank;
-      const cv = document.getElementById('dc'), map = chart(cv, { ...st, overlays: [], candles: { ...st.candles, h1: st.candles.h1.slice(-80) } }, 'h1');
+      const cv = document.getElementById('dc');
+      // a chart with only the candles, ending at endT (null = now) on the timeframe tf: the marks are never drawn by the chart in a drill
+      const draw = (tf, endT) => { const all = st.candles[tf] || [], cut = endT == null ? all : all.filter(c => c[0] <= endT); return chart(cv, { ...st, overlays: [], candles: { ...st.candles, [tf]: cut.slice(-80) } }, tf); };
+      const map = draw('h1', null);
       if (!map || !cv._geom) continue;
-      let qs = drillQuestions(cv, map, sm, fl); if (qs.length > 1) qs = qs.filter(q => q.kind !== lastDrill);
-      if (qs.length) { ready = { cv, map, q: qs[Math.floor(Math.random() * qs.length)] }; break; }
+      const pool = [...drillQuestions(cv, map, sm, fl).map(q => ({ kind: q.kind, q })), ...drillSpecials(st, sm, fl).map(d => ({ kind: d.kind, d }))];
+      const fresh = pool.filter(x => x.kind !== lastDrill), order = shuffle(fresh.length ? fresh : pool);
+      for (const it of order) {
+        if (it.q) { ready = { cv, map, q: it.q, tf: 'h1' }; break; }
+        const m2 = draw(it.d.tf, it.d.endT); if (!m2 || !cv._geom) continue;
+        const q = it.d.make(cv, m2); if (q) { ready = { cv, map: m2, q, tf: it.d.tf }; break; }
+      }
+      if (ready) break;
     }
     if (!ready) { view.innerHTML = '<div class="row"><button class="back" id="qb">&#8249; Drill</button></div><p class="mut">No chart is ready for a drill yet. Try again when the markets have more data.</p>'; document.getElementById('qb').onclick = renderRank; return; }
-    const { cv, map, q } = ready; lastDrill = q.kind;
+    const { cv, map, q, tf } = ready; lastDrill = q.kind;
+    document.getElementById('dtf').textContent = tf.toUpperCase();
+    if (q.context) drillReveal(cv, map, q.context);
     document.getElementById('dq').innerHTML = `<h4>${esc(q.title)}</h4><p class="small">${esc(q.hint)}</p>` + (q.type === 'choice' ? q.options.map((o, i) => `<button class="opt" data-i="${i}">${esc(o)}</button>`).join('') : '');
     let answered = false;
     const finish = async ok => {
@@ -612,7 +675,7 @@ async function renderRank() {
       <div class="plan"><div><small>ROLL CALL STREAK</small><span class="px">${s.streak} d</span></div><div><small>CHAPTERS</small><span class="px">${s.ch.length}/${CHAPTERS.length}</span></div><div><small>EXAMS</small><span class="px">${examsPassed}/${CHAPTERS.length}</span></div></div>
       ${m('Roll Call', 'Report in once a day. 7, 30 and 90 days earn a medal and bonus XP.', `best ${s.best} d`, null, null, 'roll')}
       ${m('Intercept Analysis', 'Open a new alert from its Telegram button, then check it against the SORK steps on the chart. Required to become Lieutenant: complete ${ANALYSES_REQ}.', `${Math.min(s.anTotal || 0, ANALYSES_REQ)}/${ANALYSES_REQ}`, 'Analyse an alert', 'g5', 'intercept')}
-      ${m('Chart reading drill', `SMC chart reading on an H1 chart with the marks hidden: tap the BOS, IDM, DISR, KLV and swing highs and lows, and read the trend and the BOS direction. Required to become Corporal: pass ${DRILLS_REQ} drills (daily XP limit ${DAILY_CAP.drill}, but every pass counts). As a Private you may miss at most ${DRILL_MISS_MAX}: missing more than 30% fails you and restarts the drills from 0.`, `${Math.min(s.drillOk || 0, DRILLS_REQ)}/${DRILLS_REQ}`, 'Start a drill', 'g3', 'drill')}
+      ${m('Chart reading drill', `SMC chart reading with the marks hidden: tap the BOS, IDM, DISR, KLV, swing highs and lows, the QML and the candle that completes a reclamation; read the trend, the BOS direction, the reclamation step and the QML; name the KLV entry candle (engulfing, harami or star). Required to become Corporal: pass ${DRILLS_REQ} drills (daily XP limit ${DAILY_CAP.drill}, but every pass counts). As a Private you may miss at most ${DRILL_MISS_MAX}: missing more than 30% fails you and restarts the drills from 0.`, `${Math.min(s.drillOk || 0, DRILLS_REQ)}/${DRILLS_REQ}`, 'Start a drill', 'g3', 'drill')}
       ${m('Field guide', 'Finish a chapter (scroll to its end) for a stripe and XP. Required to become Private: finish all chapters.', `${s.ch.length}/${CHAPTERS.length}`, 'Open the guide', 'g1', 'guide')}
       ${m('Proficiency Exam', 'Three questions per chapter. Pass with all 3 right for XP. Required to become Sergeant: pass every chapter. Failing more than 30% of any chapter exam fails you and restarts the exam from chapter 1.', `${examsPassed}/${CHAPTERS.length}`, 'Sit the exam', 'g2', 'exam')}`,
     medals: `<h3 class="ctr" style="margin-top:0">Medals</h3><div class="medals">${Object.entries(MEDALS).map(([k, [t, d]]) => `<div class="medal ${s.medals.includes(k) ? 'on' : ''}">${ico(k)}<b>${t}</b><span>${d}</span></div>`).join('')}</div>`,
