@@ -29,7 +29,7 @@
 //          is on the zone side (demand: bottom 50%, supply: top 50%); a long A is the zone on its own, like the long order block body in SORK.
 //          Which zones are shown follows the trend: IDM = the zone of the LATEST BOS in the trend direction, DISR (disruption) = the previous leg of the stepping sequence, LIQ = the one before that.
 //  - Stepping sequence (per direction): walk back from the latest BOS of that direction and keep only the legs that really step. Up: each older leg must have a LOWER pullback low (HL, the zone's `line`) and a LOWER broken swing high (HH, `bos_level`)
-//          than the leg kept after it; down: mirrored (LH / LL). A leg that does not step is skipped and the walk goes on with the next older one, compared with the last KEPT leg. The latest BOS is always the anchor (the IDM).
+//          than the leg kept after it, and its zone's far edge must be beyond the newer zone's (up: lower `lo`, down: higher `hi`), so the boxes can never overlap the wrong way round; down: mirrored (LH / LL). A leg that does not step is skipped and the walk goes on with the next older one, compared with the last KEPT leg. The latest BOS is always the anchor (the IDM).
 //          So the IDM always sits above the DISR in an up trend (below it in a down trend), and each zone belongs to a higher low (lower high) than the one before it.
 //          The sequence feeds the roles (IDM / DISR / LIQ), the 2-break trend rule and the DISR that invalidates the trend. After a DISR invalidation the new direction is mapped from the two most recent stepping legs, whenever they formed.
 //          A wick back into a zone = taken (status 'swept'). A zone that drops out of the three (or belongs to the old trend after a flip) gets status 'void' and leaves the chart.
@@ -295,7 +295,7 @@ export class SmcEngine {
       const n = out[out.length - 1];
       if (n) {
         const z = b.zone, y = n.zone;
-        if (!(dir === 1 ? z.line < y.line && z.bos_level < y.bos_level : z.line > y.line && z.bos_level > y.bos_level)) continue;
+        if (!(dir === 1 ? z.line < y.line && z.bos_level < y.bos_level && z.lo < y.lo : z.line > y.line && z.bos_level > y.bos_level && z.hi > y.hi)) continue;   // HL + HH, and the zone itself must sit beyond the newer one (up: lower far edge, down: higher far edge) so the boxes never draw the wrong way round
       }
       out.push(b);
     }
