@@ -190,10 +190,10 @@ function cards(s, d) {
        <p class="small">${S.anchor_t ? `Valid BOS ${T(S.anchor_t)} at ${P(S.level, d)}. ` : ''}Liquidity (SLQ) present.</p>`
     : '<p class="mut">No valid structure yet.</p>') : '<p class="mut">No data.</p>') + '</div>';
   const O = s.o;
-  h += `<div class="card"><h4>O &middot; ${O && O.source === 'smc' ? 'SMC order flow' : 'Order flow'} (H1)</h4>` + (O && O.pois.some(p => p.role !== 'plq') ? O.pois.filter(p => p.role !== 'plq').map(p =>
-    `<p><b>${O.source === 'smc' ? ({ inducement: 'IDM', disruption: 'DISR', plq: 'LIQ' })[p.role] : p.role === 'plq' ? 'Point of liquidity' : p.role}</b> (${p.dir === 1 ? 'bullish' : 'bearish'}) POI ${box(p, d)}</p>`).join('')
+  h += `<div class="card"><h4>O &middot; Order flow (H1)</h4>` + (O && O.pois.some(p => p.role !== 'plq') ? O.pois.filter(p => p.role !== 'plq').map(p =>
+    `<p><b>${p.role === 'plq' ? 'Point of liquidity' : p.role}</b> (${p.dir === 1 ? 'bullish' : 'bearish'}) POI ${box(p, d)}</p>`).join('')
     : '<p class="mut">Nothing mapped yet.</p>') +
-    (O && O.recovered ? `<p class="small">${O.recovered.kind === 'reclamation' ? 'The disruption was invalidated and then reclaimed: the trend and its order flow are kept.' : 'Break out: the disruption was invalidated, then price returned and carried on. Skip the first valid key level and trade from the second.' + (O.recovered.waiting ? ' <b>Waiting for the 2nd key level.</b>' : '')}</p>` : '') + (O && O.pending_flip ? `<p class="down small">The disruption POI was broken ${T(O.invalidated.t)}; the new order flow is mapped.</p>` : O && O.official ? (O.source === 'smc' ? `<p class="small">The trend flipped ${T(O.official.t)}: a body closed beyond the DISR zone.</p>` : `<p class="small">The flip is official: a wick invalidated the next point of liquidity ${T(O.official.t)}.</p>`) : '') + (O && O.pullback ? `<p class="small">Pullback at the inducement ${T(O.pullback.t)}. ${O.pullback.resume_t ? 'The trend resumed. Skip the first valid key level and trade from the second.' + (s.pullback && s.pullback.waiting ? ' <b>Waiting for the 2nd key level.</b>' : '') : '<b>Waiting for the trend to resume.</b> The trend direction is unchanged.'}</p>` : '') + '</div>';
+    (O && O.recovered ? `<p class="small">${O.recovered.kind === 'reclamation' ? 'The disruption was invalidated and then reclaimed: the trend and its order flow are kept.' : 'Break out: the disruption was invalidated, then price returned and carried on. Skip the first valid key level and trade from the second.' + (O.recovered.waiting ? ' <b>Waiting for the 2nd key level.</b>' : '')}</p>` : '') + (O && O.pending_flip ? `<p class="down small">The disruption POI was broken ${T(O.invalidated.t)}; the new order flow is mapped.</p>` : O && O.official ? `<p class="small">The flip is official: a wick invalidated the next point of liquidity ${T(O.official.t)}.</p>` : '') + (O && O.pullback ? `<p class="small">Pullback at the inducement ${T(O.pullback.t)}. ${O.pullback.resume_t ? 'The trend resumed. Skip the first valid key level and trade from the second.' + (s.pullback && s.pullback.waiting ? ' <b>Waiting for the 2nd key level.</b>' : '') : '<b>Waiting for the trend to resume.</b> The trend direction is unchanged.'}</p>` : '') + '</div>';
   h += `<div class="card"><h4>R &middot; Reclamation (H1)</h4>` + (s.r.some(r => r.role !== 'plq') ? s.r.filter(r => r.role !== 'plq').map(r =>
     `<p>${r.role === 'plq' ? 'Point of liquidity' : r.role}: ${r.state ? 'in progress, step ' + r.state + ' of 5' : 'waiting'}${r.last_complete ? ` <span class="small">last complete ${T(r.last_complete)}</span>` : ''}</p>`).join('')
     : '<p class="mut">No POI to watch.</p>') + '<p class="small">A reclamation is a confirmation, not an entry.</p></div>';
@@ -309,9 +309,7 @@ function chart(cv, s, tf, name) {
   const gutter = Math.min(Math.ceil(W * .4), Math.max(priceTxt ? tw(priceTxt) : 0, ...lines.map(o => tw(o.label)), ...boxes.map(o => tw(o.label) + 6)) + 8);
   const titleTxt = (name ? name + '  ' : '') + tf.toUpperCase();
   // every timeframe shows the H1 trend (internal order flow); H4 is never shown as a bias
-  // replaced by the SMC trend of the timeframe on screen (M5 follows H1); the app's own H1 trend is only the fallback while the SMC has no data
-  const sm = main ? SMC.tag(tf) : null;
-  const tr = sm ? sm.tr : s.s ? (s.s.trend || 0) : 0, trTxt = sm ? sm.txt : tr === 1 ? 'H1 \u25B2 BULLISH' : tr === -1 ? 'H1 \u25BC BEARISH' : 'H1 NO TREND', trCol = tr === 1 ? TV.upTxt : tr === -1 ? TV.dnTxt : TV.dim;
+  const tr = s.s ? (s.s.trend || 0) : 0, trTxt = tr === 1 ? 'H1 \u25B2 BULLISH' : tr === -1 ? 'H1 \u25BC BEARISH' : 'H1 NO TREND', trCol = tr === 1 ? TV.upTxt : tr === -1 ? TV.dnTxt : TV.dim;
   g.font = `700 ${FS + 1}px ${MONO}`; const titleW = Math.ceil(g.measureText(titleTxt).width) + 14, trW = Math.ceil(g.measureText(trTxt).width) + 14;
   g.font = `${FS}px ${MONO}`;
   const bandW = Math.max(40, W - 14 - titleW - trW), need = boxes.reduce((n, o) => n + tw(o.label) + 3, 0);
@@ -321,14 +319,16 @@ function chart(cv, s, tf, name) {
   const X = t => { const i = cs.findIndex(c => c[0] >= t); return i < 0 ? plotW : i === 0 ? 0 : i * step; };
   // A box starts at the LEFT EDGE of the first candle that formed it (the candle body is drawn 60% of a slot wide, centred).
   const XL = t => { const i = cs.findIndex(c => c[0] >= t); return i < 0 ? plotW : i === 0 && cs[0][0] > t ? 0 : i * step + step * .2; };
-  // round price and time steps for the axis labels, and the time axis along the bottom (no grid lines are drawn)
+  // grid (horizontal at round prices, vertical at round times) and the time axis along the bottom, like TradingView
   const pxPerP = (Hh - 14 - TOP) / (hi - lo), tickP = [], tickT = [];
   { const raw = 64 / pxPerP, mag = Math.pow(10, Math.floor(Math.log10(raw))), stp = [1, 2, 2.5, 5, 10].map(m => m * mag).find(v => v >= raw) || raw;
     for (let v = Math.ceil(lo / stp) * stp; v <= hi; v += stp) tickP.push(+v.toFixed(10));
     const offS = -new Date(cs[0][0] * 1000).getTimezoneOffset() * 60, need = Math.max(1, Math.ceil(78 / step)) * ivl;
     const iv = [300, 900, 1800, 3600, 7200, 14400, 21600, 43200, 86400, 172800, 604800].find(v => v >= need) || 604800;
     cs.forEach((c, i) => { if ((c[0] + offS) % iv === 0) tickT.push({ i, t: c[0] }); });
-    g.lineWidth = 1;                                                                   // no grid lines (the price and time labels stay)
+    g.lineWidth = 1; g.strokeStyle = TV.grid;
+    g.beginPath(); tickP.forEach(v => { const y = Math.round(Y(v)) + .5; g.moveTo(0, y); g.lineTo(W, y); });
+    tickT.forEach(k => { const x = Math.round(k.i * step + step / 2) + .5; g.moveTo(x, TOP - 6); g.lineTo(x, Hh - 14); }); g.stroke();
     g.fillStyle = TV.text; g.font = `${FS}px ${MONO}`; g.textAlign = 'center'; g.textBaseline = 'alphabetic';
     tickT.forEach(k => { const d = new Date(k.t * 1000), mid = d.getHours() === 0 && d.getMinutes() === 0, x = k.i * step + step / 2;
       const txt = mid ? (d.getDate() === 1 ? d.toLocaleDateString([], { month: 'short' }) : String(d.getDate())) : String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
