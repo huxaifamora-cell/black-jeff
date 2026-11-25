@@ -363,7 +363,8 @@ function chart(cv, s, tf, name) {
   });
   // swing tags: HH / LH sit above their candle, HL / LL below it
   g.font = `700 ${FS}px ${MONO}`; g.textAlign = 'center';
-  marks.forEach(o => {
+  // (swing labels removed from the chart on purpose: the `marks` are no longer drawn)
+  if (false) marks.forEach(o => {
     const i = cs.findIndex(c => c[0] === o.t); if (i < 0) return;
     const above = o.label === 'HH' || o.label === 'LH', x = i * step + step / 2, y = above ? Y(o.y) - 4 : Y(o.y) + FS + 3;
     g.fillStyle = '#0B0F14'; g.fillRect(x - tw(o.label) / 2 + 1, y - FS, tw(o.label) - 2, FS + 3); g.fillStyle = '#FFFFFF'; g.fillText(o.label, x, y);
