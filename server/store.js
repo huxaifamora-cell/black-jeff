@@ -42,20 +42,21 @@ export class Store {
     return r.changes ? Number(r.lastInsertRowid) : null;      // null = duplicate
   }
 
-  recentAlerts({ symbol, concept, limit = 50, before } = {}) {
+  recentAlerts({ symbol, concept, limit = 50, before, smcOnly = false } = {}) {
     let q = 'SELECT * FROM alerts WHERE 1=1';
     const args = [];
     if (symbol) { q += ' AND symbol=?'; args.push(symbol); }
     if (concept) { q += ' AND concept=?'; args.push(concept); }
     if (before) { q += ' AND id<?'; args.push(Number(before)); }
+    if (smcOnly) q += " AND key LIKE '%|smc|%'";                // SMC alerts carry `smc` in their key (older non-SMC rows are hidden)
     q += ' ORDER BY id DESC LIMIT ?';
     args.push(Math.max(1, Math.min(Number(limit) || 50, 200)));
     return this.db.prepare(q).all(...args).map((r) => ({ ...r, payload: JSON.parse(r.payload || '{}') }));
   }
 
-  lastAlertTs() {
+  lastAlertTs(smcOnly = false) {
     const out = {};
-    for (const r of this.db.prepare('SELECT symbol, MAX(ts) m FROM alerts GROUP BY symbol').all()) out[r.symbol] = r.m;
+    for (const r of this.db.prepare(`SELECT symbol, MAX(ts) m FROM alerts${smcOnly ? " WHERE key LIKE '%|smc|%'" : ''} GROUP BY symbol`).all()) out[r.symbol] = r.m;
     return out;
   }
 

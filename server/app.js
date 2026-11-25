@@ -27,7 +27,7 @@ const HELP = '<b>B-JEFF bot</b>\nOpen the B-Jeff terminal';
 export function createApp({ cfg = loadConfig(), store, svc, deriv, bot, log = console, background = true } = {}) {
   store ||= new Store(cfg.dbPath);
   svc ||= new Service(store, undefined, log);
-  svc.smcAlerts = !!cfg.smcAlerts; svc.smcParams = { swingLen: cfg.smcSwingLen || 5, internalLen: cfg.smcInternalLen || 2 };
+  svc.smcAlerts = !!cfg.smcAlerts; svc.smcOnly = !!cfg.smcOnly; svc.smcParams = { swingLen: cfg.smcSwingLen || 5, internalLen: cfg.smcInternalLen || 2 };
   deriv ||= new Deriv(cfg.derivUrls, cfg.derivAppId, log);
   bot ||= cfg.botToken ? new Bot(cfg.botToken) : null;
   const abort = new AbortController();
@@ -139,7 +139,7 @@ export function createApp({ cfg = loadConfig(), store, svc, deriv, bot, log = co
       const chatC = cfg.chatConcepts || ['R', 'K', 'QML', 'ADV'];
       // oid: the id the app remembers for the alert; xp: true when the alert was posted to the channel with an XP link
       const alerts = store.recentAlerts({ symbol: q.get('symbol') || undefined, concept: q.get('concept') || undefined,
-        limit: q.get('limit') || 50, before: q.get('before') || undefined })
+        limit: q.get('limit') || 50, before: q.get('before') || undefined, smcOnly: !!cfg.smcOnly })
         .map((a) => ({ ...a, oid: alertId(a), xp: chatC.includes(a.concept) && !CHAT_SKIP_KINDS.has(a.kind) }));
       return json(res, 200, { alerts });
     }
@@ -236,6 +236,7 @@ export function createApp({ cfg = loadConfig(), store, svc, deriv, bot, log = co
   const CHAT_SKIP_KINDS = new Set(['kl_invalid', 'invalidated']);   // alert kinds never posted to groups or channels
   async function notify(alert, force) {
     if (!bot || (!warm && !force)) return;
+    if (cfg.smcOnly && !isSmcAlert(alert)) return;      // SMC-only mode (default): the bot's own non-SMC SORK alerts are never sent to Telegram (they stay in the app's Alerts tab)
     const short = alert.symbol_name.replace('Volatility ', 'V').replace(' Index', '');
     const label = `Open ${short} chart`;
     // The button opens the symbol on the main bot, straight on the SORK page (concept) that fired. Channels and groups get a
@@ -257,7 +258,7 @@ export function createApp({ cfg = loadConfig(), store, svc, deriv, bot, log = co
       return bot.send(chat, text, b);
     };
     // Groups and channels: reclamation, key level, QML and bjeff zone only, and never an invalidation (those stay in the app's Alerts tab and in private messages).
-    if ((cfg.chatConcepts || ['R', 'K', 'QML', 'ADV']).includes(alert.concept) && !CHAT_SKIP_KINDS.has(alert.kind) && (!isSmcAlert(alert) || cfg.smcAlertChats)) {
+    if ((cfg.chatConcepts || ['R', 'K', 'QML', 'ADV']).includes(alert.concept) && !CHAT_SKIP_KINDS.has(alert.kind) && (!isSmcAlert(alert) || cfg.smcAlertChats || cfg.smcOnly)) {
       for (const chat of cfg.alertChats || []) {
         try { await deliver(chat, btn(true)); }
         catch (e) { log.warn('could not post to', chat + ':', e.message); }

@@ -114,6 +114,7 @@ export class Service {
     this.states = new Map();
     this.smcStates = new Map();                  // sid -> the SORK rules evaluated on the SMC order flow (IDM / DISR / LIQ)
     this.smcAlerts = false;                      // turned on by createApp (SMC_ALERTS)
+    this.smcOnly = false;                        // turned on by createApp: the bot's own non-SMC alerts are not stored at all (they never reach Telegram or the Alerts tab)
     this.smcParams = {};                         // SMC engine settings for the order flow (swingLen, internalLen ...)
   }
 
@@ -133,6 +134,7 @@ export class Service {
     res.state.price = m5.length ? m5[m5.length - 1].c : null;
     this.states.set(sid, res.state);
     const fresh = [];
+    if (this.smcOnly) return fresh;                            // SMC-only mode: the state above is kept for the app, but no alert is stored or sent
     for (const ev of res.events) {
       if (now - ev.t > 3 * ev.tf) continue;                    // stale events are not alerted
       const a = {
@@ -271,7 +273,7 @@ export class Service {
   }
 
   overview() {
-    const last = this.store.lastAlertTs();
+    const last = this.store.lastAlertTs(this.smcOnly);
     return this.symbols.map((s) => {
       const st = this.states.get(s.id);
       const row = { id: s.id, name: s.name, short: s.short, available: !!s.available, trend: null, k: null, qml: false,

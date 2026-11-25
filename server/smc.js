@@ -300,7 +300,7 @@ export class SmcEngine {
       const dis = cand.length >= 2 ? cand[cand.length - 2] : null;
       if (dis && dis.idx < i && (d === 1 ? c.c < dis.zone.lo : c.c > dis.zone.hi)) {
         this.flip = { dir: d, t: c.t, idx: i, by: 'disruption' }; this.pb = null;
-        // the other side takes over at once with the breaks that already exist in its direction (most recent = IDM, the one before = DISR, then LIQ), no waiting for new ones;
+        // the other side takes over at once with the breaks that already exist in its direction (most recent = IDM, the one before = DISR, then LIQ), no waiting for new ones.
         // only if it has no break at all is there no trend
         this.trend = d = cands(-d).length >= 1 ? -d : 0;
         cand = d ? cands(d) : [];
