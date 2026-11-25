@@ -9,6 +9,7 @@
 const SMC = (() => {
   const KEY = 'bj_smc_v1';
   const COL = { bos: '#6EA8FE', idm: '#B197FC', sweep: '#F06292', eq: '#CBD5E1', swing: '#8A94A6', kl: '#FFD166', qml: '#FF8A65', adv: '#FFF59D', dead: '#8A94A6', rec: '#69F0AE' };
+  const ALL_BOS = true;                                               // STRUCTURE draws every BOS in view on every timeframe. false: the old rule, only the 2 BOS that carry the IDM and DISR, H1 only
   const HIDE = { sweep: 1 };                                          // drawn nowhere: liquidity sweeps (the engine still tracks them)
   const ZN = { idm: 'IDM', disr: 'DISR', liq: 'LIQ' };                // zone roles set by the engine (latest BOS in the trend direction, the one before, the one before that)
   const EXT = { idm: 1, disr: 1 };                                    // these boxes run on to the right, slightly past the forming candle
@@ -150,7 +151,7 @@ const SMC = (() => {
     const padR = Math.min(E.W - 2, plotW + Math.max(54, step * 4));                                 // right edge of the IDM / DISR boxes: past the forming candle
     items.sort((p, q) => (p.t1 ?? p.t0) - (q.t1 ?? q.t0));
     // BOS lines: H1 chart only, and only the 2 BOS that carry the IDM and the DISR (the 2 most recent in the trend direction). Counter-trend BOS (the old CHoCH) are BOS like any other but get no line unless they are one of those 2.
-    const showBos = new Set(E.tf === 'h1' ? items.filter((a) => a.type === 'idm' && a.zone && a.status !== 'void' && (a.role === 'idm' || a.role === 'disr')).map((a) => a.ref) : []);
+    const showBos = ALL_BOS ? null : new Set(E.tf === 'h1' ? items.filter((a) => a.type === 'idm' && a.zone && a.status !== 'void' && (a.role === 'idm' || a.role === 'disr')).map((a) => a.ref) : []);
     for (const a of items) {
       if (HIDE[a.type]) continue;
       const ext = a.type === 'idm' && a.zone && EXT[a.role] && a.status !== 'void';                // IDM / DISR box: keeps going to the right, taken or not
@@ -159,12 +160,12 @@ const SMC = (() => {
       const yy = y(a.price); if (yy < 0 || yy > E.Hh) continue;
       const x0 = Math.max(0, X(a.t0)), x1 = ext ? padR : Math.min(plotW, X(end)), pv = a.provisional, al = pv ? .6 : 1, dash = pv ? [2, 3] : null;
       if (a.type === 'swing') {
-        if (!pref.st || step < 5 || !/^(HH|HL|LH|LL)$/.test(a.label) || (E.marks && E.marks.has(a.t0 + '|' + a.label))) continue;      // the app already tags its own order flow swings
+        if (!pref.st || step < 3 || !/^(HH|HL|LH|LL)$/.test(a.label) || (E.marks && E.marks.has(a.t0 + '|' + a.label))) continue;      // the app already tags its own order flow swings
         const x = X(a.t0); if (x < 4 || x > plotW - 4) continue;
         const hi_ = a.label === 'HH' || a.label === 'LH';
         g.font = `600 ${fs - 1}px ${MONO}`; g.textAlign = 'center'; g.fillStyle = COL.swing; if (hi_ ? yy - 15 > 12 : yy + 16 < E.Hh - 18) g.fillText(a.label, x, hi_ ? yy - 15 : yy + 16);
       } else if (a.type === 'bos') {
-        if (!pref.st || !showBos.has(a.id)) continue;
+        if (!pref.st || (showBos && !showBos.has(a.id))) continue;
         const col = COL.bos, lab = 'BOS' + (pv ? ' …' : '');
         line(x0, x1, a.price, col, dash || [], al);
         label(3, lab, (x0 + x1) / 2, a.dir === 1 ? yy - 4 : yy + fs + 5, col, 'center', true, al, true);
