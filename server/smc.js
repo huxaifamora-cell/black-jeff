@@ -59,6 +59,8 @@ export class SmcEngine {
     this.trend = 0;
     this.idm = { 1: null, '-1': null };          // current inducement annotation per trend direction (swing mode)
     this.zones = [];                             // mapped IDM / DISR / LIQ zone annotations (zone mode), not void
+    this.pb = null;                              // pullback at the IDM: { dir, t, idx, resume_t } (resume_t = the next BOS in the trend direction)
+    this.flip = null;                            // the latest trend flip: { dir (the OLD trend), t, idx, by }
     this.brks = [];                              // every committed break with its zone, oldest first: { dir, idx, zone, ann }
 
     this.ann = new Map();                        // id -> annotation (insertion ordered)
@@ -104,6 +106,8 @@ export class SmcEngine {
       last_t: last ? last.t : 0,
       top: this.top ? { t: this.top.t, price: this.top.price } : null,
       btm: this.btm ? { t: this.btm.t, price: this.btm.price } : null,
+      pullback: this.pb ? { ...this.pb } : null,
+      flip: this.flip ? { ...this.flip } : null,
       annotations: all.slice(-limit).sort((a, b) => (a.t1 ?? a.t0) - (b.t1 ?? b.t0) || a.t0 - b.t0),
     };
   }
@@ -188,6 +192,7 @@ export class SmcEngine {
     // 1. commit what this candle did
     for (const x of found) {
       if (x.k === 'break') {
+        if (!x.choch && this.pb && !this.pb.resume_t) this.pb.resume_t = c.t;                 // a BOS in the trend direction after the pullback = the trend resumes
         x.sw.crossed = true; if (this.trend === 0) this.trend = x.dir;                 // only the first break sets the trend; after that only a DISR invalidation flips it
         this.#put(this.#breakAnn(x, c), changed);
         if (p.idmMode === 'zone') this.#zoneOf(x, i);
@@ -259,7 +264,9 @@ export class SmcEngine {
     if (b >= 0 && !pa.long) { const pb = part(b); lo = Math.min(lo, pb.lo); hi = Math.max(hi, pb.hi); }   // a long A is the zone on its own, like the long order block body in SORK
     if (!(hi > lo)) { lo = cs[a].l; hi = cs[a].h; half = false; }                                     // doji: use the whole candle
     const type = x.choch ? 'choch' : 'bos';
-    const zone = { id: `idm:${x.sw.t}:${d}`, type: 'idm', dir: d, t0: cs[a].t, t1: null, price: d === 1 ? hi : lo, lo, hi, zone: true, ...(half ? { half: true } : {}), ref: `${type}:${x.sw.t}:${d}` };
+    const zone = { id: `idm:${x.sw.t}:${d}`, type: 'idm', dir: d, t0: cs[a].t, t1: null, price: d === 1 ? hi : lo, lo, hi, zone: true,
+      bos_t: cs[i].t, bos_level: x.sw.price, broken_t: x.sw.t, line: d === 1 ? cs[k].l : cs[k].h,      // the breaking candle, the level it broke, when that swing formed, the swing start (HL / LH)
+      ...(half ? { half: true } : {}), ref: `${type}:${x.sw.t}:${d}` };
     this.brks.push({ dir: d, idx: i, zone, ann: null });
     if (this.brks.length > 80) this.brks.shift();
   }
@@ -282,6 +289,7 @@ export class SmcEngine {
     let cand = cands(d);
     const dis = cand.length >= 2 ? cand[cand.length - 2] : null;
     if (dis && dis.idx < i && (d === 1 ? c.c < dis.zone.lo : c.c > dis.zone.hi)) {
+      this.flip = { dir: d, t: c.t, idx: i, by: 'disruption' }; this.pb = null;
       this.trend = d = -d;                                        // flipped: map the new direction (no look-back, like the original SMC rule)
       cand = cands(d);
     }
@@ -297,6 +305,11 @@ export class SmcEngine {
       } else if (b.ann.role !== role) { b.ann.role = role; b.ann.label = role.toUpperCase(); this.#put(b.ann, changed); }
     });
     this.zones = this.brks.filter((b) => b.ann && b.ann.status !== 'void').map((b) => b.ann);
+    // pullback at the inducement (SORK rule): with an IDM and a DISR mapped, a wick back into the IDM zone. It never changes the trend; it ends when the next BOS in the trend direction forms.
+    if (roles.length >= 2 && (this.pb === null || this.pb.resume_t)) {
+      const z = roles[0].zone;
+      if (i > roles[0].idx && (d === 1 ? c.l <= z.hi : c.h >= z.lo)) this.pb = { dir: d, t: c.t, idx: i, resume_t: null };
+    }
   }
 
   // Inducement of the current trend: the FIRST minor pullback swing after the latest major swing (see the header).

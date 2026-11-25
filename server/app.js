@@ -10,7 +10,7 @@ import { loadConfig } from './config.js';
 import { Deriv } from './deriv.js';
 import { Bot } from './telegram.js';
 import { TelegramBackup } from './backup.js';
-import { Service, formatAlert, formatSniperAlert } from './service.js';
+import { Service, formatAlert, formatSniperAlert, isSmcAlert } from './service.js';
 import { renderChart } from './chartimg.js';
 import { SmcFeed, TF_SECONDS as SMC_TF } from './smcfeed.js';
 import { alertParam, alertId, checkParam, isAlertId, xpStatusText } from './alertlink.js';
@@ -27,6 +27,7 @@ const HELP = '<b>B-JEFF bot</b>\nOpen the B-Jeff terminal';
 export function createApp({ cfg = loadConfig(), store, svc, deriv, bot, log = console, background = true } = {}) {
   store ||= new Store(cfg.dbPath);
   svc ||= new Service(store, undefined, log);
+  svc.smcAlerts = !!cfg.smcAlerts; svc.smcParams = { swingLen: cfg.smcSwingLen || 5, internalLen: cfg.smcInternalLen || 2 };
   deriv ||= new Deriv(cfg.derivUrls, cfg.derivAppId, log);
   bot ||= cfg.botToken ? new Bot(cfg.botToken) : null;
   const abort = new AbortController();
@@ -127,6 +128,12 @@ export function createApp({ cfg = loadConfig(), store, svc, deriv, bot, log = co
       sseClients.add(res); req.on('close', done); res.on('close', done);
       res.write('retry: 3000\n\n'); send('snapshot', first);
       return;
+    }
+    // ---- the SORK rules on the SMC order flow: GET /api/smc/flow?symbol=V75 = overlays (key level, M5 POI, 50% POI, bjeff zone, QML), reclamation steps and checklist
+    if (path === '/api/smc/flow' && req.method === 'GET') {
+      if (!svc.smcAlerts) return json(res, 404, { error: 'SMC flow is off' });
+      const v = svc.smcView(q.get('symbol') || '');
+      return v ? json(res, 200, v) : json(res, 400, { error: 'unknown symbol' });
     }
     if (path === '/api/alerts' && req.method === 'GET') {
       const chatC = cfg.chatConcepts || ['R', 'K', 'QML', 'ADV'];
@@ -250,7 +257,7 @@ export function createApp({ cfg = loadConfig(), store, svc, deriv, bot, log = co
       return bot.send(chat, text, b);
     };
     // Groups and channels: reclamation, key level, QML and bjeff zone only, and never an invalidation (those stay in the app's Alerts tab and in private messages).
-    if ((cfg.chatConcepts || ['R', 'K', 'QML', 'ADV']).includes(alert.concept) && !CHAT_SKIP_KINDS.has(alert.kind)) {
+    if ((cfg.chatConcepts || ['R', 'K', 'QML', 'ADV']).includes(alert.concept) && !CHAT_SKIP_KINDS.has(alert.kind) && (!isSmcAlert(alert) || cfg.smcAlertChats)) {
       for (const chat of cfg.alertChats || []) {
         try { await deliver(chat, btn(true)); }
         catch (e) { log.warn('could not post to', chat + ':', e.message); }

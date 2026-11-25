@@ -674,6 +674,7 @@ export const nice = (s, dir = 0) => s === 'move_out' ? (dir === 1 ? 'bullish bre
 const tail = (cs, n) => cs.slice(-n).map((c) => [c.t, c.o, c.h, c.l, c.c]);
 
 // opts.manual = { dir, ind: {lo, hi, t}, dis: {lo, hi, t} } runs everything on a hand-set order flow (see manualOrderFlow) instead of the bot's own.
+// opts.flowOf = (h1) => flow runs everything on an order flow made by another engine (the SMC, see smcflow.js). h1 = the closed H1 candles used here.
 export function evaluate(h4Live, h1Live, m5, p = defaultParams, digits = 3, opts = {}) {
   // H4 and H1 arrive live (the forming candle is the last one, flagged `forming`) so the chart can show it. All the H4 / H1 rules
   // (BOS, order flow, reclamation, key levels, QML) are judged on CLOSED candles only, because they depend on a body CLOSING
@@ -715,7 +716,7 @@ export function evaluate(h4Live, h1Live, m5, p = defaultParams, digits = 3, opts
   // A key level invalidation only changes the key levels we look for: a bearish key level invalidated = look for bullish key levels, a bullish one
   // invalidated = look for bearish ones. That goes on until the next key level invalidation (it flips again) or until the disruption is
   // invalidated (the order flow flips, and the key levels follow the new order flow again), whichever comes first.
-  const of = opts.manual ? manualOrderFlow(h1, opts.manual) : orderFlow(h1, null, p);
+  const of = opts.flowOf ? opts.flowOf(h1) : opts.manual ? manualOrderFlow(h1, opts.manual) : orderFlow(h1, null, p);
   let bias = of.dir, since = -Infinity;
   const kInv = [];
   for (let n = 0; n < 8 && bias; n++) {
@@ -739,7 +740,7 @@ export function evaluate(h4Live, h1Live, m5, p = defaultParams, digits = 3, opts
   };
   if (sInd && !opts.manual) {
     events.push(ev('S', 'trend_valid', trend, sInd.bos_t + H1, H1, `S: H1 ${trend === 1 ? 'uptrend' : 'downtrend'} is valid`,
-      `Internal order flow is ${trend === 1 ? 'bullish' : 'bearish'}: valid BOS (liquidity + BOS) broke ${f(sInd.bos_level)}. Look for ${side(trend)} setups on H1.`, sInd.bos_t));
+      opts.flowOf ? `SMC trend is ${trend === 1 ? 'bullish' : 'bearish'}: the latest BOS broke ${f(sInd.bos_level)}. Look for ${side(trend)} setups on H1.` : `Internal order flow is ${trend === 1 ? 'bullish' : 'bearish'}: valid BOS (liquidity + BOS) broke ${f(sInd.bos_level)}. Look for ${side(trend)} setups on H1.`, sInd.bos_t));
   }
   for (const b of ms.valid_bos) {
     // the label carries the current H4 bias (not the direction of that single break)
@@ -765,6 +766,7 @@ export function evaluate(h4Live, h1Live, m5, p = defaultParams, digits = 3, opts
     else events.push(ev('O', 'invalidated', iv.dir === 1 ? -1 : 1, iv.t + H1, H1, iv.by === 'key_level' ? 'O: key level invalidated, trend flipped' : 'O: disruption invalidated, trend flipped',
       iv.by === 'key_level'
         ? `The key level in the ${iv.dir === 1 ? 'up' : 'down'}trend was invalidated, so the trend flips to ${iv.dir === 1 ? 'down' : 'up'} at once. The new order flow is mapped from the most current breaks of structure.`
+        : opts.flowOf ? `An H1 body closed beyond the DISR zone, so the SMC trend flips to ${iv.dir === 1 ? 'down' : 'up'}. The new IDM and DISR are mapped in the new direction.`
         : `An H1 candle went beyond the disruption POI (a wick is enough), so the trend flips to ${iv.dir === 1 ? 'down' : 'up'} at once. The new order flow is mapped from the most current breaks of structure.`, `inv-${iv.t}`));
   }
 

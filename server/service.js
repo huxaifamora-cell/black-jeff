@@ -1,5 +1,6 @@
 // Ties the feed, the engine and the alert store together.
 import { H1, H4, M5, defaultParams, evaluate, closedOnly, manualOrderFlow } from './engine.js';
+import { smcFlow } from './smcflow.js';
 import { SYMBOLS, norm } from './symbols.js';
 
 // H1 needs the last 6 months (h1Days x 24 candles, the Deriv indices trade round the clock) plus a small margin; H4 covers the same span.
@@ -47,6 +48,7 @@ const KIND_TYPE = { reclamation: 'RECLAMATION', kl_valid: 'KEY LEVEL', kl_entry:
   qml_valid: 'QML', qml_entry: 'QML', bjeff_valid: 'BJEFF ZONE', adv_entry: '50% KEYLEVEL POI',
   bos: 'BREAK OF STRUCTURE', choch: 'CHANGE OF STRUCTURE' };      // bos / choch / invalidated(ORDER FLOW) come from Sniper Mode flows
 const INVALID_KINDS = new Set(['kl_invalid', 'invalidated']);
+export const isSmcAlert = (a) => !!(a && ((a.payload && a.payload.src === 'smc') || String(a.key || '').includes('|smc|')));
 export const alertType = (a) => KIND_TYPE[a.kind] || String(TYPE_NAME[a.concept] || a.concept || 'ALERT').toUpperCase();
 export const formatAlert = (a) => {
   const esc = (t) => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -55,7 +57,7 @@ export const formatAlert = (a) => {
     : a.dir === 1 ? `🟢 <b>${type}</b>`
     : a.dir === -1 ? `🔴 <b>${type}</b>`
     : `⚪ <b>${type}</b>`;
-  return `${head}\n${esc(a.symbol_name)}`;
+  return `${head}\n${esc(a.symbol_name)}${isSmcAlert(a) ? '\n🧭 <b>SMC</b>' : ''}`;      // SMC alerts say so; the same rules on the SMC order flow (IDM / DISR)
 };
 // Short plain-text version of the headline for the chart image ("KEY LEVEL"). The colour of the tag and the arrow carry the direction.
 export const alertLabel = (a) => `${INVALID_KINDS.has(a.kind) ? 'INVALIDATED ' : ''}${alertType(a)}${a.kind === 'kl_entry' && a.payload && a.payload.conf ? ' ' + String(a.payload.conf).toUpperCase() : ''}`;
@@ -110,6 +112,9 @@ export class Service {
     this.byId = new Map(this.symbols.map((s) => [s.id, s]));
     this.cache = new Map(this.symbols.map((s) => [s.id, {}]));
     this.states = new Map();
+    this.smcStates = new Map();                  // sid -> the SORK rules evaluated on the SMC order flow (IDM / DISR / LIQ)
+    this.smcAlerts = false;                      // turned on by createApp (SMC_ALERTS)
+    this.smcParams = {};                         // SMC engine settings for the order flow (swingLen, internalLen ...)
   }
 
   setCodes(codes) {
@@ -183,7 +188,35 @@ export class Service {
       }
     }
     if (!changed && this.states.has(sid)) return [];
-    return this.apply(sid, cache[H4].cs, cache[H1].cs, cache[M5].cs, now);
+    const fresh = this.apply(sid, cache[H4].cs, cache[H1].cs, cache[M5].cs, now);
+    if (this.smcAlerts) { try { fresh.push(...this.applySmc(sid, cache[H4].cs, cache[H1].cs, cache[M5].cs, now)); } catch (e) { this.log.warn('smc flow', sid, 'failed:', e.message); } }
+    return fresh;
+  }
+
+  // The same SORK rules (reclamation, key level, M5 POI, 50% POI, bjeff zone, QML, trade plan) on the SMC order flow: IDM = inducement, DISR = disruption, LIQ = point of liquidity.
+  // Returns the NEW alerts (already stored). Their keys carry `smc`, so they never clash with the SORK alerts, and their payload says src: 'smc'.
+  applySmc(sid, h4, h1, m5, now = Date.now() / 1000) {
+    const s = this.byId.get(sid);
+    const digits = digitsFor(m5), res = evaluate(h4, h1, m5, this.p, digits, { flowOf: (h1c) => smcFlow(h1c, this.smcParams) });
+    res.state.updated = Math.floor(now);
+    res.state.price = m5.length ? m5[m5.length - 1].c : null;
+    delete res.state.candles;                                  // the chart already has its candles; keep the SMC state small
+    this.smcStates.set(sid, res.state);
+    const fresh = [];
+    for (const ev of res.events) {
+      if (now - ev.t > 3 * ev.tf) continue;                    // stale events are not alerted
+      const a = {
+        key: `${sid}|smc|${ev.concept}|${ev.kind}|${ev.uid}`, ts: Math.min(ev.t, Math.floor(now)), symbol: sid, symbol_name: s.name, concept: ev.concept,
+        kind: ev.kind, dir: ev.dir, title: ev.title, body: ev.body,
+        payload: { ...ev.extra, tf: ev.tf, bias: res.state.s ? res.state.s.bias : 0, src: 'smc' },
+      };
+      a.id = this.store.addAlert(a);
+      if (a.id) {
+        try { a.snap = chartSnap(a, ev, ev.tf === M5 ? m5 : ev.tf === H4 ? h4 : h1, digits); } catch (e) { this.log.warn('chart data for', a.key, 'failed:', e.message); }
+        fresh.push(a);
+      }
+    }
+    return fresh;
   }
 
   // Which of these price alerts has price reached? Live price counts at once; the M5 candles after the alert was set catch a spike
@@ -254,6 +287,12 @@ export class Service {
       if (!st) Object.assign(row, stepsOf(null));
       return row;
     });
+  }
+
+  // The SMC flow of one symbol for the chart: the overlays (key level, M5 POI, 50% POI, bjeff zone, QML), the reclamation steps and the checklist.
+  smcView(sid) {
+    const s = this.byId.get(sid), st = this.smcStates.get(sid) || null;
+    return s ? { id: sid, name: s.name, state: st, ...stepsOf(st) } : null;
   }
 
   symbolView(sid) {
