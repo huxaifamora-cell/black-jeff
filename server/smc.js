@@ -1,4 +1,4 @@
-// SMC indicator engine: market structure (HH / HL / LH / LL), BOS, CHoCH, inducement (IDM), liquidity sweeps and equal highs / lows.
+// SMC indicator engine: market structure (HH / HL / LH / LL), BOS, inducement (IDM), liquidity sweeps and equal highs / lows.
 // Pure and incremental: no network, no I/O, no dependencies. Candles are {t,o,h,l,c} (t = open time in seconds).
 //
 //   const e = new SmcEngine();
@@ -7,14 +7,14 @@
 //   const live = e.peek(formingCandle); // what the forming candle is doing right now (provisional, never stored)
 //   e.snapshot();                       // everything the chart needs
 //
-// Nothing is repainted: a BOS, CHoCH or sweep is only committed when a candle CLOSES. The forming candle only produces `provisional` previews.
+// Nothing is repainted: a BOS or sweep is only committed when a candle CLOSES. The forming candle only produces `provisional` previews.
 //
 // Definitions used (all numbers are in `smcDefaults` and can be tuned per timeframe):
 //  - Swing (major): a pivot with `swingLen` candles on each side. It is confirmed `swingLen` candles after it formed. Labelled HH / LH (highs), HL / LL (lows).
 //  - BOS : a candle BODY closes beyond the latest unbroken swing in the direction of the current trend (continuation).
 //  - Trend (zone mode): a trend needs at least 2 breaks in ONE direction (IDM + DISR). One break, or a lone break against older ones, is not a trend.
 //          With no trend (cold start, loaded candles, or right after an invalidation) the LATEST break sets it, but only if its direction already has 2 breaks.
-//          While a trend stands, the newest breaks the other way (even 2 of them) are only counter-trend breaks (type 'choch', hidden on the chart):
+//          While a trend stands, the newest breaks the other way (even 2 of them) are only counter-trend BOS (type 'bos' with `counter: true`; CHoCH no longer exists as a separate type):
 //          they cannot make the new trend until the DISR of the standing trend is invalidated.
 //  - Trend flip (SORK rule): the trend ends only when the DISR zone is invalidated, i.e. a candle BODY closes beyond its far side
 //          (bull trend: close below the DISR zone, bear trend: close above it). The other side becomes the trend AT ONCE, using the breaks that already exist in that direction
@@ -41,7 +41,7 @@ export const smcDefaults = {
   atrLen: 14,
   eqTolAtr: 0.1,        // equal highs / lows: within this x ATR
   sweepMinAtr: 0,       // a sweep wick must poke at least this x ATR beyond the level (0 = any)
-  idmMode: 'zone',      // 'zone': IDM on the demand / supply zone of each BOS / CHoCH. 'swing': IDM = first minor pullback swing (old rule)
+  idmMode: 'zone',      // 'zone': IDM on the demand / supply zone of each BOS. 'swing': IDM = first minor pullback swing (old rule)
   idmMaxOpen: 3,        // zone mode: zones mapped on the chart: IDM, DISR, LIQ (newest BOS in the trend direction first)
   longBodyMult: 1.5,    // a "long" body is more than this x the average body (50% rule for zones)
   avgBodyLen: 20,       // candles before the zone candle used for that average
@@ -150,8 +150,8 @@ export class SmcEngine {
   #scan(c, i) {
     const f = [], p = this.p, a = this.atrV, minWick = p.sweepMinAtr * a;
     // structure breaks (body close beyond the latest unbroken swing)
-    if (this.top && !this.top.crossed && c.c > this.top.price) f.push({ k: 'break', dir: 1, sw: this.top, choch: this.trend === -1 });
-    if (this.btm && !this.btm.crossed && c.c < this.btm.price) f.push({ k: 'break', dir: -1, sw: this.btm, choch: this.trend === 1 });
+    if (this.top && !this.top.crossed && c.c > this.top.price) f.push({ k: 'break', dir: 1, sw: this.top, counter: this.trend === -1 });
+    if (this.btm && !this.btm.crossed && c.c < this.btm.price) f.push({ k: 'break', dir: -1, sw: this.btm, counter: this.trend === 1 });
     const broke = new Set(f.map((x) => x.sw)), pools = new Set();
     // liquidity sweeps, and silent crosses of older swings (a body closed beyond them: they are gone, not swept)
     for (const s of this.swH) {
@@ -179,8 +179,8 @@ export class SmcEngine {
   }
 
   #breakAnn(x, c, provisional = false) {
-    const type = x.choch ? 'choch' : 'bos', dir = x.dir;
-    return { id: `${type}:${x.sw.t}:${dir}`, type, dir, t0: x.sw.t, t1: c.t, price: x.sw.price, label: x.choch ? 'CHoCH' : 'BOS', ...(provisional ? { provisional: true } : {}) };
+    const dir = x.dir;                                                                       // a break against the trend (old CHoCH) is a BOS too: same type and label, only `counter` tells them apart
+    return { id: `bos:${x.sw.t}:${dir}`, type: 'bos', dir, t0: x.sw.t, t1: c.t, price: x.sw.price, label: 'BOS', ...(x.counter ? { counter: true } : {}), ...(provisional ? { provisional: true } : {}) };
   }
 
   #sweepAnn(x, c, provisional = false) {
@@ -197,7 +197,7 @@ export class SmcEngine {
     // 1. commit what this candle did
     for (const x of found) {
       if (x.k === 'break') {
-        if (!x.choch && this.pb && !this.pb.resume_t) this.pb.resume_t = c.t;                 // a BOS in the trend direction after the pullback = the trend resumes
+        if (!x.counter && this.pb && !this.pb.resume_t) this.pb.resume_t = c.t;                 // a BOS in the trend direction after the pullback = the trend resumes
         x.sw.crossed = true; if (this.trend === 0 && p.idmMode !== 'zone') this.trend = x.dir;   // zone mode: the trend needs 2 breaks in one direction (IDM + DISR), see #mapZones. Swing mode (old rule) has no zones: the first break sets it
         this.#put(this.#breakAnn(x, c), changed);
         if (p.idmMode === 'zone') this.#zoneOf(x, i);
@@ -268,10 +268,9 @@ export class SmcEngine {
     let lo = pa.lo, hi = pa.hi;
     if (b >= 0 && !pa.long) { const pb = part(b); lo = Math.min(lo, pb.lo); hi = Math.max(hi, pb.hi); }   // a long A is the zone on its own, like the long order block body in SORK
     if (!(hi > lo)) { lo = cs[a].l; hi = cs[a].h; half = false; }                                     // doji: use the whole candle
-    const type = x.choch ? 'choch' : 'bos';
     const zone = { id: `idm:${x.sw.t}:${d}`, type: 'idm', dir: d, t0: cs[a].t, t1: null, price: d === 1 ? hi : lo, lo, hi, zone: true,
       bos_t: cs[i].t, bos_level: x.sw.price, broken_t: x.sw.t, line: d === 1 ? cs[k].l : cs[k].h,      // the breaking candle, the level it broke, when that swing formed, the swing start (HL / LH)
-      ...(half ? { half: true } : {}), ref: `${type}:${x.sw.t}:${d}` };
+      ...(half ? { half: true } : {}), ref: `bos:${x.sw.t}:${d}` };
     this.brks.push({ dir: d, idx: i, zone, ann: null });
     if (this.brks.length > 80) this.brks.shift();
   }
