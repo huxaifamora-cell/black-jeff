@@ -101,7 +101,7 @@ XP can be earned in any way, but a rank is only granted once its mission is done
 | To become | Requirement |
 |---|---|
 | Private | Complete the Field guide (finish all chapters) |
-| Corporal | Pass 33 chart reading drills (every correct drill counts, even past the daily XP limit) |
+| Corporal | Pass 33 SMC chart reading drills (every correct drill counts, even past the daily XP limit) |
 | Sergeant | Pass the Proficiency Exam (every chapter, all 3 right) |
 | Lieutenant | Complete 99 Intercept Analyses |
 
@@ -130,7 +130,7 @@ Until a service is chosen the person stays at Lieutenant, even with enough XP: c
 
 **Promotional exam fail rule.** If a person gets more than 30% of any promotional exam wrong, they fail it and the whole promotional mission restarts from the beginning: every chapter pass of the Proficiency Exam is cleared and they start again at chapter 1. Each chapter exam has 3 questions, so one wrong answer (33%) is already a fail. XP and medals already earned are kept. Once a person holds Sergeant the exam is no longer promotional: a low score costs nothing and clears nothing. People who were already Sergeant or higher when the rule arrived keep their earlier passes. The limit is `EXAM_FAIL_MAX` in `web/rank.js`.
 
-**The same rule for the Corporal drills.** While a person is a Private, the chart reading drills are their promotional mission. They may miss at most 30% of the 33 required drills (9 misses, `DRILL_MISS_MAX`). The 10th miss fails them and the drills restart from 0/33 (passes and the miss count are cleared; XP and medals are kept). Misses made at other ranks are not counted.
+**The same rule for the Corporal drills.** While a person is a Private, the SMC chart reading drills are their promotional mission. Each drill is an H1 chart with the SMC marks hidden (marks come from the server's SMC engine): tap the BOS, IDM, DISR, KLV, the latest swing high or swing low, the QML, or the candle that completed a reclamation; or answer the trend, the BOS direction, the reclamation step reached, the QML direction and validity, or name the KLV entry candle (engulfing, harami or star, read from the M5 key level confirmations). The answer is drawn on the chart after each drill. They may miss at most 30% of the 33 required drills (9 misses, `DRILL_MISS_MAX`). The 10th miss fails them and the drills restart from 0/33 (passes and the miss count are cleared; XP and medals are kept). Misses made at other ranks are not counted.
 
 ### What groups and channels receive
 
