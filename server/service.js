@@ -1,5 +1,5 @@
 // Ties the feed, the engine and the alert store together.
-import { H1, H4, M5, defaultParams, evaluate, closedOnly, manualOrderFlow } from './engine.js';
+import { H1, H4, M5, C, defaultParams, evaluate, closedOnly, manualOrderFlow } from './engine.js';
 import { smcFlow, manualSmcFlow, smcBreaks } from './smcflow.js';
 import { SYMBOLS, norm } from './symbols.js';
 
@@ -225,6 +225,20 @@ export class Service {
       }
     }
     return fresh;
+  }
+
+  // One live message of the forming candle from the Deriv stream (smcfeed 'tick'): merged into the candle cache so the price, the price alerts and the next
+  // evaluation all see it at once, without waiting for the poll. Only touches a symbol whose history is already loaded. Returns true when it changed anything.
+  liveTick(sid, c, gran) {
+    const ent = (this.cache.get(sid) || {})[gran];
+    if (!ent || !ent.cs || !ent.cs.length || !c || !Number.isFinite(c.t) || !Number.isFinite(c.c)) return false;
+    const cs = ent.cs, last = cs[cs.length - 1], nc = C(c.t, c.o, c.h, c.l, c.c);
+    nc.forming = true;
+    if (c.t === last.t) cs[cs.length - 1] = nc;
+    else if (c.t > last.t) { if (last.forming) delete last.forming; cs.push(nc); }
+    else return false;                                                       // a late message of an older candle
+    if (gran === M5) { const st = this.states.get(sid); if (st) { st.price = nc.c; st.updated = Math.floor(Date.now() / 1000); } }
+    return true;
   }
 
   // Which of these price alerts has price reached? Live price counts at once; the M5 candles after the alert was set catch a spike

@@ -49,6 +49,13 @@ export function loadConfig() {
     smcPrimary: e.SMC !== '0' && e.SMC_ALERTS !== '0' && e.SORK_ALERTS !== '1',        // everything (symbol page, checklist, radar, alerts) comes from the SMC order flow instead of the SORK one. SORK_ALERTS=1 goes back to SORK with the SMC alerts next to it
     sorkAlerts: e.SORK_ALERTS === '1' || !(e.SMC !== '0' && e.SMC_ALERTS !== '0'),   // only matters when smcPrimary is off: whether the SORK alerts are sent
     sorkBoxes: e.SORK_BOXES === '1' || !(e.SMC !== '0' && e.SMC_ALERTS !== '0'),     // the SORK POI boxes on the chart (inducement, disruption, key level, QML, 50% POI, bjeff zone): hidden while the SMC flow is on (SORK_BOXES=1 shows them)
-    smcPinned: (e.SMC_SYMBOLS || '').split(',').map((x) => x.trim()).filter(Boolean),    // symbol ids (V75, V100s ...) that are always watched, even with nobody on the chart
+    // Symbols that are ALWAYS on the live Deriv feed, even with nobody on the chart. Default: all of them (real time for everything).
+    // SMC_SYMBOLS=V75,V100s = only those. SMC_SYMBOLS=none = only the symbols somebody has open.
+    smcPinned: (e.SMC_SYMBOLS === undefined || e.SMC_SYMBOLS.trim() === '' ? 'all' : e.SMC_SYMBOLS.trim().toLowerCase() === 'none' ? '' : e.SMC_SYMBOLS)
+      .split(',').map((x) => x.trim()).filter(Boolean),
+    // Timeframes kept live for the pinned symbols (the others are only opened when somebody views that chart). M5 = price, M5 POI; H1 = structure.
+    smcPinTimeframes: (e.SMC_PIN_TIMEFRAMES || 'm5,h1').split(',').map((x) => x.trim().toLowerCase()).filter(Boolean),
+    // Timeframes whose BOS / IDM / DISR / trend flip go to Telegram the moment the candle closes. M5 is busy: add it with SMC_ALERT_TFS=h1,m5
+    smcAlertTfs: (e.SMC_ALERT_TFS || 'h1').split(',').map((x) => x.trim().toLowerCase()).filter(Boolean),
   };
 }

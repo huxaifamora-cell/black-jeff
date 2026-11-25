@@ -10,7 +10,8 @@ import { loadConfig } from './config.js';
 import { Deriv } from './deriv.js';
 import { Bot } from './telegram.js';
 import { TelegramBackup } from './backup.js';
-import { Service, formatAlert, formatSniperAlert, isSmcAlert } from './service.js';
+import { Service, formatAlert, formatSniperAlert, isSmcAlert, chartSnap, digitsFor } from './service.js';
+import { smcAlertsFrom } from './smcalerts.js';
 import { renderChart } from './chartimg.js';
 import { SmcFeed, TF_SECONDS as SMC_TF } from './smcfeed.js';
 import { alertParam, alertId, checkParam, isAlertId, xpStatusText } from './alertlink.js';
@@ -39,7 +40,8 @@ export function createApp({ cfg = loadConfig(), store, svc, deriv, bot, log = co
   const smc = cfg.smc ? new SmcFeed({
     deriv, log, codeOf: (id) => { const s = svc.byId.get(id); return (s && s.code) || null; },
     params: { swingLen: cfg.smcSwingLen || 5, internalLen: cfg.smcInternalLen || 2 },
-    timeframes: (cfg.smcTimeframes || ['m5', 'h1', 'h4']).map((x) => SMC_TF[x]).filter(Boolean), pinned: cfg.smcPinned || [] }) : null;
+    timeframes: (cfg.smcTimeframes || ['m5', 'h1', 'h4']).map((x) => SMC_TF[x]).filter(Boolean),
+    pinned: (cfg.smcPinned || []).includes('all') ? svc.symbols.map((x) => x.id) : (cfg.smcPinned || []) }) : null;
   const sseClients = new Set();
 
   const priceNow = (sid) => { const st = svc.states.get(sid); return st && st.price != null ? st.price : null; };
@@ -321,6 +323,62 @@ export function createApp({ cfg = loadConfig(), store, svc, deriv, bot, log = co
     }
   }
 
+  // ------------------------------------------------------------ real time: the live Deriv feed drives everything, the poll is only the safety net
+  // 'tick'   every message of the forming candle -> price, price alerts
+  // 'close'  a candle closed                     -> the full evaluation of that symbol right away (reclamation, key level, QML, trend, order flow ...)
+  // 'update' BOS / IDM / DISR / trend flip       -> Telegram alerts at once (S and O alerts the polled evaluation never sent for plain breaks)
+  const alertTfs = new Set((cfg.smcAlertTfs || ['h1']).map((x) => SMC_TF[x]).filter(Boolean));
+  const trendOf = new Map(), everLive = new Set(), tickAt = new Map(), closeTimers = new Map();
+
+  async function sendSmcAlerts(m, changed, trend, prevTrend, t) {
+    const s = svc.byId.get(m.sym);
+    if (!s || !svc.smcAlerts) return;
+    const digits = (svc.states.get(m.sym) || {}).digits ?? 3;
+    for (const { ev, ...alert } of smcAlertsFrom({ sym: m.sym, name: s.name, tf: m.tf, changed, trend, prevTrend, t, digits })) {
+      alert.id = store.addAlert(alert);
+      if (!alert.id) continue;                                   // the polled evaluation already sent this one
+      try { alert.snap = chartSnap(alert, ev, smc.candles(m.sym, m.tf), digits); } catch (e) { log.warn('chart data for', alert.key, 'failed:', e.message); }
+      log.info('alert', alert.key);
+      await notify(alert, true);                                 // a live close is news even before the first poll pass has finished
+    }
+  }
+
+  function scheduleRefresh(sym) {                                // one evaluation per symbol, a moment after the candle closed (Deriv needs it to publish the closed candle)
+    if (closeTimers.has(sym)) return;
+    const t = setTimeout(async () => {
+      closeTimers.delete(sym);
+      try { if (liveBusy.has(sym)) await liveBusy.get(sym); liveLast.set(sym, 0); await liveRefresh(sym); }
+      catch (e) { log.warn('live evaluation', sym, 'failed:', e.message); }
+    }, 800);
+    t.unref?.(); closeTimers.set(sym, t);
+  }
+
+  function wireSmcLive() {
+    if (!smc) return;
+    smc.on('tick', ({ sym, tf, candle }) => {
+      if (!svc.liveTick(sym, candle, tf) || tf !== SMC_TF.m5) return;
+      const now = Date.now();
+      if (now - (tickAt.get(sym) || 0) < 1000) return;           // price alerts are checked at most once a second per symbol
+      tickAt.set(sym, now);
+      checkPriceAlerts(sym).catch((e) => log.warn('price alert check', sym, 'failed:', e.message));
+    });
+    smc.on('close', (m) => { trendOf.set(`${m.sym}|${m.tf}`, m.trend); scheduleRefresh(m.sym); });
+    smc.on('update', (m) => {
+      if (!alertTfs.has(m.tf)) return;
+      const k = `${m.sym}|${m.tf}`, prev = trendOf.get(k) ?? null;
+      trendOf.set(k, m.trend);
+      sendSmcAlerts(m, m.changed, m.trend, prev, m.t).catch((e) => log.warn('smc alert', m.sym, 'failed:', e.message));
+    });
+    smc.on('snapshot', (m) => {                                  // after a dropped socket or a gap the engine is rebuilt: catch up on what we missed (the store drops repeats)
+      const k = `${m.sym}|${m.tf}`, first = !everLive.has(k), prev = trendOf.get(k) ?? null;
+      everLive.add(k); trendOf.set(k, m.snap.trend);
+      if (first || !alertTfs.has(m.tf)) return;                  // the first snapshot after a start is history, not news
+      const horizon = Date.now() / 1000 - 3 * m.tf, fl = m.snap.flip;
+      const recent = m.snap.annotations.filter((a) => (a.t1 ?? a.bos_t ?? 0) >= horizon);
+      sendSmcAlerts(m, recent, m.snap.trend, prev, fl && fl.t >= horizon ? fl.t : null).catch((e) => log.warn('smc catch-up', m.sym, 'failed:', e.message));
+    });
+  }
+
   async function feedLoop() {
     while (!abort.signal.aborted) {
       try {
@@ -402,11 +460,18 @@ export function createApp({ cfg = loadConfig(), store, svc, deriv, bot, log = co
       if (svc.symbols.some((s) => s.code)) break;
       await sleep(5000, abort.signal);
     }
-    for (const sym of smc.pinned) for (const tf of smc.timeframes) { if (abort.signal.aborted) return; await smc.watch(sym, tf).catch(() => null); }
+    const tfs = (cfg.smcPinTimeframes || ['m5', 'h1']).map((x) => SMC_TF[x]).filter((tf) => tf && smc.supports(tf));
+    for (const sym of smc.pinned) {
+      const sy = svc.byId.get(sym);
+      if (!sy || !sy.available) continue;                        // not on Deriv: nothing to watch
+      for (const tf of tfs) { if (abort.signal.aborted) return; await smc.watch(sym, tf).catch(() => null); }
+    }
+    log.info(`live feed on for ${smc.pinned.size} symbols (${tfs.length} timeframes each)`);
   }
 
   async function start(port = cfg.port) {
     await new Promise((r) => server.listen(port, '0.0.0.0', r));
+    wireSmcLive();
     if (!background) return server.address().port;
     await restoreUsers();
     keepAlive();

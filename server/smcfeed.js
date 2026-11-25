@@ -5,6 +5,8 @@
 //   'snapshot' { sym, tf, snap }                 full state: sent after (re)subscribing, or after the engine rebuilt itself
 //   'update'   { sym, tf, changed, trend, t }    a candle CLOSED: annotations that are new or changed (BOS, CHoCH, sweep, IDM, swings ...)
 //   'live'     { sym, tf, live }                 provisional marks of the forming candle, only sent when they change
+//   'tick'     { sym, tf, candle }               EVERY message of the forming candle (price moves): lets the rest of the app run on the same live data
+//   'close'    { sym, tf, t }                    a candle closed and the engine has processed it (also when nothing changed)
 import { EventEmitter } from 'node:events';
 import { SmcEngine } from './smc.js';
 import { C } from './engine.js';
@@ -51,6 +53,13 @@ export class SmcFeed extends EventEmitter {
       annotations: snap.annotations.map(clean), live: en.forming ? en.engine.peek(en.forming).map(clean) : [] };
   }
 
+  // Closed candles the engine holds, plus the forming one (flagged `forming`). Used for the chart picture of an alert.
+  candles(sym, tf) {
+    const en = this.entries.get(this.key(sym, tf));
+    if (!en) return [];
+    return en.forming ? [...en.engine.cs, { ...en.forming, forming: true }] : [...en.engine.cs];
+  }
+
   touch(sym, tf) { const en = this.entries.get(this.key(sym, tf)); if (en) en.lastSeen = Date.now(); }
 
   stop() {
@@ -83,10 +92,11 @@ export class SmcFeed extends EventEmitter {
     const c = C(Number(o.open_time), Number(o.open), Number(o.high), Number(o.low), Number(o.close));
     if (!Number.isFinite(c.t) || !Number.isFinite(c.c)) return;
     const prev = en.forming;
-    if (!prev || c.t === prev.t) { en.forming = c; return this.#live(en); }
+    if (!prev || c.t === prev.t) { en.forming = c; this.emit('tick', { sym: en.sym, tf: en.tf, candle: c }); return this.#live(en); }
     if (c.t < prev.t) return;                                  // late message of an older candle
     // a new candle opened: the previous one is final
     en.forming = c;
+    this.emit('tick', { sym: en.sym, tf: en.tf, candle: c });
     if (c.t !== prev.t + en.tf) return void this.#resync(en); // we missed candles (gap): rebuild from history
     this.#closeCandle(en, prev, c).catch((e) => this.log.warn('smc close failed:', e.message));
   }
@@ -101,6 +111,7 @@ export class SmcFeed extends EventEmitter {
     const r = en.engine.close(fin);
     if (r.rebuilt) this.emit('snapshot', { sym: en.sym, tf: en.tf, snap: this.snapshot(en.sym, en.tf) });
     else if (r.changed.length) this.emit('update', { sym: en.sym, tf: en.tf, changed: r.changed.map(clean), trend: r.trend, t: fin.t });
+    this.emit('close', { sym: en.sym, tf: en.tf, t: fin.t, trend: r.trend });
     en.sig = '';
     this.#live(en, true);
   }
