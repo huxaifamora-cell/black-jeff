@@ -19,8 +19,7 @@
 //  - Trend flip (SORK rule): the trend ends only when the DISR zone is invalidated, i.e. a candle BODY closes beyond its far side
 //          (bull trend: close below the DISR zone, bear trend: close above it). The other side becomes the trend AT ONCE, using the breaks that already exist in that direction
 //          (no waiting for new ones): the most recent one is the IDM, the one before it the DISR, then LIQ. With only one existing break there is an IDM and no DISR yet (the next break in the new direction is the new IDM, this one becomes the DISR).
-//          Only when the other side has no break at all is there no trend (0). No look-back window (the original SMC rule):
-//          the new IDM / DISR / LIQ are simply the newest BOS zones of the new direction, whenever they formed, including the counter-trend break of the pullback that led to the flip.
+//          Only when the other side has no break at all is there no trend (0). The new IDM / DISR / LIQ are NOT simply the newest breaks of any age: they come from the stepping sequence of that direction (see 'Stepping sequence').
 //          (idmMode 'swing', the old rule, has no zones: there the first break still sets the trend.)
 //  - Liquidity sweep: a candle WICKS beyond an unbroken swing (or an equal-highs / equal-lows pool) but CLOSES back on the near side of it.
 //          Wick above highs = buy-side liquidity taken (bearish reaction expected, dir -1). Wick below lows = sell-side liquidity taken (dir +1).
@@ -28,7 +27,11 @@
 //          at the lowest low between the broken swing and the break, plus the first bullish candle after it (B), body to body. Down break = supply zone, mirrored.
 //          50% rule: a candle with a LONG body (more than `longBodyMult` x the average body of the previous `avgBodyLen` candles) only counts for the half of its body that
 //          is on the zone side (demand: bottom 50%, supply: top 50%); a long A is the zone on its own, like the long order block body in SORK.
-//          Which zones are shown follows the trend: IDM = the zone of the LATEST BOS in the trend direction, DISR (disruption) = the BOS before it, LIQ = the one before that.
+//          Which zones are shown follows the trend: IDM = the zone of the LATEST BOS in the trend direction, DISR (disruption) = the previous leg of the stepping sequence, LIQ = the one before that.
+//  - Stepping sequence (per direction): walk back from the latest BOS of that direction and keep only the legs that really step. Up: each older leg must have a LOWER pullback low (HL, the zone's `line`) and a LOWER broken swing high (HH, `bos_level`)
+//          than the leg kept after it; down: mirrored (LH / LL). A leg that does not step is skipped and the walk goes on with the next older one, compared with the last KEPT leg. The latest BOS is always the anchor (the IDM).
+//          So the IDM always sits above the DISR in an up trend (below it in a down trend), and each zone belongs to a higher low (lower high) than the one before it.
+//          The sequence feeds the roles (IDM / DISR / LIQ), the 2-break trend rule and the DISR that invalidates the trend. After a DISR invalidation the new direction is mapped from the two most recent stepping legs, whenever they formed.
 //          A wick back into a zone = taken (status 'swept'). A zone that drops out of the three (or belongs to the old trend after a flip) gets status 'void' and leaves the chart.
 //  - Inducement (IDM), idmMode 'swing' (the old rule): in an up trend, the FIRST minor swing low (internal pivot, `internalLen`) that forms in the pullback after the latest major swing high.
 //          Price wicking below it = the inducement is taken (status 'swept'). Down trend: mirrored with the first minor swing high after the latest swing low.
@@ -283,12 +286,28 @@ export class SmcEngine {
     return avg > 0 && Math.abs(q.c - q.o) > this.p.longBodyMult * avg;
   }
 
-  // Which zones are on the chart, newest candle i = c. IDM = latest BOS in the trend direction, DISR = the one before, LIQ = the one before that.
+  // Stepping sequence of a direction, oldest first (see the header). Newest break = anchor; older breaks are kept only if they step: HL + HH (up) or LH + LL (down) against the last kept leg.
+  #steps(dir) {
+    const out = [];
+    for (let k = this.brks.length - 1; k >= 0; k--) {
+      const b = this.brks[k];
+      if (b.dir !== dir) continue;
+      const n = out[out.length - 1];
+      if (n) {
+        const z = b.zone, y = n.zone;
+        if (!(dir === 1 ? z.line < y.line && z.bos_level < y.bos_level : z.line > y.line && z.bos_level > y.bos_level)) continue;
+      }
+      out.push(b);
+    }
+    return out.reverse();
+  }
+
+  // Which zones are on the chart, newest candle i = c. IDM = latest BOS in the trend direction, DISR = the previous leg of the stepping sequence, LIQ = the one before that.
   // SORK invalidation: a body closing beyond the far side of the DISR zone flips the trend and maps the order flow again in the new direction.
   #mapZones(i, c, changed) {
     const p = this.p, ROLES = ['idm', 'disr', 'liq'].slice(0, Math.max(1, Math.min(3, p.idmMaxOpen)));
     let d = this.trend;
-    const cands = (dir) => this.brks.filter((b) => b.dir === dir);
+    const cands = (dir) => this.#steps(dir);                      // stepping HH/HL (or LH/LL) sequence, not every break
     let cand = d ? cands(d) : [];
     if (d === 0) {
       // No trend yet (cold start / loaded candles, or the old trend was invalidated and the other side has no break at all). The LATEST break sets the trend,
@@ -300,7 +319,7 @@ export class SmcEngine {
       const dis = cand.length >= 2 ? cand[cand.length - 2] : null;
       if (dis && dis.idx < i && (d === 1 ? c.c < dis.zone.lo : c.c > dis.zone.hi)) {
         this.flip = { dir: d, t: c.t, idx: i, by: 'disruption' }; this.pb = null;
-        // the other side takes over at once with the breaks that already exist in its direction (most recent = IDM, the one before = DISR, then LIQ), no waiting for new ones.
+        // the other side takes over at once: walk back through its swings, keep the stepping HH/HL (or LH/LL) sequence, and map the two most recent legs (IDM, DISR) and the one before (LIQ), no waiting for new ones.
         // only if it has no break at all is there no trend
         this.trend = d = cands(-d).length >= 1 ? -d : 0;
         cand = d ? cands(d) : [];
