@@ -310,8 +310,9 @@ function chart(cv, s, tf, name) {
   const gutter = Math.min(Math.ceil(W * .4), Math.max(priceTxt ? tw(priceTxt) : 0, ...lines.map(o => tw(o.label)), ...boxes.map(o => tw(o.label) + 6)) + 8);
   const titleTxt = (name ? name + '  ' : '') + tf.toUpperCase();
   // every timeframe shows the H1 trend (internal order flow); H4 is never shown as a bias
-  const tr = s.s ? (s.s.trend || 0) : 0, trTxt = tr === 1 ? 'H1 \u25B2 BULLISH' : tr === -1 ? 'H1 \u25BC BEARISH' : 'H1 NO TREND', trCol = tr === 1 ? TV.upTxt : tr === -1 ? TV.dnTxt : TV.dim;
-  g.font = `700 ${FS + 1}px ${MONO}`; const titleW = Math.ceil(g.measureText(titleTxt).width) + 14, trW = SMC_ONLY ? 0 : Math.ceil(g.measureText(trTxt).width) + 14;
+  const sm = SMC.trend(tf), tr = sm.tr, showTr = sm.state !== 'off';              // the SMC trend (H1), in the spot of the old Black Jeff trend badge
+  const trTxt = `H1 TREND ${tr === 1 ? '\u25B2 BULL' : tr === -1 ? '\u25BC BEAR' : '\u25CF FLAT'}${sm.state === 'live' ? '' : ' \u2026'}`, trCol = tr === 1 ? TV.upTxt : tr === -1 ? TV.dnTxt : TV.dim;
+  g.font = `700 ${FS + 1}px ${MONO}`; const titleW = Math.ceil(g.measureText(titleTxt).width) + 14, trW = !showTr ? 0 : Math.ceil(g.measureText(trTxt).width) + 14;
   g.font = `${FS}px ${MONO}`;
   const bandW = Math.max(40, W - 14 - titleW - trW), need = boxes.reduce((n, o) => n + tw(o.label) + 3, 0);
   const rows = Math.min(3, Math.max(1, Math.ceil(need / bandW)));
@@ -376,8 +377,8 @@ function chart(cv, s, tf, name) {
   { const r = { x: 4, y: 4, w: titleW, h: TH }; taken.push(r);
     g.fillStyle = 'rgba(0,0,0,.92)'; g.strokeStyle = TV.grid; g.beginPath(); g.roundRect ? g.roundRect(r.x, r.y, r.w, r.h, 3) : g.rect(r.x, r.y, r.w, r.h); g.fill(); g.stroke();
     g.fillStyle = '#D1D4DC'; g.font = `700 ${FS + 1}px ${MONO}`; g.textBaseline = 'middle'; g.fillText(titleTxt, r.x + 7, r.y + r.h / 2 + .5);
-    // H4 trend badge, right after the title tag: green = uptrend, red = downtrend, grey = no valid trend yet
-    if (!SMC_ONLY) { const t = { x: r.x + r.w + 6, y: 4, w: trW, h: TH }; taken.push(t);
+    // H1 trend badge (SMC), right after the title tag: green = uptrend, red = downtrend, grey = no valid trend yet
+    if (showTr) { const t = { x: r.x + r.w + 6, y: 4, w: trW, h: TH }; taken.push(t);
     g.fillStyle = 'rgba(0,0,0,.92)'; g.strokeStyle = trCol; g.lineWidth = 1.5; g.beginPath(); g.roundRect ? g.roundRect(t.x, t.y, t.w, t.h, 3) : g.rect(t.x, t.y, t.w, t.h); g.fill(); g.stroke(); g.lineWidth = 1;
     g.fillStyle = trCol; g.fillText(trTxt, t.x + 7, t.y + t.h / 2 + .5); }
     g.textBaseline = 'alphabetic'; g.font = `${FS}px ${MONO}`; }

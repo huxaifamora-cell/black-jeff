@@ -13,17 +13,17 @@ const SMC = (() => {
   const HIDE = { sweep: 1 };                                          // drawn nowhere: liquidity sweeps (the engine still tracks them)
   const ZN = { idm: 'IDM', disr: 'DISR', liq: 'LIQ' };                // zone roles set by the engine (latest BOS in the trend direction, the one before, the one before that)
   const EXT = { idm: 1, disr: 1 };                                    // these boxes run on to the right, slightly past the forming candle
-  const LAYERS = [['st', 'BOS'], ['idm', 'IDM'], ['kl', 'KLV'], ['liq', 'LIQUIDITY']];
+  const LAYERS = [['st', 'BOS'], ['idm', 'IDM'], ['kl', 'KLV']];
   let pref = { on: true, st: true, idm: true, kl: true, liq: true };
   try { Object.assign(pref, JSON.parse(localStorage.getItem(KEY) || '{}')); } catch { /* storage blocked: defaults */ }
-  pref.on = true;                                                     // SMC is always on: it has no button any more (an old saved 'off' is ignored)
+  pref.on = true; pref.liq = true;                                                       // SMC is always on: it has no button any more (an old saved 'off' is ignored)
   const save = () => { try { localStorage.setItem(KEY, JSON.stringify(pref)); } catch { /* ignore */ } };
 
   // Two streams: `main` = the timeframe on screen, `ref` = the H1 stream that the M5 chart follows (H1 trend and H1 IDM / DISR / LIQ zones). Other timeframes need no ref.
   const feed = () => ({ tf: null, ann: new Map(), live: [], trend: 0, state: 'idle', ac: null, tried: 0 });
   const fresh = (sym) => ({ sym, main: feed(), ref: feed(), flash: null, flow: { state: null, at: 0, busy: false, off: false } });
   let st = fresh(null), lastDraw = 0, raf = 0;
-  const REF = { m5: 'h1' };                                           // chart timeframe -> the timeframe whose trend and zones it shows
+  const REF = { m5: 'h1', h4: 'h1' };                                           // chart timeframe -> the timeframe whose trend and zones it shows
 
   const redraw = () => {
     if (raf) return;
@@ -226,15 +226,16 @@ const SMC = (() => {
     const prog = fs_ && pref.kl && (E.tf === 'h1' || E.tf === 'm5') ? (fs_.r || []).filter((r) => r.state > 0) : [];
     if (prog.length) text(`RECLAIM ${Math.max(...prog.map((r) => r.state))}/5`, plotW - 4, 4 + 3 * (fs + 6) + 6, COL.rec, 'right', true);
     // trend tag and the latest event, top right
-    const tf_ = rf || mf, tr = tf_.trend, tag = `SMC${follow ? ' H1' : ''} ${tr === 1 ? '▲ BULL' : tr === -1 ? '▼ BEAR' : '● FLAT'}${tf_.state === 'live' ? '' : ' · ' + (tf_.state === 'connecting' ? '...' : tf_.state === 'idle' ? '...' : 'reconnecting')}`;
-    text(tag, plotW - 4, 4 + fs + 6, tr === 1 ? '#26A69A' : tr === -1 ? '#EF5350' : '#787B86', 'right', true);
+    // the trend tag is drawn by the chart itself (app.js), in the spot of the old H1 trend badge: see trend()
     if (st.flash && Date.now() - st.flash.at < 12000) {
       const a = st.flash.a, d = new Date(a.t1 * 1000), hm = String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
-      text(`${a.dir === 1 ? '▲' : '▼'} ${a.type === 'idm' ? (ZN[a.role] || 'IDM') + ' \u2713' : a.label} ${hm}`, plotW - 4, 4 + 2 * (fs + 6) + 3, COL[a.type] || '#fff', 'right', true);
+      text(`${a.dir === 1 ? '▲' : '▼'} ${a.type === 'idm' ? (ZN[a.role] || 'IDM') + ' \u2713' : a.label} ${hm}`, plotW - 4, 4 + fs + 6, COL[a.type] || '#fff', 'right', true);
       setTimeout(redraw, 12100 - (Date.now() - st.flash.at));
     }
     g.restore();
   }
 
-  return { open, barHtml, bind, draw };
+  // trend shown on the chart for this timeframe: always the H1 trend (M5 and H4 follow the H1 stream). state: 'live', 'connecting', 'reconnecting' ... 'off' = SMC is off on the server
+  const trend = (tf) => { const f = REF[tf] ? st.ref : st.main; return { tr: f.trend || 0, state: f.state }; };
+  return { open, barHtml, bind, draw, trend };
 })();
