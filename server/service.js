@@ -1,6 +1,6 @@
 // Ties the feed, the engine and the alert store together.
-import { H1, H4, M5, C, defaultParams, evaluate, closedOnly, manualOrderFlow } from './engine.js';
-import { smcFlow, manualSmcFlow, smcBreaks } from './smcflow.js';
+import { H1, H4, M5, defaultParams, evaluate, closedOnly, manualOrderFlow } from './engine.js';
+import { smcFlow } from './smcflow.js';
 import { SYMBOLS, norm } from './symbols.js';
 
 // H1 needs the last 6 months (h1Days x 24 candles, the Deriv indices trade round the clock) plus a small margin; H4 covers the same span.
@@ -114,9 +114,6 @@ export class Service {
     this.states = new Map();
     this.smcStates = new Map();                  // sid -> the SORK rules evaluated on the SMC order flow (IDM / DISR / LIQ)
     this.smcAlerts = false;                      // turned on by createApp (SMC_ALERTS)
-    this.smcPrimary = false;                     // true = apply() runs on the SMC order flow: the symbol page, checklist, radar and alerts all show SMC values
-    this.sorkAlerts = true;                      // false = the SORK rules still run (checklist, Sniper Mode) but send no alerts
-    this.sorkBoxes = true;                       // false = the SORK POI boxes are left out of the chart overlays
     this.smcParams = {};                         // SMC engine settings for the order flow (swingLen, internalLen ...)
   }
 
@@ -131,22 +128,17 @@ export class Service {
   // Evaluate one symbol and return the NEW alerts (already stored).
   apply(sid, h4, h1, m5, now = Date.now() / 1000) {
     const s = this.byId.get(sid);
-    const smc = this.smcPrimary;
-    const digits = digitsFor(m5), res = evaluate(h4, h1, m5, this.p, digits, smc ? { flowOf: (h1c) => smcFlow(h1c, this.smcParams) } : {});
+    const digits = digitsFor(m5), res = evaluate(h4, h1, m5, this.p, digits);
     res.state.updated = Math.floor(now);
     res.state.price = m5.length ? m5[m5.length - 1].c : null;
-    const noBoxes = (o) => o.type !== 'box' && !(o.type === 'line' && o.label === 'BOS');                   // SORK POI boxes and BOS lines / labels go (the SMC draws its own)
-    if (smc) this.smcStates.set(sid, { ...res.state, candles: undefined });                     // the chart draws the SMC boxes itself (web/smc.js), from this copy
-    if ((smc || !this.sorkBoxes) && Array.isArray(res.state.overlays)) res.state.overlays = res.state.overlays.filter(noBoxes);   // lines and marks stay, the POI boxes go
     this.states.set(sid, res.state);
     const fresh = [];
-    if (!smc && !this.sorkAlerts) return fresh;
     for (const ev of res.events) {
       if (now - ev.t > 3 * ev.tf) continue;                    // stale events are not alerted
       const a = {
-        key: `${sid}|${smc ? 'smc|' : ''}${ev.concept}|${ev.kind}|${ev.uid}`, ts: Math.min(ev.t, Math.floor(now)), symbol: sid, symbol_name: s.name, concept: ev.concept,
+        key: `${sid}|${ev.concept}|${ev.kind}|${ev.uid}`, ts: Math.min(ev.t, Math.floor(now)), symbol: sid, symbol_name: s.name, concept: ev.concept,
         kind: ev.kind, dir: ev.dir, title: ev.title, body: ev.body,
-        payload: { ...ev.extra, tf: ev.tf, bias: res.state.s ? res.state.s.bias : 0, ...(smc ? { src: 'smc' } : {}) },
+        payload: { ...ev.extra, tf: ev.tf, bias: res.state.s ? res.state.s.bias : 0 },
       };
       a.id = this.store.addAlert(a);
       if (a.id) {
@@ -197,7 +189,7 @@ export class Service {
     }
     if (!changed && this.states.has(sid)) return [];
     const fresh = this.apply(sid, cache[H4].cs, cache[H1].cs, cache[M5].cs, now);
-    if (this.smcAlerts && !this.smcPrimary) { try { fresh.push(...this.applySmc(sid, cache[H4].cs, cache[H1].cs, cache[M5].cs, now)); } catch (e) { this.log.warn('smc flow', sid, 'failed:', e.message); } }
+    if (this.smcAlerts) { try { fresh.push(...this.applySmc(sid, cache[H4].cs, cache[H1].cs, cache[M5].cs, now)); } catch (e) { this.log.warn('smc flow', sid, 'failed:', e.message); } }
     return fresh;
   }
 
@@ -225,20 +217,6 @@ export class Service {
       }
     }
     return fresh;
-  }
-
-  // One live message of the forming candle from the Deriv stream (smcfeed 'tick'): merged into the candle cache so the price, the price alerts and the next
-  // evaluation all see it at once, without waiting for the poll. Only touches a symbol whose history is already loaded. Returns true when it changed anything.
-  liveTick(sid, c, gran) {
-    const ent = (this.cache.get(sid) || {})[gran];
-    if (!ent || !ent.cs || !ent.cs.length || !c || !Number.isFinite(c.t) || !Number.isFinite(c.c)) return false;
-    const cs = ent.cs, last = cs[cs.length - 1], nc = C(c.t, c.o, c.h, c.l, c.c);
-    nc.forming = true;
-    if (c.t === last.t) cs[cs.length - 1] = nc;
-    else if (c.t > last.t) { if (last.forming) delete last.forming; cs.push(nc); }
-    else return false;                                                       // a late message of an older candle
-    if (gran === M5) { const st = this.states.get(sid); if (st) { st.price = nc.c; st.updated = Math.floor(Date.now() / 1000); } }
-    return true;
   }
 
   // Which of these price alerts has price reached? Live price counts at once; the M5 candles after the alert was set catch a spike
@@ -271,7 +249,7 @@ export class Service {
     const s = this.byId.get(sid), c = this.cache.get(sid) || {}, h4 = c[H4] && c[H4].cs, h1 = c[H1] && c[H1].cs, m5 = c[M5] && c[M5].cs;
     if (!s || !h4 || !h1 || !m5 || !h4.length || !h1.length || !m5.length) return null;
     const digits = digitsFor(m5), manual = { dir: flow.dir, ind: flow.ind, dis: flow.dis };
-    const res = evaluate(h4, h1, m5, this.p, digits, this.#sniperOpts(manual));
+    const res = evaluate(h4, h1, m5, this.p, digits, { manual });
     const iv = res.state.o && res.state.o.invalidated, invT = iv ? iv.t + H1 : null, alerts = [];
     for (const ev of res.events) {
       if (ev.t < flow.created || now - ev.t > 3 * ev.tf) continue;
@@ -287,14 +265,9 @@ export class Service {
     return { alerts, ended: invT !== null };
   }
   // Has price already gone beyond this disruption POI? (Checked when a flow is set, so a flow that is already dead is refused.)
-  // Sniper Mode runs on the SMC rules when the SMC is the main source: body-close invalidation of the person's disruption, SMC pullback, SMC breaks for the break / change of structure alerts.
-  #sniperOpts(manual) {
-    return this.smcPrimary ? { manual, flowOf: (h1c) => manualSmcFlow(h1c, manual, this.smcParams), breaksOf: (h1c) => smcBreaks(h1c, this.smcParams) } : { manual };
-  }
   sniperDead(sid, spec) {
     const ent = (this.cache.get(sid) || {})[H1]; if (!ent || !ent.cs.length) return false;
-    const h1 = closedOnly(ent.cs);
-    return !!(this.smcPrimary ? manualSmcFlow(h1, spec, this.smcParams) : manualOrderFlow(h1, spec)).invalidated;
+    return !!manualOrderFlow(closedOnly(ent.cs), spec).invalidated;
   }
 
   overview() {

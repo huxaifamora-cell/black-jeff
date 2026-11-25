@@ -147,9 +147,9 @@ export function renderChart(snap, { width = 1280, height = 720 } = {}) {
 
   // grid + price axis
   const gs = niceStep(hi - lo, 6), grid = [];
-  for (let v = Math.ceil(lo / gs) * gs; v <= hi; v += gs) { grid.push(v); }                                    // no grid lines, only the price labels
+  for (let v = Math.ceil(lo / gs) * gs; v <= hi; v += gs) { cv.hline(Y(v), L, L + pw, C.grid, 1, 1.5); grid.push(v); }
   const ticks = [], tickEvery = Math.max(1, Math.ceil((textWidth('00 MMM 00:00', KA) + 40) / step));      // time labels never touch each other
-  for (let i = Math.max(0, tickEvery - 1); i < n; i += tickEvery) { ticks.push(i); }                                  // no grid lines, only the time labels
+  for (let i = Math.max(0, tickEvery - 1); i < n; i += tickEvery) { cv.vline(X(i), T, T + ph, C.grid, 1, 1.5); ticks.push(i); }
 
   // POI box (from its own start to the right edge)
   if (box) {

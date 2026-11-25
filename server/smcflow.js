@@ -5,7 +5,6 @@
 // The SMC engine decides the trend (it flips when the DISR zone is invalidated by a body close) and the pullback at the IDM; this file only translates.
 // Pure: no network, no I/O. h1 = CLOSED H1 candles {t,o,h,l,c}, the same array evaluate() works on (the candle indexes in the flow point into it).
 import { SmcEngine } from './smc.js';
-import { manualOrderFlow } from './engine.js';
 
 const ROLE = { idm: 'inducement', disr: 'disruption', liq: 'plq' };
 
@@ -35,34 +34,4 @@ export function smcFlow(h1, params = {}) {
   const e = new SmcEngine(params);
   e.seed(h1);
   return flowFromSnapshot(e.snapshot({ limit: 1000 }), h1);
-}
-
-// Every break the SMC engine sees on the H1 candles: { dir, t (the breaking candle), level }. A break in the person's direction = BOS, against it = change of structure.
-export function smcBreaks(h1, params = {}) {
-  const e = new SmcEngine(params);
-  e.seed(h1);
-  return e.snapshot({ limit: 1000 }).annotations.filter((a) => a.type === 'bos' || a.type === 'choch').map((a) => ({ dir: a.dir, t: a.t1, level: a.price }));
-}
-
-// Sniper Mode on the SMC rules. The person's POIs and direction stay (manualOrderFlow), but:
-//  - the disruption is invalidated by a candle BODY closing beyond it (the SMC rule), not by a wick;
-//  - the pullback at the inducement is read the SMC way: a wick back into the inducement POI after the flow was set; the next break in the flow direction resumes it.
-export function manualSmcFlow(h1, m, params = {}) {
-  const res = manualOrderFlow(h1, m), d = res.dir, [ind, dis] = res.pois;
-  res.invalidated = null; res.official = null; res.source = 'smc';
-  const from = Math.max(ind.bos_t, dis.bos_t), brks = smcBreaks(h1, params).filter((b) => b.dir === d);
-  let pb = null;
-  for (let i = 0; i < h1.length; i++) {
-    const c = h1[i];
-    if (c.t <= from) continue;
-    if (pb && !pb.resume_t) { const r = brks.find((b) => b.t > pb.t && b.t <= c.t); if (r) pb.resume_t = r.t; }
-    if ((d === 1 && c.c < dis.lo) || (d === -1 && c.c > dis.hi)) {
-      res.invalidated = { dir: d, t: c.t, idx: i, by: 'disruption' };
-      res.official = { dir: -d, invalidated_t: c.t, t: c.t, idx: i, by: 'disruption' };
-      pb = null; break;
-    }
-    if ((pb === null || pb.resume_t) && (d === 1 ? c.l <= ind.hi : c.h >= ind.lo)) pb = { dir: d, t: c.t, idx: i, resume_t: null };
-  }
-  if (pb) res.pullback = pb;
-  return res;
 }
