@@ -675,6 +675,7 @@ const tail = (cs, n) => cs.slice(-n).map((c) => [c.t, c.o, c.h, c.l, c.c]);
 
 // opts.manual = { dir, ind: {lo, hi, t}, dis: {lo, hi, t} } runs everything on a hand-set order flow (see manualOrderFlow) instead of the bot's own.
 // opts.flowOf = (h1) => flow runs everything on an order flow made by another engine (the SMC, see smcflow.js). h1 = the closed H1 candles used here.
+// opts.breaksOf = (h1) => [{ dir, t, level }] gives the H1 breaks of structure for the Sniper Mode break / change of structure alerts (the SMC breaks), instead of the SORK valid BOS.
 export function evaluate(h4Live, h1Live, m5, p = defaultParams, digits = 3, opts = {}) {
   // H4 and H1 arrive live (the forming candle is the last one, flagged `forming`) so the chart can show it. All the H4 / H1 rules
   // (BOS, order flow, reclamation, key levels, QML) are judged on CLOSED candles only, because they depend on a body CLOSING
@@ -762,7 +763,7 @@ export function evaluate(h4Live, h1Live, m5, p = defaultParams, digits = 3, opts
   if (of.invalidated) {
     const iv = of.invalidated;
     if (opts.manual) events.push(ev('O', 'invalidated', iv.dir === 1 ? -1 : 1, iv.t + H1, H1, 'O: your order flow is invalidated',
-      `An H1 candle went beyond your disruption POI (a wick is enough). This order flow is over: set a new one in Sniper Mode.`, `inv-${iv.t}`));
+      opts.flowOf ? `An H1 candle body closed beyond your disruption POI. This order flow is over: set a new one in Sniper Mode.` : `An H1 candle went beyond your disruption POI (a wick is enough). This order flow is over: set a new one in Sniper Mode.`, `inv-${iv.t}`));
     else events.push(ev('O', 'invalidated', iv.dir === 1 ? -1 : 1, iv.t + H1, H1, iv.by === 'key_level' ? 'O: key level invalidated, trend flipped' : 'O: disruption invalidated, trend flipped',
       iv.by === 'key_level'
         ? `The key level in the ${iv.dir === 1 ? 'up' : 'down'}trend was invalidated, so the trend flips to ${iv.dir === 1 ? 'down' : 'up'} at once. The new order flow is mapped from the most current breaks of structure.`
@@ -774,7 +775,8 @@ export function evaluate(h4Live, h1Live, m5, p = defaultParams, digits = 3, opts
   // a valid BOS against it = change of structure. (Same structural-liquidity rule as everywhere else: a small break with no liquidity does not count.)
   if (opts.manual) {
     const from = Math.max(opts.manual.ind.t, opts.manual.dis.t);
-    for (const b of markValid(h1, findBos(h1, p.swingK, p.bosStructural !== false))) {
+    const brk = opts.breaksOf ? opts.breaksOf(h1).map((b) => ({ ...b, valid: true })) : markValid(h1, findBos(h1, p.swingK, p.bosStructural !== false));
+    for (const b of brk) {
       if (!b.valid || b.t <= from) continue;
       const same = b.dir === of.dir;
       events.push(ev('S', same ? 'bos' : 'choch', b.dir, b.t + H1, H1, same ? `S: break of structure (${side(b.dir)} side)` : 'S: change of structure',
