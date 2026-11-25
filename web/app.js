@@ -321,16 +321,14 @@ function chart(cv, s, tf, name) {
   const X = t => { const i = cs.findIndex(c => c[0] >= t); return i < 0 ? plotW : i === 0 ? 0 : i * step; };
   // A box starts at the LEFT EDGE of the first candle that formed it (the candle body is drawn 60% of a slot wide, centred).
   const XL = t => { const i = cs.findIndex(c => c[0] >= t); return i < 0 ? plotW : i === 0 && cs[0][0] > t ? 0 : i * step + step * .2; };
-  // grid (horizontal at round prices, vertical at round times) and the time axis along the bottom, like TradingView
+  // round price and time steps for the axis labels, and the time axis along the bottom (no grid lines are drawn)
   const pxPerP = (Hh - 14 - TOP) / (hi - lo), tickP = [], tickT = [];
   { const raw = 64 / pxPerP, mag = Math.pow(10, Math.floor(Math.log10(raw))), stp = [1, 2, 2.5, 5, 10].map(m => m * mag).find(v => v >= raw) || raw;
     for (let v = Math.ceil(lo / stp) * stp; v <= hi; v += stp) tickP.push(+v.toFixed(10));
     const offS = -new Date(cs[0][0] * 1000).getTimezoneOffset() * 60, need = Math.max(1, Math.ceil(78 / step)) * ivl;
     const iv = [300, 900, 1800, 3600, 7200, 14400, 21600, 43200, 86400, 172800, 604800].find(v => v >= need) || 604800;
     cs.forEach((c, i) => { if ((c[0] + offS) % iv === 0) tickT.push({ i, t: c[0] }); });
-    g.lineWidth = 1; g.strokeStyle = TV.grid;
-    g.beginPath(); tickP.forEach(v => { const y = Math.round(Y(v)) + .5; g.moveTo(0, y); g.lineTo(W, y); });
-    tickT.forEach(k => { const x = Math.round(k.i * step + step / 2) + .5; g.moveTo(x, TOP - 6); g.lineTo(x, Hh - 14); }); g.stroke();
+    g.lineWidth = 1;                                                                   // no grid lines (the price and time labels stay)
     g.fillStyle = TV.text; g.font = `${FS}px ${MONO}`; g.textAlign = 'center'; g.textBaseline = 'alphabetic';
     tickT.forEach(k => { const d = new Date(k.t * 1000), mid = d.getHours() === 0 && d.getMinutes() === 0, x = k.i * step + step / 2;
       const txt = mid ? (d.getDate() === 1 ? d.toLocaleDateString([], { month: 'short' }) : String(d.getDate())) : String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');

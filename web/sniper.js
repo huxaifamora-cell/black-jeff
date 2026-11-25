@@ -3,9 +3,9 @@
 //  1. Tap SNIPER MODE in the symbol menu. Two boxes appear on the chart: INDUCEMENT and DISRUPTION (start from the bot's own reading when it has one).
 //  2. Pick the direction, then drag each box: the top and bottom squares set its price range, the round handle on its left edge moves it
 //     to where the POI formed (that time matters: the bot only looks at candles after it). You can also type the prices.
-//  3. Tap ARM. From then on the bot messages you privately (with a chart picture) for every new event on this symbol:
+//  3. Tap SET. From then on the bot messages you privately (with a chart picture) for every new event on this symbol:
 //     break of structure, change of structure, reclamation, key level, QML, bjeff zone, and the invalidation of your disruption (that ends the flow).
-//  Arming again replaces your flow on this symbol. The flow lives on the server (api/sniper), per person, so it works with the app closed.
+//  Setting again replaces your flow on this symbol. The flow lives on the server (api/sniper), per person, so it works with the app closed.
 //
 // app.js calls: open() when a symbol opens, btnHtml() + toolsHtml() when its page is drawn, bind() after that, draw() from chart(),
 // and down() / move() / up() / near() from the chart's pointer handlers.
@@ -41,7 +41,7 @@ const Snipe = (() => {
   }
 
   // Held-chart shortcut: the held price is the inducement (a thin box centred on it, from the held candle on), the disruption sits a few ATR beyond it.
-  // The card opens with this draft so the boxes can still be dragged before arming.
+  // The card opens with this draft so the boxes can still be dragged before setting.
   function fromHold(price, dir, t) {
     const E = env(); if (!E || !(price > 0)) return;
     const a = (E.atr && (E.tf === 'm5' ? E.atr.m5 : E.atr.h1)) || (E.hi - E.lo) / 12, th = Math.max(a * .5, (E.hi - E.lo) * .05), off = a * 3;
@@ -60,7 +60,7 @@ const Snipe = (() => {
   const btnHtml = () => '', toolsHtml = () => '';                              // no card and no menu button any more: Draw starts from holding the chart
   const toolsHtmlOld = () => `<div class="pplan snipe" hidden>
       <div class="pp-head"><b>SNIPER MODE</b><span class="pinfo"></span></div>
-      <p class="pa-help">Set your own order flow: pick the direction and drag the two boxes on the chart. Then arm it. The bot messages you for every new break of structure, change of structure, reclamation, key level and QML, and when your disruption is invalidated.</p>
+      <p class="pa-help">Set your own order flow: pick the direction and drag the two boxes on the chart. Then set it. The bot messages you for every new break of structure, change of structure, reclamation, key level and QML, and when your disruption is invalidated.</p>
       <div class="pp-dir"><button data-sn="bull">BULLISH FLOW</button><button data-sn="bear">BEARISH FLOW</button></div>
       <div class="pp-grid">
         <label class="pf"><span>INDUCEMENT HIGH</span><input data-sn-f="ind.hi" type="number" inputmode="decimal" step="any" autocomplete="off"></label>
@@ -71,7 +71,7 @@ const Snipe = (() => {
       <button data-sn="suggest" class="sn-sug" hidden>USE THE BOT'S READING</button>
       <p class="pp-sum"></p>
       <div class="pp-msg" role="alert"></div>
-      <div class="pp-act"><button data-sn="arm" class="pp-go">ARM SNIPER MODE</button><button data-sn="stop" class="pp-del" hidden>STOP</button><button data-sn="close">CLOSE</button></div>
+      <div class="pp-act"><button data-sn="arm" class="pp-go">SET SNIPER MODE</button><button data-sn="stop" class="pp-del" hidden>STOP</button><button data-sn="close">CLOSE</button></div>
     </div>`;
   const root = () => document.querySelector('.snipe');
   const get = (o, path) => path.split('.').reduce((x, k) => x[k], o);
@@ -81,16 +81,16 @@ const Snipe = (() => {
     r.hidden = !panel;
     const b = document.querySelector('.tmenu .snbtn'); if (b) { b.classList.toggle('on', panel); b.classList.toggle('armed', !!flow); }
     if (!panel) return;
-    r.querySelector('.pinfo').textContent = flow ? 'ARMED' : draft ? 'NOT ARMED' : '';
+    r.querySelector('.pinfo').textContent = flow ? 'SET' : draft ? 'NOT SET' : '';
     r.querySelector('[data-sn=bull]').classList.toggle('on', !!draft && draft.dir === 1);
     r.querySelector('[data-sn=bear]').classList.toggle('on', !!draft && draft.dir === -1);
     r.querySelectorAll('input[data-sn-f]').forEach(i => { if (document.activeElement !== i) i.value = draft ? fmt(get(draft, i.dataset.snF)) : ''; });
     r.querySelector('[data-sn=suggest]').hidden = !(suggest && draft && !(draft.dir === suggest.dir && draft.ind.lo === suggest.ind.lo && draft.dis.lo === suggest.dis.lo));
     r.querySelector('[data-sn=arm]').disabled = !draft || busy;
-    r.querySelector('[data-sn=arm]').textContent = flow ? 'RE-ARM WITH THESE' : 'ARM SNIPER MODE';
+    r.querySelector('[data-sn=arm]').textContent = flow ? 'SET AGAIN WITH THESE' : 'SET SNIPER MODE';
     r.querySelector('[data-sn=stop]').hidden = !flow;
-    r.querySelector('.pp-sum').textContent = flow ? 'Armed. The bot is watching this symbol for you and will message you here in Telegram.' : '';
-    const m = r.querySelector('.pp-msg'); m.textContent = note; m.style.color = /^Armed|^Sniper/.test(note) ? 'var(--up, #5AFF64)' : '';
+    r.querySelector('.pp-sum').textContent = flow ? 'Set. The bot is watching this symbol for you and will message you here in Telegram.' : '';
+    const m = r.querySelector('.pp-msg'); m.textContent = note; m.style.color = /^Set|^Sniper/.test(note) ? 'var(--up, #5AFF64)' : '';
   }
 
   function bind() {
@@ -117,7 +117,7 @@ const Snipe = (() => {
       if (a === 'arm') {
         if (!draft) return;
         const r = await api('/api/sniper', { method: 'POST', body: JSON.stringify({ symbol: sym, dir: draft.dir, ind: draft.ind, dis: draft.dis }) });
-        flow = r.flow; draft = null; panel = false; note = 'Armed. You will get a message here for every new event on this symbol.';
+        flow = r.flow; draft = null; panel = false; note = 'Set. You will get a message here for every new event on this symbol.';
       } else if (a === 'stop' && flow) {
         await api('/api/sniper/delete', { method: 'POST', body: JSON.stringify({ id: flow.id }) });
         flow = null; draft = null; panel = false; note = 'Draw is off for this symbol.';
@@ -133,7 +133,7 @@ const Snipe = (() => {
     if (Date.now() - lastLoad > 15000 && sym && !drag && !panel) load(sym);          // a flow that ended on the server shows up here
     const shown = panel ? draft : flow;
     if (note && !noteTimer) noteTimer = setTimeout(() => { note = ''; noteTimer = null; redraw(); }, 6000);
-    if (note) { g.font = `700 ${E.FS}px ${E.MONO}`; g.fillStyle = /^Armed|^Draw/.test(note) ? '#5AFF64' : '#FF8A7A'; g.textBaseline = 'alphabetic'; const words = note.split(' '), lines = [''], mw = E.plotW - 10;
+    if (note) { g.font = `700 ${E.FS}px ${E.MONO}`; g.fillStyle = /^Set|^Draw/.test(note) ? '#5AFF64' : '#FF8A7A'; g.textBaseline = 'alphabetic'; const words = note.split(' '), lines = [''], mw = E.plotW - 10;
       for (const w of words) { const t = (lines[lines.length - 1] + ' ' + w).trim(); if (g.measureText(t).width > mw && lines[lines.length - 1]) lines.push(w); else lines[lines.length - 1] = t; }
       lines.slice(0, 3).forEach((l, i, a) => g.fillText(l, 6, E.Hh - 8 - (a.length - 1 - i) * (E.FS + 3))); }
     if (!shown) return;
@@ -154,12 +154,12 @@ const Snipe = (() => {
         }
       }
     }
-    // buttons, right-aligned just above the inducement box: ARM and X while you are placing it, a STOP button once it is armed
+    // buttons, right-aligned just above the inducement box: SET and X while you are placing it, a STOP button once it is set
     { const b = shown.ind, th = E.LH + 6, yT = Y(b.hi), by = Math.max(2, Math.min(E.Hh - th - 2, yT - th - 6 - (E.FS + 4)));
-      const btns = editing ? [['arm', busy ? 'ARMING...' : flow ? 'RE-ARM' : 'ARM', '#5AFF64', '#0C1109'], ['close', '✕', '#B03A2E', '#fff']] : [['stop', 'STOP', '#B03A2E', '#fff']];
+      const btns = editing ? [['arm', busy ? 'SETTING...' : flow ? 'SET AGAIN' : 'SET', '#5AFF64', '#0C1109'], ['close', '✕', '#B03A2E', '#fff']] : [['stop', 'STOP', '#B03A2E', '#fff']];
       let bx = E.plotW - 4; g.textBaseline = 'middle';
       for (const [id, lab, bg, fg] of btns.reverse()) { const w = Math.ceil(g.measureText(lab).width) + 16; bx -= w; g.fillStyle = bg; g.fillRect(bx, by, w, th); g.fillStyle = fg; g.fillText(lab, bx + 8, by + th / 2 + .5); geo.btns.push({ id, x: bx, y: by, w, h: th }); bx -= 6; }
-      if (!editing) { g.fillStyle = '#5AFF64'; g.fillText('DRAW ARMED', bx - Math.ceil(g.measureText('DRAW ARMED').width) + 2, by + th / 2 + .5); } }
+      if (!editing) { g.fillStyle = '#5AFF64'; g.fillText('DRAW SET', bx - Math.ceil(g.measureText('DRAW SET').width) + 2, by + th / 2 + .5); } }
     g.lineWidth = 1; g.textBaseline = 'alphabetic'; g.font = `${FS}px ${MONO}`;
   }
 
