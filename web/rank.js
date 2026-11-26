@@ -326,11 +326,11 @@ function runQuiz(ch) {
   ask();
 }
 
-// ---- SMC chart reading drill: an H1 chart with every SMC mark hidden. Read it and answer: BOS, trend, IDM, DISR, KLV, swing highs and lows, trend direction.
+// ---- SMC chart reading drill: an H1 chart with every SMC mark hidden. Read it and answer: BOS, trend, IDM, DISR, KLV, trend direction.
 // The answers come from the server's SMC engine (/api/smc, /api/smc/flow), the same marks the live chart draws, so the drill teaches the rules the bot really uses.
 // Rank mechanics (XP, daily cap, 30% miss rule for a Private) are unchanged: every pass counts as a drill, right or wrong is all that matters.
 let lastDrill = '';
-const DRILL_COL = { idm: '#B197FC', disr: '#B197FC', klv: '#FFD166', bos: '#6EA8FE', swing: '#E6EDF7', qml: '#FF8A65', rec: '#69F0AE', cand: '#FFF59D' };
+const DRILL_COL = { idm: '#B197FC', disr: '#B197FC', klv: '#FFD166', bos: '#6EA8FE', qml: '#FF8A65', rec: '#69F0AE', cand: '#FFF59D' };
 
 // Everything the chart needs to show the answer after the person has answered (the live chart draws nothing in a drill, so the reveal is drawn here).
 function drillReveal(cv, map, items) {
@@ -383,13 +383,6 @@ function drillQuestions(cv, map, sm, fl) {
       hit: (x, p) => Math.abs(p - bos.price) <= tol && x >= xl(bos.t0) - 2 * step && x <= xc(bos.t1) + 3 * step, reveal: bosShow });
     out.push({ kind: 'bosdir', type: 'choice', title: 'Which way did the latest BOS break?', hint: 'Read the last break of structure on the chart.', options: ['Up (a body closed above a swing high)', 'Down (a body closed below a swing low)'], answer: bos.dir === 1 ? 0 : 1,
       why: (bos.dir === 1 ? 'A bullish BOS: a body closed above the swing high.' : 'A bearish BOS: a body closed below the swing low.') + (bos.counter ? ' It went against the trend, so it is only a counter-trend BOS: the trend flips only when the DISR zone is closed through.' : ''), reveal: bosShow });
-  }
-  const sw = (hi) => latest(ann.filter(a => a.type === 'swing' && (hi ? /^(HH|LH|H|EQH)$/ : /^(HL|LL|L|EQL)$/).test(a.label || '') && inView(a.t0)), 't0');
-  for (const [hi, kind] of [[true, 'swingh'], [false, 'swingl']]) {
-    const w = sw(hi); if (!w) continue;
-    out.push({ kind, type: 'tap', title: hi ? 'Tap the most recent swing high' : 'Tap the most recent swing low', hint: 'Tap the pivot itself: the candle with lower highs (higher lows) on both sides.',
-      why: `A swing ${hi ? 'high is a pivot high with lower highs' : 'low is a pivot low with higher lows'} on both sides, confirmed a few candles later. This one is ${w.label}: ${hi ? (w.label === 'HH' ? 'higher than the swing high before it' : w.label === 'LH' ? 'lower than the swing high before it' : 'a swing high') : (w.label === 'HL' ? 'higher than the swing low before it' : w.label === 'LL' ? 'lower than the swing low before it' : 'a swing low')}.`,
-      hit: (x, p) => Math.abs(p - w.price) <= tol * 1.3 && Math.abs(x - xc(w.t0)) <= 2.5 * step, reveal: [{ k: 'dot', y: w.price, t: w.t0, label: w.label || (hi ? 'High' : 'Low'), col: DRILL_COL.swing, below: !hi }] });
   }
   if (sm && [1, -1, 0].includes(sm.trend)) {
     const zs = ann.filter(a => a.type === 'idm' && (a.role === 'idm' || a.role === 'disr') && Number.isFinite(a.lo) && a.t0 >= t0).map(z => ({ k: 'box', lo: z.lo, hi: z.hi, t0: z.t0, label: z.role.toUpperCase(), col: DRILL_COL[z.role] }));
@@ -675,7 +668,7 @@ async function renderRank() {
       <div class="plan"><div><small>ROLL CALL STREAK</small><span class="px">${s.streak} d</span></div><div><small>CHAPTERS</small><span class="px">${s.ch.length}/${CHAPTERS.length}</span></div><div><small>EXAMS</small><span class="px">${examsPassed}/${CHAPTERS.length}</span></div></div>
       ${m('Roll Call', 'Report in once a day. 7, 30 and 90 days earn a medal and bonus XP.', `best ${s.best} d`, null, null, 'roll')}
       ${m('Intercept Analysis', 'Open a new alert from its Telegram button, then check it against the SORK steps on the chart. Required to become Lieutenant: complete ${ANALYSES_REQ}.', `${Math.min(s.anTotal || 0, ANALYSES_REQ)}/${ANALYSES_REQ}`, 'Analyse an alert', 'g5', 'intercept')}
-      ${m('Chart reading drill', `SMC chart reading with the marks hidden: tap the BOS, IDM, DISR, KLV, swing highs and lows, the QML and the candle that completes a reclamation; read the trend, the BOS direction, the reclamation step and the QML; name the KLV entry candle (engulfing, harami or star). Required to become Corporal: pass ${DRILLS_REQ} drills (daily XP limit ${DAILY_CAP.drill}, but every pass counts). As a Private you may miss at most ${DRILL_MISS_MAX}: missing more than 30% fails you and restarts the drills from 0.`, `${Math.min(s.drillOk || 0, DRILLS_REQ)}/${DRILLS_REQ}`, 'Start a drill', 'g3', 'drill')}
+      ${m('Chart reading drill', `SMC chart reading with the marks hidden: tap the BOS, IDM, DISR, KLV, the QML and the candle that completes a reclamation; read the trend, the BOS direction, the reclamation step and the QML; name the KLV entry candle (engulfing, harami or star). Required to become Corporal: pass ${DRILLS_REQ} drills (daily XP limit ${DAILY_CAP.drill}, but every pass counts). As a Private you may miss at most ${DRILL_MISS_MAX}: missing more than 30% fails you and restarts the drills from 0.`, `${Math.min(s.drillOk || 0, DRILLS_REQ)}/${DRILLS_REQ}`, 'Start a drill', 'g3', 'drill')}
       ${m('Field guide', 'Finish a chapter (scroll to its end) for a stripe and XP. Required to become Private: finish all chapters.', `${s.ch.length}/${CHAPTERS.length}`, 'Open the guide', 'g1', 'guide')}
       ${m('Proficiency Exam', 'Three questions per chapter. Pass with all 3 right for XP. Required to become Sergeant: pass every chapter. Failing more than 30% of any chapter exam fails you and restarts the exam from chapter 1.', `${examsPassed}/${CHAPTERS.length}`, 'Sit the exam', 'g2', 'exam')}`,
     medals: `<h3 class="ctr" style="margin-top:0">Medals</h3><div class="medals">${Object.entries(MEDALS).map(([k, [t, d]]) => `<div class="medal ${s.medals.includes(k) ? 'on' : ''}">${ico(k)}<b>${t}</b><span>${d}</span></div>`).join('')}</div>`,
