@@ -96,41 +96,49 @@ Telegram only allows real mini app buttons in private chats, so the alert button
 
 ### Rank requirements (mandatory promotions)
 
-XP can be earned in any way, but a rank is only granted once its mission is done. Until then the person keeps their rank, XP keeps adding up, and the Rank page shows the open requirement.
+Everybody starts as a **Recruit** with 0 XP. After the Field guide the person chooses a service (**Army**, **Navy** or **Air Force**, permanent) and climbs that service's own 19 ranks, all ending at **10,000 XP**.
+The first four promotions each need a mission; from rank 5 on XP alone promotes. The rules live in `GATES` and `BRANCHES` in `web/rank.js` (the Telegram tags in `server/ranks.js` must stay in step).
 
-| To become | Requirement |
+**XP stops at the promotion line.** While the mission that leads out of the held rank is not done, XP cannot go past the XP of the next rank (40, 120, 250, 450). Doing the mission promotes the person at once.
+
+| Ladder position | Mission to leave it |
 |---|---|
-| Private | Complete the Field guide (finish all chapters) |
-| Corporal | Pass 33 SMC chart reading drills (every correct drill counts, even past the daily XP limit) |
-| Sergeant | Pass the Proficiency Exam (every chapter, all 3 right) |
-| Lieutenant | Complete 99 Intercept Analyses |
-
-The ranks above Lieutenant follow XP alone, once a service has been chosen. The rules live in `GATES` in `web/rank.js`.
-
-**Choosing a service at Lieutenant.** When a person reaches Lieutenant, a full-screen picker asks them to join the **Army**, **Navy** or **Air Force** (each with its own icon). The choice is permanent and is saved with the rest of their rank progress. From then on every rank above Lieutenant is a rank of that service, up to the highest one at 6000 XP:
+| 1 Recruit | Complete the Field guide (all chapters), then choose a service |
+| 2 first service rank | Pass 33 SMC chart reading drills (every correct drill counts, even past the daily XP limit) |
+| 3 | Pass the Proficiency Exam (every chapter, all 3 right) |
+| 4 | Complete 33 Intercept Analyses |
 
 | XP | Army | Navy | Air Force |
-| --- | --- | --- | --- |
-| 700 | Captain | Lieutenant Commander | Flight Lieutenant |
-| 1000 | Major | Commander | Squadron Leader |
-| 1400 | Lieutenant Colonel | | Wing Commander |
-| 1500 | | Captain | |
-| 1900 | Colonel | | Group Captain |
-| 2200 | | Commodore | |
-| 2500 | Brigadier | | Air Commodore |
-| 3000 | | Rear Admiral | |
-| 3200 | Major General | | Air Vice-Marshal |
-| 4000 | Lieutenant General | Vice Admiral | Air Marshal |
-| 5000 | General | Admiral | Air Chief Marshal |
-| 6000 | **Field Marshal** | **Admiral of the Fleet** | **Marshal of the Air Force** |
+|---|---|---|---|
+| 40 | Private | Seaman | Airman |
+| 120 | Lance Corporal | Able Seaman | Lance Corporal |
+| 250 | Corporal | Leading Seaman | Corporal |
+| 450 | Sergeant | Petty Officer | Sergeant |
+| 550 | Staff Sergeant | Chief Petty Officer | Flight Sergeant |
+| 680 | Warrant Officer | Warrant Officer | Warrant Officer |
+| 840 | Master Warrant Officer | Master Warrant Officer | Master Warrant Officer |
+| 1,050 | Army Warrant Officer | Navy Warrant Officer | Air Warrant Officer |
+| 1,250 | Second Lieutenant | Midshipman | Pilot Officer |
+| 1,550 | Lieutenant | Sub-Lieutenant | Flying Officer |
+| 1,900 | Captain | Lieutenant | Flight Lieutenant |
+| 2,350 | Major | Lieutenant Commander | Squadron Leader |
+| 2,900 | Lieutenant Colonel | Commander | Wing Commander |
+| 3,550 | Colonel | Captain | Group Captain |
+| 4,350 | Brigadier General | Commodore | Air Commodore |
+| 5,400 | Major General | Rear Admiral | Air Vice-Marshal |
+| 6,600 | Lieutenant General | Vice Admiral | Air Marshal |
+| 8,100 | General | Admiral | Air Chief Marshal |
+| 10,000 | **Field Marshal** | **Fleet Admiral** | **Marshal of the Air Force** |
 
-The Navy has one rank fewer in between, as in the real navy. Insignia: the Army wears stars (Captain, Major), an oak leaf (Lieutenant Colonel), an eagle (Colonel), 1 to 4 large silver stars (Brigadier to General) and a ring of five stars (Field Marshal). The Navy wears gold sleeve stripes on navy blue and the Air Force sky blue bars on air force blue: broad stripes for the officers, then a wide band with 0 to 4 thin stripes under it for the flag officers.
+**Reset.** When this ranking system was introduced, everybody's rank, XP, medals, service and remembered alert opens were wiped once (`resetOnce`, flag `sork_rank_reset_v2`); a record saved by the old system (`v: 1`) is never loaded.
 
-Until a service is chosen the person stays at Lieutenant, even with enough XP: choosing one is the requirement for the next rank. "Decide later" closes the picker, and it appears again on the next start, from the promotion requirement card on the Rank page. People who were already above Lieutenant before this existed keep their rank (the Army names are the old ones) and can still choose. The **Rank ladder** tab has its own menu: **Ranks** (the shared ranks up to Lieutenant, with their missions), one button each for **Army**, **Navy** and **Air Force** (every rank of that service with its insignia and XP; the service you chose opens first and is marked), and **Missions** (what each mission pays and requires). The services, rank names and icons are `BRANCHES` and `ICON` in `web/rank.js`.
+Insignia: enlisted ranks of every service wear 1 to 3 chevrons, then 3 chevrons with 1 and 2 bars, then a ring with 1 to 3 stars (the warrant ranks). Army officers: 1 to 3 stars, an oak leaf (Major), two oak leaves (Lieutenant Colonel), an eagle (Colonel), 1 to 4 large silver stars (the generals) and a ring of five stars (Field Marshal). Navy and Air Force officers wear sleeve stripes.
+
+Choosing a service is what promotes the person out of Recruit: a full-screen picker appears when the Field guide is finished. "Decide later" closes it and it appears again on the next start; until a service is chosen XP stays stopped at 40.
 
 **Promotional exam fail rule.** If a person gets more than 30% of any promotional exam wrong, they fail it and the whole promotional mission restarts from the beginning: every chapter pass of the Proficiency Exam is cleared and they start again at chapter 1. Each chapter exam has 3 questions, so one wrong answer (33%) is already a fail. XP and medals already earned are kept. Once a person holds Sergeant the exam is no longer promotional: a low score costs nothing and clears nothing. People who were already Sergeant or higher when the rule arrived keep their earlier passes. The limit is `EXAM_FAIL_MAX` in `web/rank.js`.
 
-**The same rule for the Corporal drills.** While a person is a Private, the SMC chart reading drills are their promotional mission. Each drill is an H1 chart with the SMC marks hidden (marks come from the server's SMC engine): tap the BOS, IDM, DISR, KLV, the latest swing high or swing low, the QML, or the candle that completed a reclamation; or answer the trend, the BOS direction, the reclamation step reached, the QML direction and validity, or name the KLV entry candle (engulfing, harami or star, read from the M5 key level confirmations). The answer is drawn on the chart after each drill. They may miss at most 30% of the 33 required drills (9 misses, `DRILL_MISS_MAX`). The 10th miss fails them and the drills restart from 0/33 (passes and the miss count are cleared; XP and medals are kept). Misses made at other ranks are not counted.
+**The same rule for the drills.** While a person is at ladder position 2 (the first service rank), the SMC chart reading drills are their promotional mission. Each drill is an H1 chart with the SMC marks hidden (marks come from the server's SMC engine): tap the BOS, IDM, DISR, KLV, the QML, or the candle that completed a reclamation; or answer the trend, the BOS direction, the reclamation step reached, the QML direction and validity, or name the KLV entry candle (engulfing, harami or star, read from the M5 key level confirmations). The answer is drawn on the chart after each drill. They may miss at most 30% of the 33 required drills (9 misses, `DRILL_MISS_MAX`). The 10th miss fails them and the drills restart from 0/33 (passes and the miss count are cleared; XP and medals are kept). Misses made at other ranks are not counted.
 
 ### What groups and channels receive
 
@@ -154,38 +162,17 @@ The person must have started the bot once (/start), or Telegram refuses the priv
 
 **Button colour.** The button is green for a buy setup and red for a sell setup (Telegram's button `style`: `success` / `danger`). Invalidation alerts and alerts without a direction keep Telegram's default colour. It is set in `notify` in `server/app.js` and passed on by `Bot.send` in `server/telegram.js`. Telegram clients that are too old to know button colours show the default button instead.
 
-**3 points for the first open.** The first time a person opens a given alert from a group or channel button they earn 3 XP; opening the same alert
-again earns nothing. Telegram does not tell a bot when a link button is tapped, so the open of the mini app is what counts. This needs `MINIAPP_LINK`
-(a plain web link has no Telegram identity). The link is signed with the bot token, so hand-made links earn nothing, and it pays for 24 hours.
+**3 points for the first open.** The first time a person opens a given alert from a group or channel button ("Open <symbol> chart") while it is still active on the radar (posted in the last 24 hours) they earn 3 XP and it counts as one Intercept Analysis; opening the same alert
+again, or an old alert, earns nothing. Telegram does not tell a bot when a link button is tapped, so the open of the mini app is what counts. This needs `MINIAPP_LINK`
+(a plain web link has no Telegram identity). The link is signed with the bot token, so hand-made links earn nothing.
 Which alerts a person has opened is kept in their own Telegram CloudStorage next to the rest of their rank progress.
-
-### Sniper Mode (set your own order flow, the bot hunts the rest of SORK)
-
-On a symbol's page, the **Sniper mode** button (crosshair) opens a card and puts two boxes on the chart: **inducement** and **disruption**.
-
-1. Pick **bullish flow** or **bearish flow**. In a bullish flow the inducement sits above the disruption, in a bearish flow below it. The boxes start from the bot's own reading when it has one (button **use the bot's reading**), or from two thin boxes near the price.
-2. Drag each box: the top and bottom squares set its price range, the round handle on its left edge moves it to where the POI formed (the bot only looks at candles after that time). You can also type the prices.
-3. Tap **Set Sniper Mode**. You can set one flow per symbol (up to 10 symbols); setting again replaces it, **Stop** removes it.
-
-From then on the bot sends **you** a private message, with a chart picture, for every new event on that symbol that comes after you set it:
-
-| Alert | When |
-|---|---|
-| **BREAK OF STRUCTURE** | a valid H1 break (body close, with structural liquidity) in the direction of your flow |
-| **CHANGE OF STRUCTURE** | a valid H1 break against your flow |
-| **RECLAMATION** | an H1 reclamation at your inducement or disruption POI |
-| **KEY LEVEL** / **QML** / **BJEFF ZONE** / **50% KEYLEVEL POI** | the usual key level, QML and bjeff rules, run on YOUR order flow instead of the bot's |
-| **INVALIDATED · ORDER FLOW** | an H1 candle went beyond your disruption POI (a wick is enough). The flow ends; set a new one. |
-
 The messages use the usual format (green or red dot, the keyword, the symbol) plus a "Sniper Mode" line. The flow lives on the server (`/api/sniper`) and is part of the Telegram backup, so it works with the app closed and survives restarts. Rules that differ from the automatic flow: nothing is remapped after your disruption breaks, and the "first key level after the pullback is not traded" rule is not applied (you decide the flow, every valid key level counts). The name is one constant per place (`SNIPER MODE` in `server/service.js`, `web/sniper.js`) if you want to rename it.
 
-### Intercept Analysis (Rank tab mission, Telegram alert analysis)
+### Intercept Analysis (Rank tab mission, Telegram alerts)
 
-A new alert is also a small mission. When someone opens an alert from its Telegram button (the signed link from a group or channel), the app saves that alert
-in their Telegram CloudStorage for 24 hours, next to the +3 XP for the first open. In the Rank tab, under Missions, **Intercept Analysis** shows the newest
-saved alert: open its chart, then tick four checks written for that SORK concept (S, O, R, K, QML or advanced key level) once you have confirmed each one yourself.
-Completing it gives 10 XP once per alert, with no daily limit; five analyses earn the Alert Analyst medal. Alerts opened from a private-message button use a plain link with no
-signature, so they are not saved for this mission. It trains reading an alert the SORK way and is not a trade signal.
+An Intercept Analysis is the first open of a new alert, from its **Open <symbol> chart** button in the Telegram channel, while the alert is still active on the radar (under 24 hours old).
+Each one pays 3 XP and counts towards the 33 needed to be promoted from ladder position 4 to 5; five of them earn the Alert Analyst medal. Only the channel button counts: opening a chart from inside the app does not.
+There is no checklist any more. The Rank tab, under Missions, shows the progress and how it works; the Alerts tab shows "+3 XP to claim" or "Intercept analysed" on each alert, and the channel post's XP status button shows the same privately.
 
 ### Channel only (no alerts in the bot chat)
 
