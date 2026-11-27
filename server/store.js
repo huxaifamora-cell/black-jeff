@@ -54,6 +54,17 @@ export class Store {
     return this.db.prepare(q).all(...args).map((r) => ({ ...r, payload: JSON.parse(r.payload || '{}') }));
   }
 
+  // Alerts posted at exactly this time (the Telegram link carries the alert's time and a short id, so this finds the alert behind a link).
+  // symbol is optional: the XP status button carries no symbol.
+  alertsAt(symbol, ts) {
+    const rows = symbol ? this.db.prepare('SELECT * FROM alerts WHERE symbol=? AND ts=?').all(symbol, ts) : this.db.prepare('SELECT * FROM alerts WHERE ts=?').all(ts);
+    return rows.map((r) => ({ ...r, payload: JSON.parse(r.payload || '{}') }));
+  }
+  // Alerts of one symbol from this time on (used to find what invalidated an alert).
+  alertsSince(symbol, ts) {
+    return this.db.prepare("SELECT * FROM alerts WHERE symbol=? AND ts>=? AND kind IN ('kl_invalid','invalidated')").all(symbol, ts).map((r) => ({ ...r, payload: JSON.parse(r.payload || '{}') }));
+  }
+
   lastAlertTs(smcOnly = false) {
     const out = {};
     for (const r of this.db.prepare(`SELECT symbol, MAX(ts) m FROM alerts${smcOnly ? " WHERE key LIKE '%|smc|%'" : ''} GROUP BY symbol`).all()) out[r.symbol] = r.m;

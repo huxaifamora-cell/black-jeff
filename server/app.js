@@ -14,6 +14,7 @@ import { Service, formatAlert, formatSniperAlert, isSmcAlert } from './service.j
 import { renderChart } from './chartimg.js';
 import { SmcFeed, TF_SECONDS as SMC_TF } from './smcfeed.js';
 import { alertParam, alertId, checkParam, isAlertId, xpStatusText } from './alertlink.js';
+import { alertStatus } from './alertstatus.js';
 import { rankTag } from './ranks.js';
 import { ALL_CONCEPTS, MAX_PRICE_ALERTS, MAX_SNIPER_FLOWS, Store } from './store.js';
 
@@ -140,12 +141,17 @@ export function createApp({ cfg = loadConfig(), store, svc, deriv, bot, log = co
       // oid: the id the app remembers for the alert; xp: true when the alert was posted to the channel with an XP link
       const alerts = store.recentAlerts({ symbol: q.get('symbol') || undefined, concept: q.get('concept') || undefined,
         limit: q.get('limit') || 50, before: q.get('before') || undefined, smcOnly: !!cfg.smcOnly })
-        .map((a) => ({ ...a, oid: alertId(a), xp: chatC.includes(a.concept) && !CHAT_SKIP_KINDS.has(a.kind) }));
+        .map((a) => { const oid = alertId(a), xp = chatC.includes(a.concept) && !CHAT_SKIP_KINDS.has(a.kind);
+          return { ...a, oid, xp, inv: xp && alertStatus(store, svc, a.symbol, oid) !== 'active' }; });   // inv: invalidated, so it no longer pays XP
       return json(res, 200, { alerts });
     }
     if (path === '/api/alert-open' && req.method === 'POST') {       // the app asks whether a button link is a real, recent alert
       const b = await readJson(req);
-      const r = checkParam(b.p, cfg.botToken);
+      let r = checkParam(b.p, cfg.botToken);
+      if (r.ok) {                                                // a real alert link: it pays XP only while the alert is not invalidated (age does not matter)
+        const status = alertStatus(store, svc, r.symbol, r.id);
+        if (status !== 'active') r = { ok: false, reason: status === 'invalidated' ? 'alert invalidated' : 'alert not found' };
+      }
       if (r.ok && user) store.xpMark(user.id, r.id, 1);         // remembered per person, so the channel post can show their XP status privately
       return json(res, 200, r);
     }
@@ -379,7 +385,7 @@ export function createApp({ cfg = loadConfig(), store, svc, deriv, bot, log = co
     const cq = u.callback_query;
     if (cq && /^xp_[0-9a-z]+_[0-9a-f]{8}$/.test(cq.data || '')) {     // "My XP status" under a channel alert: answered as a pop-up for that person only
       const id = cq.data.slice(3);
-      await bot.answerCallback(cq.id, xpStatusText(store.xpState(cq.from.id, id), id)).catch((e) => log.warn('xp status reply failed:', e.message));
+      await bot.answerCallback(cq.id, xpStatusText(store.xpState(cq.from.id, id), alertStatus(store, svc, null, id))).catch((e) => log.warn('xp status reply failed:', e.message));
       return;
     }
     const m = u.message || {}, text = (m.text || '').trim(), chat = m.chat && m.chat.id;
