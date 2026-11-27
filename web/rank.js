@@ -2,7 +2,7 @@
 // (CloudStorage), with the browser's localStorage as a fallback, so no database is needed on the server.
 // There is no leaderboard and nothing here rates trades or gives advice.
 // Recruit is the only rank every person shares. After the Field guide the person chooses a service (Army, Navy or Air Force) and climbs that service's own
-// ranks (BRANCHES below) up to 10,000 XP. [name, XP].
+// ranks (BRANCHES below) up to 10,000 XP, the final rank. XP is not capped there and keeps counting. [name, XP].
 const BASE_RANKS = [['Recruit', 0]];
 const CHAPTERS = ['The SORK framework', 'S: Market Structure', 'O: Order Flow', 'R: Reclamation', 'K: Key Level', 'QML: the inverse key level', 'Advanced key level and bjeff zone', 'Trade checklist'];
 // Military line icons for the missions and medals (24x24, stroke only)
@@ -137,10 +137,10 @@ function rankOf(s) {
   return i;
 }
 // XP stops counting at the promotion line: while the mission that leads out of the held rank is not done, XP cannot go past the XP of the next rank.
-// The ladder also ends at its last rank's XP (10,000). Returns true when XP was cut.
+// The ladder itself ends at the last rank's XP (10,000), but XP is NOT capped there: a person on the highest rank keeps earning XP beyond 10,000. Returns true when XP was cut.
 function capXp(s) {
   const L = ladder(s), held = rankOf(s), g = GATES[held];
-  const cap = g && !g.ok(s) && L[held + 1] ? L[held + 1][1] : L[L.length - 1][1];
+  const cap = g && !g.ok(s) && L[held + 1] ? L[held + 1][1] : Infinity;
   if (s.xp <= cap) return false;
   s.xp = cap; return true;
 }
@@ -164,7 +164,7 @@ async function award(xp, why, medal) {
   }
   const cut = capXp(s), got = s.xp - before;
   let msg = got > 0 ? `<b>+${got} XP</b> ${esc(why)}` : esc(why);
-  if (cut) { const g = GATES[rankOf(s)]; msg += g && !g.ok(s) ? `<br>XP has stopped counting at the promotion line. To be promoted: ${esc(g.short)}.` : '<br>Top rank: XP is full at 10,000.'; }
+  if (cut) { const g = GATES[rankOf(s)]; msg += g && !g.ok(s) ? `<br>XP has stopped counting at the promotion line. To be promoted: ${esc(g.short)}.` : ''; }
   if (medal && !s.medals.includes(medal)) { s.medals.push(medal); msg += `<br>Medal: <b>${MEDALS[medal][0]}</b>`; }
   if (s.ch.length === CHAPTERS.length && !s.medals.includes('scholar')) { s.medals.push('scholar'); msg += '<br>Guide complete: <b>Scholar</b>'; }
   if (CHAPTERS.every((_, i) => (s.qz[i] || 0) >= EXAM_PASS) && !s.medals.includes('honors')) { s.medals.push('honors'); msg += '<br>Medal: <b>Top of Class</b>'; }
@@ -186,9 +186,9 @@ async function rkCheckIn() {
 }
 
 // ---- Intercept Analysis: tap "Open <symbol> chart" under an alert in the Telegram channel.
-// The FIRST open of each alert that is still active on the radar (the link is a real alert, under 24 hours old) is one Intercept Analysis and pays 3 XP.
-// Opening the same alert again, or an alert that is no longer active, pays nothing. The server only confirms the link; the opened alerts are
-// remembered in Telegram's CloudStorage.
+// The FIRST open of each alert that is still active on the radar (a real alert that has NOT been invalidated; its age does not matter) is one Intercept Analysis
+// and pays 3 XP. Opening the same alert again, or an invalidated alert, pays nothing. The server confirms the link and checks the invalidation;
+// the opened alerts are remembered in Telegram's CloudStorage.
 const ALERT_XP = 3;
 // What the Alerts tab shows per alert: 1 = opened from Telegram (analysis done, +3 XP earned). Kept as "id:state,id:state".
 // Telegram CloudStorage values are capped at 4096 characters, so only the newest 200 alerts from the last 30 days are kept.
@@ -204,20 +204,20 @@ async function alMark(id, st) {
 }
 // HTML badge per alert id for the Alerts tab: earned XP, XP waiting to be claimed, or nothing when the alert pays no XP.
 async function alertBadges(alerts) {
-  const log = await alLog(), now = Date.now() / 1000, out = {};
+  const log = await alLog(), out = {};
   for (const a of alerts) {
     if (!a.xp || !a.oid) continue;
     if ((log.get(a.oid) || 0) >= 1) out[a.oid] = `<span class="xpb done">&#10003; Intercept analysed &middot; +${ALERT_XP} XP earned</span>`;
-    else if (now - a.ts < 24 * 3600) out[a.oid] = `<span class="xpb new">+${ALERT_XP} XP to claim &middot; open it from Telegram</span>`;
+    else if (!a.inv) out[a.oid] = `<span class="xpb new">+${ALERT_XP} XP to claim &middot; open it from Telegram</span>`;   // a.inv = invalidated (set by the server): pays nothing
   }
   return out;
 }
 async function rkAlertOpen(link) {
   let r; try { r = await api('/api/alert-open', { method: 'POST', body: JSON.stringify({ p: link }) }); } catch { return; }
-  if (!r || !r.ok) return;                                           // not a real alert, or no longer active (older than 24 h): nothing
+  if (!r || !r.ok) return;                                           // not a real alert, or it was invalidated: nothing
   let seen; try { seen = JSON.parse(await kvGet('sork_alert_opens') || '[]'); } catch { seen = []; }
   if (!Array.isArray(seen)) seen = [];
-  const cutoff = Date.now() / 1000 - 48 * 3600;                      // links older than 24 h pay nothing, so older ids can be forgotten
+  const cutoff = Date.now() / 1000 - 30 * 86400;                     // an alert can stay active for days, so opened ids are remembered for 30 days (like the server)
   seen = seen.filter(x => parseInt(String(x).split('_')[0], 36) > cutoff);
   if (seen.includes(r.id)) return;                                   // already opened: only the first open counts
   seen.push(r.id); kvSet('sork_alert_opens', JSON.stringify(seen.slice(-200))); alMark(r.id, 1);
@@ -229,7 +229,7 @@ async function renderAnalysis() {
   const s = await rk(), done = Math.min(s.anTotal || 0, ANALYSES_REQ);
   view.innerHTML = `<div class="row"><button class="back" id="ab">&#8249; Rank</button><span class="small">Intercept Analysis</span></div>
     <div class="card"><h4>Intercept Analysis <span class="px">${done}/${ANALYSES_REQ}</span></h4>
-      <p class="small">1. A new alert is posted in the Telegram channel.<br>2. Tap the <b>Open chart</b> button under it (it reads "Open" + the symbol + "chart"). The app opens on that symbol.<br>3. If the alert is still active on the radar (posted in the last 24 hours) and you have not opened it before, that is one Intercept Analysis and <b>+${ALERT_XP} XP</b>.<br>Opening the same alert again, or an old alert, pays nothing. Only the button in the Telegram channel counts: opening the chart from inside the app does not.</p>
+      <p class="small">1. A new alert is posted in the Telegram channel.<br>2. Tap the <b>Open chart</b> button under it (it reads "Open" + the symbol + "chart"). The app opens on that symbol.<br>3. If the alert is still active on the radar (it has not been invalidated) and you have not opened it before, that is one Intercept Analysis and <b>+${ALERT_XP} XP</b>.<br>Opening the same alert again, or an invalidated alert, pays nothing. Only the button in the Telegram channel counts: opening the chart from inside the app does not.</p>
       <p class="small">${ANALYSES_REQ} Intercept Analyses are required to be promoted from rank 4 to rank 5. They count from your first open.</p>
       <button class="btn" id="aa">See active alerts</button></div>`;
   document.getElementById('ab').onclick = renderRank;
@@ -597,13 +597,13 @@ function xpCareer(s, i, pct) {
   });
   const fin = L[n - 1], svc = s.branch ? BRANCHES[s.branch].name + ' · ' : '';
   const needle = `<g transform="rotate(${ang} ${C} ${CY})"><animateTransform attributeName="transform" type="rotate" from="0 ${C} ${CY}" to="${ang} ${C} ${CY}" dur="1.6s" fill="freeze" calcMode="spline" keyTimes="0;1" keySplines=".2 .7 .2 1"/><g><animateTransform attributeName="transform" type="rotate" values="-1.2 ${C} ${CY};1.2 ${C} ${CY};-1.2 ${C} ${CY}" dur=".55s" repeatCount="indefinite"/><path d="M${C} ${CY - 4}L${C - RI - 6} ${CY - .7}L${C - RI - 6} ${CY + .7}L${C} ${CY + 4}Z" fill="#E3C16A" stroke="#0A0E07" stroke-width=".8" stroke-linejoin="round"/></g></g>`;
-  return `<div class="xpg xpc" role="img" aria-label="Career progress: ${s.xp} of ${fin[1]} XP, rank ${esc(L[i][0])} of ${n}">
+  return `<div class="xpg xpc" role="img" aria-label="Career progress: ${s.xp} XP (final rank at ${fin[1]}), rank ${esc(L[i][0])} of ${n}">
     <div class="gh"><span>&#9733;</span> CHAIN OF COMMAND <span>&#9733;</span></div>
     <svg viewBox="0 0 300 168" aria-hidden="true"><defs><linearGradient id="xpcf" gradientUnits="userSpaceOnUse" x1="${C - RO}" y1="0" x2="${C + RO}" y2="0"><stop offset="0" stop-color="#3F5F27"/><stop offset=".45" stop-color="#6F8030"/><stop offset=".78" stop-color="#C0701E"/><stop offset="1" stop-color="#FF8A1F"/></linearGradient></defs>
       ${boxes}${labels}${needle}
       <circle cx="${C}" cy="${CY}" r="10" fill="#121A0D" stroke="#C2A06A" stroke-width="2"/><circle cx="${C}" cy="${CY}" r="3.5" fill="#E3C16A"/>
 </svg>
-    <div class="gn">${esc(L[i][0])}</div><div class="gs">${esc(svc)}rank ${i + 1} of ${n}</div></div>`;
+    <div class="gn">${esc(L[i][0])}</div><div class="gs">${esc(svc)}rank ${i + 1} of ${n}${i >= n - 1 && s.xp > fin[1] ? ` &middot; ${s.xp.toLocaleString('en-US')} XP` : ''}</div></div>`;
 }
 const XPHEAD = {
   rocket: '<svg viewBox="0 0 56 28"><g class="fl"><path d="M20 14C13 4 8 10 0 2c3 6 2 9 6 12-4 3-3 6-6 12 8-6 14-1 20-12z" fill="#FF5A1F"/><path d="M20 14C15 9 11 12 5 8c3 4 1 6 4 6-3 2-2 4-4 6 6-3 10 0 15-6z" fill="#FFD23F"/></g><path d="M18 9l-6-6v6zM18 19l-6 6v-6z" fill="#D93A2B"/><path d="M18 8h20c8 0 14 3 17 6-3 3-9 6-17 6H18z" fill="#F2F4F7" stroke="#6B7480" stroke-width="1" stroke-linejoin="round"/><path d="M42 8.6c6 .8 10 3 13 5.4-3 2.4-7 4.6-13 5.4z" fill="#D93A2B"/><circle cx="32" cy="14" r="3.2" fill="#7CC4F2" stroke="#6B7480"/><path d="M24 8v12" stroke="#B9C0C9"/></svg>',
@@ -633,7 +633,7 @@ async function renderRank() {
         <p class="small"><b>Chart reading drill:</b> 10 XP per pass (the first ${DAILY_CAP.drill} a day pay XP, every pass counts). Required for rank 3: ${DRILLS_REQ} passes. At rank 2 you may miss at most ${DRILL_MISS_MAX}; the next miss restarts the drills from 0.</p>
         <p class="small"><b>Proficiency Exam:</b> 20 XP the first time a chapter is passed. Required for rank 4: pass all ${CHAPTERS.length} chapters with every answer right. More than 30% wrong restarts the exam from chapter 1.</p>
         <p class="small"><b>Intercept Analysis:</b> ${ALERT_XP} XP each time you open a new alert that is still active on the radar, from its Open chart button in the Telegram channel. Required for rank 5: ${ANALYSES_REQ} analyses.</p>
-        <p class="small"><b>Choose a service:</b> after the Field guide. It unlocks ${SERVICE_PERKS.join(' and ').toLowerCase()}. From rank 5 on, XP alone promotes you, up to 10,000 XP.</p></div>`;
+        <p class="small"><b>Choose a service:</b> after the Field guide. It unlocks ${SERVICE_PERKS.join(' and ').toLowerCase()}. From rank 5 on, XP alone promotes you, to the top rank at 10,000 XP, and XP keeps counting after it.</p></div>`;
   const ldPage = () => {
     if (ld === 'base') return `<h4 class="svch">Recruit &middot; every service starts here</h4>${BASE_RANKS.map((r, k) => lrow(r, k, null, k <= i, '')).join('')}
       <p class="small">Recruit is the only shared rank. Finish the Field guide, then choose the Army, the Navy or the Air Force and climb that service's own 19 ranks. All three end at ${RANK_XP[RANK_XP.length - 1].toLocaleString('en-US')} XP. Open a service above to see its ladder.</p>
@@ -648,7 +648,7 @@ async function renderRank() {
     rank: `<h3 class="ctr" style="margin-top:0">Service record</h3>
       <div class="card prof">${insignia(i, 56, s.branch)}<div style="flex:1"><div class="small">RANK AND CALLSIGN</div><div class="rname">${rankName(i, s)}</div><div class="callsign">${esc(name)}</div>${br ? `<div class="svc">${ico(br.ico)}${br.name}</div>` : ''}</div></div>
       ${xpGauge(pct, s.xp, rankName(i, s))}
-      <div class="small xpl">${nx ? `Next Rank: ${nxName} at ${nx[1]} XP` : 'highest rank'}</div>${xpCareer(s, i, pct)}${gate ? `<div class="card req tap" id="reqgo" role="button" tabindex="0" aria-label="Open the promotion requirement: ${esc(gate.short)}"><small>PROMOTION REQUIREMENT${held ? ' &middot; XP STOPPED AT THE PROMOTION LINE' : ''}</small>${esc(gate.text(s))}${held ? `<br>Your XP has stopped counting at ${s.xp}. Finish this to be promoted.` : ''}<span class="reqgo">${s.ch.length >= CHAPTERS.length && !s.branch ? 'Tap to choose your service' : 'Tap to open this mission'} &rsaquo;</span></div>` : ''}`,
+      <div class="small xpl">${nx ? `Next Rank: ${nxName} at ${nx[1]} XP` : `Highest rank &middot; XP keeps counting beyond ${cur.toLocaleString('en-US')}`}</div>${xpCareer(s, i, pct)}${gate ? `<div class="card req tap" id="reqgo" role="button" tabindex="0" aria-label="Open the promotion requirement: ${esc(gate.short)}"><small>PROMOTION REQUIREMENT${held ? ' &middot; XP STOPPED AT THE PROMOTION LINE' : ''}</small>${esc(gate.text(s))}${held ? `<br>Your XP has stopped counting at ${s.xp}. Finish this to be promoted.` : ''}<span class="reqgo">${s.ch.length >= CHAPTERS.length && !s.branch ? 'Tap to choose your service' : 'Tap to open this mission'} &rsaquo;</span></div>` : ''}`,
     missions: `<h3 class="ctr" style="margin-top:0">Missions</h3>
       <div class="plan"><div><small>ROLL CALL STREAK</small><span class="px">${s.streak} d</span></div><div><small>CHAPTERS</small><span class="px">${s.ch.length}/${CHAPTERS.length}</span></div><div><small>EXAMS</small><span class="px">${examsPassed}/${CHAPTERS.length}</span></div></div>
       ${m('Roll Call', 'Report in once a day. 7, 30 and 90 days earn a medal and bonus XP.', `best ${s.best} d`, null, null, 'roll')}
