@@ -7,7 +7,7 @@ const a = src.indexOf('const DRILL_COL'), b = src.indexOf('async function render
 const fn = new Function('lastDrill', src.slice(a, b) + '; return { drillQuestions, drillSpecials };');
 const { drillQuestions, drillSpecials } = fn('');
 
-test('smc drill: an H1 chart gives IDM, DISR, BOS, swing high / low and trend questions, and tapping the answer is a hit', () => {
+test('smc drill: an H1 chart gives IDM, DISR, BOS and trend questions, and tapping the answer is a hit', () => {
   const T0 = 1_700_000_000, H = 3600;
   const up=(a,b)=>{const r=[];for(let v=a;v<=b;v++)r.push(v);return r;}, dn=(a,b)=>{const r=[];for(let v=a;v>=b;v--)r.push(v);return r;};
   const vals=[...up(10,15),...dn(14,12),...up(13,18),...dn(17,15),...up(16,22),...dn(21,14),...up(15,26),...dn(25,20)];
@@ -20,7 +20,7 @@ test('smc drill: an H1 chart gives IDM, DISR, BOS, swing high / low and trend qu
   const map={lo,hi,toPrice:y=>lo+(Hh-14-y)/(Hh-14-TOP)*(hi-lo)};
   const qs=drillQuestions(cv,map,sm,null);
   
-  assert.deepEqual(qs.map((q) => q.kind).sort(), ['bos', 'bosdir', 'disr', 'idm', 'swingh', 'swingl', 'trend']);
+  assert.deepEqual(qs.map((q) => q.kind).sort(), ['bos', 'bosdir', 'disr', 'idm', 'trend']);
   for (const q of qs) {
     if (q.type === 'choice') { assert.ok(q.options[q.answer]); continue; }
     const r = q.reveal[0], x = r.k === 'box' ? cv._geom.cs.findIndex((c) => c[0] >= r.t0) * step + step * 3 : cv._geom.cs.findIndex((c) => c[0] >= (r.t0 ?? r.t)) * step + step * 1.5, py = r.k === 'box' ? (r.lo + r.hi) / 2 : r.y;
