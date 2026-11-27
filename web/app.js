@@ -382,7 +382,7 @@ function chart(cv, s, tf, name) {
     g.fillStyle = 'rgba(0,0,0,.92)'; g.strokeStyle = trCol; g.lineWidth = 1.5; g.beginPath(); g.roundRect ? g.roundRect(t.x, t.y, t.w, t.h, 3) : g.rect(t.x, t.y, t.w, t.h); g.fill(); g.stroke(); g.lineWidth = 1;
     g.fillStyle = trCol; g.fillText(trTxt, t.x + 7, t.y + t.h / 2 + .5); }
     g.textBaseline = 'alphabetic'; g.font = `${FS}px ${MONO}`; }
-  if (main) { const E = { marks: new Set(marks.map(o => o.t + '|' + o.label)), W, Hh, FS, LH, MONO, plotW, step, ivl, cs0: cs[0][0], lo, hi, TOP, tf, taken, tw, Y, digits: s.digits ?? 3, price: s.price, last: cs[cs.length - 1][4], atr: s.atr,
+  if (main) { const E = { marks: new Set(marks.map(o => o.t + '|' + o.label)), W, Hh, FS, LH, TH, MONO, plotW, step, ivl, cs0: cs[0][0], lo, hi, TOP, tf, taken, tw, Y, digits: s.digits ?? 3, price: s.price, last: cs[cs.length - 1][4], atr: s.atr,
     rrPlan: s.k && s.k.active && s.k.active.plan && s.k.active.plan.rr, toPrice: y => lo + (Hh - 14 - y) / (Hh - 14 - TOP) * (hi - lo), toTime: x => Math.round(cs[0][0] + (x - step / 2) / step * ivl) }; SMC.draw(g, cv, E); Pos.draw(g, cv, E); Snipe.draw(g, cv, E); PA.draw(g, cv, E); }
   const free = r => !taken.some(t => hit(r, t)) && !solid.some(t => hit(r, t));
   const place = (l, w) => {

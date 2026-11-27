@@ -214,14 +214,17 @@ const SMC = (() => {
         g.globalAlpha = al; g.strokeStyle = col; g.setLineDash(o.label === '50% POI' ? [4, 3] : dead ? [2, 3] : []); g.strokeRect(x0 + .5, yt + .5, Math.max(2, padR - x0), h); g.setLineDash([]); g.globalAlpha = 1;
         label(5, nm + (dead ? ' \u2717' : ''), padR - 3, Math.round((yt + yb) / 2) + fs / 2 - 1, col, 'right', true, al, true, padR);
       }
-      // M5: the candle confirmation that triggered each key level entry alert (engulf, harami, star), written at that candle: BELOW the key level POI box for a buy, ABOVE it for a sell
-      const kA = fs_.k && fs_.k.active, box5 = fs_.overlays.find((o) => o.type === 'box' && o.grp === 'k5');
-      if (E.tf === 'm5' && kA && !kA.invalidated && box5 && Array.isArray(fs_.signals)) {
-        const buy = kA.dir === 1, yt5 = Math.round(y(box5.hi)), yb5 = Math.round(y(box5.lo));
-        for (const sg of fs_.signals) {
-          const xs = X(sg.t);
-          if (xs < 0 || xs > plotW) continue;
-          label(6, String(sg.type).replace(/_/g, ' ').toUpperCase(), xs, buy ? yb5 + fs + 6 : yt5 - 6, buy ? COL.rec : '#FF6B6B', 'center', true, 1, true);
+      // M5: the latest candle confirmation of the key level (KLV) or QML entry, top right on the trend line: "KLV entry: bullish engulf".
+      // Coloured bullish (buy) or bearish (sell). A valid key level / QML with no candle confirmation yet says "confirmation".
+      if (E.tf === 'm5') {
+        const kA = fs_.k && fs_.k.active, q = fs_.qml;
+        const kOk = !!(kA && !kA.invalidated && kA.high_prob), qOk = !!(q && !q.invalidated_t && q.at_liquidity);
+        const useQ = qOk && (!kOk || q.t > kA.t_valid);
+        const src = useQ ? { nm: 'QML', dir: q.dir, sigs: q.signals } : kOk ? { nm: 'KLV', dir: kA.dir, sigs: fs_.signals } : null;
+        if (src) {
+          const last = (src.sigs || []).slice(-1)[0], what = last ? String(last.type).replace(/_/g, ' ') : 'confirmation';
+          const h = fs + 3, yy = 4 + ((E.TH || fs + 7) - h) / 2 + fs;
+          text(`${src.nm} entry: ${what}`, plotW - 4, yy, src.dir === 1 ? '#26A69A' : '#EF5350', 'right', true);
         }
       }
       // reclamation: a tick where it completed, and the step it is on (of 5) while it is in progress
