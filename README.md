@@ -96,7 +96,7 @@ Telegram only allows real mini app buttons in private chats, so the alert button
 
 ### Rank requirements (mandatory promotions)
 
-Everybody starts as a **Recruit** with 0 XP. After the Field guide the person chooses a service (**Army**, **Navy** or **Air Force**, permanent) and climbs that service's own 19 ranks, all ending at **10,000 XP**.
+Everybody starts as a **Recruit** with 0 XP. After the Field guide the person chooses a service (**Army**, **Navy** or **Air Force**, permanent) and climbs that service's own 19 ranks, all ending at **10,000 XP**. XP is not capped there: a person on the top rank keeps earning XP beyond 10,000.
 The first four promotions each need a mission; from rank 5 on XP alone promotes. The rules live in `GATES` and `BRANCHES` in `web/rank.js` (the Telegram tags in `server/ranks.js` must stay in step).
 
 **XP stops at the promotion line.** While the mission that leads out of the held rank is not done, XP cannot go past the XP of the next rank (40, 120, 250, 450). Doing the mission promotes the person at once.
@@ -162,15 +162,16 @@ The person must have started the bot once (/start), or Telegram refuses the priv
 
 **Button colour.** The button is green for a buy setup and red for a sell setup (Telegram's button `style`: `success` / `danger`). Invalidation alerts and alerts without a direction keep Telegram's default colour. It is set in `notify` in `server/app.js` and passed on by `Bot.send` in `server/telegram.js`. Telegram clients that are too old to know button colours show the default button instead.
 
-**3 points for the first open.** The first time a person opens a given alert from a group or channel button ("Open <symbol> chart") while it is still active on the radar (posted in the last 24 hours) they earn 3 XP and it counts as one Intercept Analysis; opening the same alert
-again, or an old alert, earns nothing. Telegram does not tell a bot when a link button is tapped, so the open of the mini app is what counts. This needs `MINIAPP_LINK`
+**3 points for the first open.** The first time a person opens a given alert from a group or channel button ("Open <symbol> chart") while it is still active on the radar (it has not been invalidated; its age does not matter) they earn 3 XP and it counts as one Intercept Analysis; opening the same alert
+again, or an invalidated alert, earns nothing. Telegram does not tell a bot when a link button is tapped, so the open of the mini app is what counts. This needs `MINIAPP_LINK`
 (a plain web link has no Telegram identity). The link is signed with the bot token, so hand-made links earn nothing.
 Which alerts a person has opened is kept in their own Telegram CloudStorage next to the rest of their rank progress.
 The messages use the usual format (green or red dot, the keyword, the symbol) plus a "Sniper Mode" line. The flow lives on the server (`/api/sniper`) and is part of the Telegram backup, so it works with the app closed and survives restarts. Rules that differ from the automatic flow: nothing is remapped after your disruption breaks, and the "first key level after the pullback is not traded" rule is not applied (you decide the flow, every valid key level counts). The name is one constant per place (`SNIPER MODE` in `server/service.js`, `web/sniper.js`) if you want to rename it.
 
 ### Intercept Analysis (Rank tab mission, Telegram alerts)
 
-An Intercept Analysis is the first open of a new alert, from its **Open <symbol> chart** button in the Telegram channel, while the alert is still active on the radar (under 24 hours old).
+An Intercept Analysis is the first open of a new alert, from its **Open <symbol> chart** button in the Telegram channel, while the alert is still active on the radar, meaning it has not been invalidated (age does not matter). An invalidated alert pays no XP and its analysis does not count.
+Invalidated means: a key level or bjeff zone alert was followed by a "key level invalidated" alert or an H1 order flow invalidation; a reclamation alert was followed by an order flow invalidation; a QML alert's own POI was invalidated or the order flow was invalidated after it (`server/alertstatus.js`). An alert the server no longer holds (after a restart) cannot be checked and pays nothing, which also stops old channel posts from being farmed.
 Each one pays 3 XP and counts towards the 33 needed to be promoted from ladder position 4 to 5; five of them earn the Alert Analyst medal. Only the channel button counts: opening a chart from inside the app does not.
 There is no checklist any more. The Rank tab, under Missions, shows the progress and how it works; the Alerts tab shows "+3 XP to claim" or "Intercept analysed" on each alert, and the channel post's XP status button shows the same privately.
 
