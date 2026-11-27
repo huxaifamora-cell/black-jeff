@@ -223,11 +223,12 @@ const SMC = (() => {
         const useQ = qOk && (!kOk || q.t > kA.t_valid);
         const src = useQ ? { nm: 'QML', dir: q.dir, sigs: q.signals } : kOk ? { nm: 'KLV', dir: kA.dir, sigs: kA.high_prob ? fs_.signals : [], low: !kA.high_prob ? kA : null } : null;
         if (src) {
-          const last = (src.sigs || []).slice(-1)[0];
-          const msg = src.low ? `KLV low probability: ${src.low.wicks} wicks in POI (max ${src.low.max_wicks})`
-            : last ? `${src.nm} entry: ${String(last.type).replace(/_/g, ' ')}` : `${src.nm}: confirmed`;
+          const last = (src.sigs || []).slice(-1)[0], nm = (t) => t === 'move_out' ? 'breakout' : String(t).replace(/_/g, ' ');
+          const msg = (src.low ? `KLV low probability: ${src.low.wicks} wicks in POI (max ${src.low.max_wicks})`
+            : last ? `${src.nm} entry: ${nm(last.type)}` : `${src.nm}: confirmed`).toUpperCase();
           const h = fs + 3, yy = 4 + ((E.TH || fs + 7) - h) / 2 + fs;
-          text(msg, plotW - 4, yy, src.dir === 1 ? '#26A69A' : '#EF5350', 'right', true);
+          // right end of the trend row; the title and trend badge are in E.taken, so on a narrow chart the nudge moves it to the next row instead of overlapping them
+          text(msg, plotW - 4, yy, src.dir === 1 ? '#26A69A' : '#EF5350', 'right', true, 1, true);
         }
       }
       // reclamation: a tick where it completed, and the step it is on (of 5) while it is in progress
