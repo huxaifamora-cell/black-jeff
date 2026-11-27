@@ -41,7 +41,8 @@ export function loadConfig() {
     pollSeconds: Number(e.POLL_SECONDS || 20),
     // SMC indicator (market structure, BOS, CHoCH, inducement, liquidity sweeps drawn on the chart from the live Deriv WebSocket). SMC=0 turns it off.
     smc: e.SMC !== '0',
-    smcSwingLen: Number(e.SMC_SWING_LEN || 5),                // candles each side of a major swing
+    smcSwingLen: Number(e.SMC_SWING_LEN || 3),                // candles each side of a major swing
+    smcEarlySwingLen: e.SMC_EARLY_SWING_LEN === undefined || e.SMC_EARLY_SWING_LEN === '' ? 2 : Number(e.SMC_EARLY_SWING_LEN),   // early swing fallback (0 = off)
     smcInternalLen: Number(e.SMC_INTERNAL_LEN || 2),          // candles each side of a minor swing (inducement)
     smcTimeframes: (e.SMC_TIMEFRAMES || 'm5,h1,h4').split(',').map((x) => x.trim().toLowerCase()).filter(Boolean),
     smcAlerts: e.SMC !== '0' && e.SMC_ALERTS !== '0',          // run reclamation / key level / QML ... on the SMC order flow (IDM / DISR) and send those alerts too, tagged SMC. SMC_ALERTS=0 turns them off

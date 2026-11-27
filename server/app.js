@@ -28,7 +28,7 @@ const HELP = '<b>B-JEFF bot</b>\nOpen the B-Jeff terminal';
 export function createApp({ cfg = loadConfig(), store, svc, deriv, bot, log = console, background = true } = {}) {
   store ||= new Store(cfg.dbPath);
   svc ||= new Service(store, undefined, log);
-  svc.smcAlerts = !!cfg.smcAlerts; svc.smcOnly = !!cfg.smcOnly; svc.smcParams = { swingLen: cfg.smcSwingLen || 5, internalLen: cfg.smcInternalLen || 2 };
+  svc.smcAlerts = !!cfg.smcAlerts; svc.smcOnly = !!cfg.smcOnly; svc.smcParams = { swingLen: cfg.smcSwingLen || 3, internalLen: cfg.smcInternalLen || 2, earlySwingLen: cfg.smcEarlySwingLen };
   deriv ||= new Deriv(cfg.derivUrls, cfg.derivAppId, log);
   bot ||= cfg.botToken ? new Bot(cfg.botToken) : null;
   const abort = new AbortController();
@@ -39,7 +39,7 @@ export function createApp({ cfg = loadConfig(), store, svc, deriv, bot, log = co
   // SMC indicator: live market structure / BOS / CHoCH / inducement / sweeps from the Deriv WebSocket (see smcfeed.js). Off with SMC=0.
   const smc = cfg.smc ? new SmcFeed({
     deriv, log, codeOf: (id) => { const s = svc.byId.get(id); return (s && s.code) || null; },
-    params: { swingLen: cfg.smcSwingLen || 5, internalLen: cfg.smcInternalLen || 2 },
+    params: { swingLen: cfg.smcSwingLen || 3, internalLen: cfg.smcInternalLen || 2, earlySwingLen: cfg.smcEarlySwingLen },
     timeframes: (cfg.smcTimeframes || ['m5', 'h1', 'h4']).map((x) => SMC_TF[x]).filter(Boolean), pinned: cfg.smcPinned || [] }) : null;
   const sseClients = new Set();
 

@@ -11,6 +11,8 @@
 //
 // Definitions used (all numbers are in `smcDefaults` and can be tuned per timeframe):
 //  - Swing (major): a pivot with `swingLen` candles on each side. It is confirmed `swingLen` candles after it formed. Labelled HH / LH (highs), HL / LL (lows).
+//  - Early swing: when a break comes sooner than `swingLen` candles after a swing, the normal pivot can never confirm (the breaking candle is beyond it), so that BOS would be lost. A high (low) with `swingLen` lower (higher) candles before it,
+//          at least `earlySwingLen` candles after it that stay inside it, and a pullback of at least `idmMinDepthAtr` x ATR counts as a swing from that moment on. Set earlySwingLen to 0 to turn this off.
 //  - BOS : a candle BODY closes beyond the latest unbroken swing in the direction of the current trend (continuation).
 //  - Trend (zone mode): a trend needs at least 2 breaks in ONE direction (IDM + DISR). One break, or a lone break against older ones, is not a trend.
 //          With no trend (cold start, loaded candles, or right after an invalidation) the LATEST break sets it, but only if its direction already has 2 breaks.
@@ -39,7 +41,8 @@
 //  - EQH / EQL: two swings of the same side within `eqTolAtr` x ATR of each other. The pair becomes one liquidity pool at the outer price.
 
 export const smcDefaults = {
-  swingLen: 5,          // candles each side of a major swing
+  swingLen: 3,          // candles each side of a major swing (was 5; lowered so shorter legs still make a swing)
+  earlySwingLen: 2,     // early swing fallback: a high / low with swingLen candles before it and at least this many candles after it, all inside it, plus a pullback deeper than idmMinDepthAtr x ATR, is a swing already (before swingLen candles have formed). 0 = off
   internalLen: 2,       // candles each side of a minor (internal) swing, used for the inducement
   atrLen: 14,
   eqTolAtr: 0.1,        // equal highs / lows: within this x ATR
@@ -216,9 +219,10 @@ export class SmcEngine {
     // 2. new major swings (confirmed swingLen candles later)
     const pi = i - p.swingLen;
     if (pi >= 0) {
-      if (this.#pivot(pi, p.swingLen, 'H')) this.#addSwing('H', pi, changed);
-      if (this.#pivot(pi, p.swingLen, 'L')) this.#addSwing('L', pi, changed);
+      if (this.#pivot(pi, p.swingLen, 'H') && !this.swH.some((q) => q.idx === pi)) this.#addSwing('H', pi, changed);      // not twice: the early swing rule may have added it already
+      if (this.#pivot(pi, p.swingLen, 'L') && !this.swL.some((q) => q.idx === pi)) this.#addSwing('L', pi, changed);
     }
+    this.#earlySwings(i, changed);
     // 3. minor swings, then the inducement they define
     const ii = i - p.internalLen;
     if (ii >= 0) {
@@ -228,9 +232,32 @@ export class SmcEngine {
     this.#updateIdm(changed);
   }
 
+  // Early swing rule (see the header): a swing that is not confirmed yet (fewer than swingLen candles after it) but already has a real pullback.
+  #earlySwings(i, changed) {
+    const p = this.p, cs = this.cs, el = p.earlySwingLen;
+    if (!el || el >= p.swingLen) return;
+    const minDepth = p.idmMinDepthAtr * this.atrV;
+    for (let k = i - (p.swingLen - 1); k <= i - el; k++) {
+      if (k - p.swingLen < 0) continue;
+      for (const kind of ['H', 'L']) {
+        const isH = kind === 'H', list = isH ? this.swH : this.swL;
+        if (list.slice(-10).some((q) => q.idx === k)) continue;
+        const v = isH ? cs[k].h : cs[k].l;
+        let ok = true, ext = v;                                           // ext = the deepest point of the pullback so far
+        for (let j = k - p.swingLen; j < k && ok; j++) if (isH ? !(v > cs[j].h) : !(v < cs[j].l)) ok = false;
+        for (let j = k + 1; j <= i && ok; j++) {
+          if (isH ? cs[j].h > v : cs[j].l < v) ok = false;                // price already went beyond it: it is a break or a sweep, not a swing
+          else ext = isH ? Math.min(ext, cs[j].l) : Math.max(ext, cs[j].h);
+        }
+        if (ok && Math.abs(v - ext) >= minDepth) this.#addSwing(kind, k, changed);
+      }
+    }
+  }
+
   #addSwing(kind, idx, changed) {
     const cs = this.cs, c = cs[idx], isH = kind === 'H', price = isH ? c.h : c.l, list = isH ? this.swH : this.swL;
-    const prev = list[list.length - 1], tol = this.p.eqTolAtr * this.atrV;
+    let prev = null; for (let n = list.length - 1; n >= 0; n--) if (list[n].idx < idx) { prev = list[n]; break; }      // the swing before this one (an early swing may already be in the list, so the last entry is not always older)
+    const tol = this.p.eqTolAtr * this.atrV;
     const s = { idx, t: c.t, price, crossed: false, swept: false, pool: null };
     let label = prev ? (isH ? (price > prev.price ? 'HH' : 'LH') : (price < prev.price ? 'LL' : 'HL')) : (isH ? 'H' : 'L');
     // equal highs / lows: this swing and an earlier unbroken one share a pool
@@ -243,7 +270,7 @@ export class SmcEngine {
     s.label = label;
     list.push(s); if (list.length > 80) list.shift();
     this.#put({ id: `swing:${c.t}:${kind}`, type: 'swing', dir: isH ? -1 : 1, t0: c.t, t1: null, price, label }, changed);
-    if (isH) this.top = s; else this.btm = s;
+    if (isH) { if (!this.top || idx > this.top.idx) this.top = s; } else if (!this.btm || idx > this.btm.idx) this.btm = s;     // the latest swing by position, even when an older one is confirmed afterwards
   }
 
   // Zone of a break (candle i is the breaking candle, x.sw the swing it broke). Stored with the break; it is only put on the chart when it is the IDM, DISR or LIQ of the trend.
