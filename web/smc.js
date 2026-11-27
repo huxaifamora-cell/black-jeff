@@ -215,16 +215,19 @@ const SMC = (() => {
         label(5, nm + (dead ? ' \u2717' : ''), padR - 3, Math.round((yt + yb) / 2) + fs / 2 - 1, col, 'right', true, al, true, padR);
       }
       // M5: the latest candle confirmation of the key level (KLV) or QML entry, top right on the trend line: "KLV entry: bullish engulf".
-      // Coloured bullish (buy) or bearish (sell). A valid key level / QML with no candle confirmation yet says "confirmation".
+      // Coloured bullish (buy) or bearish (sell). A valid key level / QML with no candle confirmation yet says "KLV: confirmed" / "QML: confirmed".
+      // A low probability key level says so, with the reason (too many wicks in the POI).
       if (E.tf === 'm5') {
         const kA = fs_.k && fs_.k.active, q = fs_.qml;
-        const kOk = !!(kA && !kA.invalidated && kA.high_prob), qOk = !!(q && !q.invalidated_t && q.at_liquidity);
+        const kOk = !!(kA && !kA.invalidated), qOk = !!(q && !q.invalidated_t && q.at_liquidity);
         const useQ = qOk && (!kOk || q.t > kA.t_valid);
-        const src = useQ ? { nm: 'QML', dir: q.dir, sigs: q.signals } : kOk ? { nm: 'KLV', dir: kA.dir, sigs: fs_.signals } : null;
+        const src = useQ ? { nm: 'QML', dir: q.dir, sigs: q.signals } : kOk ? { nm: 'KLV', dir: kA.dir, sigs: kA.high_prob ? fs_.signals : [], low: !kA.high_prob ? kA : null } : null;
         if (src) {
-          const last = (src.sigs || []).slice(-1)[0], what = last ? String(last.type).replace(/_/g, ' ') : 'confirmation';
+          const last = (src.sigs || []).slice(-1)[0];
+          const msg = src.low ? `KLV low probability: ${src.low.wicks} wicks in POI (max ${src.low.max_wicks})`
+            : last ? `${src.nm} entry: ${String(last.type).replace(/_/g, ' ')}` : `${src.nm}: confirmed`;
           const h = fs + 3, yy = 4 + ((E.TH || fs + 7) - h) / 2 + fs;
-          text(`${src.nm} entry: ${what}`, plotW - 4, yy, src.dir === 1 ? '#26A69A' : '#EF5350', 'right', true);
+          text(msg, plotW - 4, yy, src.dir === 1 ? '#26A69A' : '#EF5350', 'right', true);
         }
       }
       // reclamation: a tick where it completed, and the step it is on (of 5) while it is in progress
