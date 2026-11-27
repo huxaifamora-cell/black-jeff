@@ -214,6 +214,16 @@ const SMC = (() => {
         g.globalAlpha = al; g.strokeStyle = col; g.setLineDash(o.label === '50% POI' ? [4, 3] : dead ? [2, 3] : []); g.strokeRect(x0 + .5, yt + .5, Math.max(2, padR - x0), h); g.setLineDash([]); g.globalAlpha = 1;
         label(5, nm + (dead ? ' \u2717' : ''), padR - 3, Math.round((yt + yb) / 2) + fs / 2 - 1, col, 'right', true, al, true, padR);
       }
+      // M5: the candle confirmation that triggered each key level entry alert (engulf, harami, star), written at that candle: BELOW the key level POI box for a buy, ABOVE it for a sell
+      const kA = fs_.k && fs_.k.active, box5 = fs_.overlays.find((o) => o.type === 'box' && o.grp === 'k5');
+      if (E.tf === 'm5' && kA && !kA.invalidated && box5 && Array.isArray(fs_.signals)) {
+        const buy = kA.dir === 1, yt5 = Math.round(y(box5.hi)), yb5 = Math.round(y(box5.lo));
+        for (const sg of fs_.signals) {
+          const xs = X(sg.t);
+          if (xs < 0 || xs > plotW) continue;
+          label(6, String(sg.type).replace(/_/g, ' ').toUpperCase(), xs, buy ? yb5 + fs + 6 : yt5 - 6, buy ? COL.rec : '#FF6B6B', 'center', true, 1, true);
+        }
+      }
       // reclamation: a tick where it completed, and the step it is on (of 5) while it is in progress
       for (const r of fs_.r || []) {
         if (r.last_complete) {
