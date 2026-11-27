@@ -51,21 +51,24 @@ const INVALID_KINDS = new Set(['kl_invalid', 'invalidated']);
 export const isSmcAlert = (a) => !!(a && ((a.payload && a.payload.src === 'smc') || String(a.key || '').includes('|smc|')));
 export const alertType = (a) => KIND_TYPE[a.kind] || String(TYPE_NAME[a.concept] || a.concept || 'ALERT').toUpperCase();
 // Key level and QML alerts name the candle confirmation: an entry alert carries it (" · BULLISH ENGULF"), a freshly detected key level / QML that has no
-// candle confirmation yet says " · CONFIRMATION" (the entry is still to be confirmed).
+// candle confirmation yet says " · CONFIRMED"; a low probability key level says " · LOW PROBABILITY" and its reason goes on a third line.
 const confSuffix = (a) => {
   const conf = a.payload && a.payload.conf;
   if ((a.kind === 'kl_entry' || a.kind === 'qml_entry') && conf) return ' · ' + String(conf).toUpperCase();
-  if (a.kind === 'kl_valid' || a.kind === 'qml_valid') return ' · CONFIRMATION';
+  if (a.kind === 'kl_valid' && a.payload && a.payload.low_prob) return ' · LOW PROBABILITY';
+  if (a.kind === 'kl_valid' || a.kind === 'qml_valid') return ' · CONFIRMED';
   return '';
 };
 export const formatAlert = (a) => {
   const esc = (t) => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  const type = esc(alertType(a) + confSuffix(a));   // key level / QML entry: which candle confirmation (BULLISH HARAMI, MORNING STAR ...), or CONFIRMATION while it is still awaited
+  const type = esc(alertType(a) + confSuffix(a));   // key level / QML entry: which candle confirmation (BULLISH HARAMI, MORNING STAR ...), or CONFIRMED when none yet (LOW PROBABILITY for a key level with too many wicks)
   const head = INVALID_KINDS.has(a.kind) ? `⚪ <b>INVALIDATED · ${type}</b>`
     : a.dir === 1 ? `🟢 <b>${type}</b>`
     : a.dir === -1 ? `🔴 <b>${type}</b>`
     : `⚪ <b>${type}</b>`;
-  return `${head}\n${esc(a.symbol_name)}${isSmcAlert(a) ? '\n🧭 <b>SMC</b>' : ''}`;      // SMC alerts say so; the same rules on the SMC order flow (IDM / DISR)
+  const lp = a.kind === 'kl_valid' && a.payload && a.payload.low_prob, pl = a.payload || {};
+  const why = lp ? `\n⚠️ Low probability: ${esc(pl.wicks)} wick${pl.wicks === 1 ? '' : 's'} inside the POI (max ${esc(pl.max_wicks)} allowed). Not traded.` : '';
+  return `${head}\n${esc(a.symbol_name)}${isSmcAlert(a) ? '\n🧭 <b>SMC</b>' : ''}${why}`;      // SMC alerts say so; the same rules on the SMC order flow (IDM / DISR)
 };
 // Short plain-text version of the headline for the chart image ("KEY LEVEL"). The colour of the tag and the arrow carry the direction.
 export const alertLabel = (a) => `${INVALID_KINDS.has(a.kind) ? 'INVALIDATED ' : ''}${alertType(a)}${confSuffix(a).replace(' · ', ' ')}`;

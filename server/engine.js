@@ -807,7 +807,7 @@ export function evaluate(h4Live, h1Live, m5, p = defaultParams, digits = 3, opts
   for (const { act, inv } of acts) {
     const plan = tradePlan(act.lo, act.hi, act.dir, atr5, p);
     kState.active = { type: act.type, dir: act.dir, lo: act.lo, hi: act.hi, t0: act.t0, t_valid: act.t_valid, wicks: act.wicks,
-      high_prob: act.high_prob, invalidated: inv, plan };
+      high_prob: act.high_prob, max_wicks: p.maxKlWicks, invalidated: inv, plan };
     overlays.push({ type: 'box', grp: 'k', lo: act.lo, hi: act.hi, t0: act.t0, label: 'KeyLevel' + (act.high_prob ? '' : ' (low probability)'), tone: inv ? 'dead' : 'k' });
     // The key level POI box on the M5 chart (grp 'k5', same label and colour as the H1 one) is marked from the M5 order block (see m5Poi).
     // With no M5 order block it falls back to the H1 box.
@@ -834,6 +834,11 @@ export function evaluate(h4Live, h1Live, m5, p = defaultParams, digits = 3, opts
           }
         }
       }
+    } else if (!act.high_prob) {
+      // Low probability key level: still alerted (valid kl_valid), but flagged with the reason. It is not traded, so no entry confirmations follow.
+      events.push(ev('K', 'kl_valid', act.dir, act.t_valid + H1, H1, `K: valid key level, LOW PROBABILITY (${side(act.dir)} setup)`,
+        `POI ${f(act.lo)} to ${f(act.hi)}. Low probability: ${act.wicks} wick(s) inside the POI, more than the ${p.maxKlWicks} allowed. Not traded.`,
+        uid, { lo: act.lo, hi: act.hi, t0: act.t0, sub: act.type, low_prob: true, wicks: act.wicks, max_wicks: p.maxKlWicks }));
     } else if (act.high_prob) {
       events.push(ev('K', 'kl_valid', act.dir, act.t_valid + H1, H1, `K: valid key level (${side(act.dir)} setup)`,
         `POI ${f(act.lo)} to ${f(act.hi)}, ${act.wicks} wick(s) inside (high probability). ${cap(side(act.dir))} limit ${f(plan.entry)}, SL ${f(plan.sl)}, TP (1:${p.rr}) ${f(plan.tp)}.`,
