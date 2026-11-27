@@ -46,7 +46,7 @@ Definitions (all numbers are in `smcDefaults` in `server/smc.js`):
 
 | Mark | Rule |
 |---|---|
-| Swing | pivot with `swingLen` (5) candles on each side, confirmed that many candles later |
+| Swing | pivot with `swingLen` (3) candles on each side, confirmed that many candles later; early swing: with `earlySwingLen` (2) candles after it and a pullback deeper than `idmMinDepthAtr` x ATR it counts sooner |
 | BOS | a candle **body** closes beyond the latest unbroken swing, in the direction of the trend |
 | Counter-trend break (`choch`, hidden) | a body closes beyond the latest unbroken swing **against** the trend. It does **not** flip the trend: a rally against the trend between the IDM and the DISR is only a pullback. The first break after a cold start is a BOS and sets the trend |
 | Trend flip | only when the **DISR zone is invalidated** (SORK rule): a body closes beyond its far side (bull: below the zone, bear: above it). The old zones leave the chart and the order flow is mapped again in the new direction with no look-back window (original SMC rule): the newest BOS zones of the new direction, whenever they formed |
@@ -65,7 +65,7 @@ What the SMC decides is the trend (it flips when a body closes beyond the DISR z
 - **Chart (H1 and M5):** key level box (gold), the M5 key level POI box, 50% POI (dashed), bjeff zone, QML, `RECLAIM ✓` where a reclamation completed and `RECLAIM n/5` while it is in progress. Layer chip `KEY LEVEL`. Read from `GET /api/smc/flow?symbol=V75` (polled every 5 s).
 - **Cost:** one extra evaluation per symbol per refresh (about 50 ms on 20,000 M5 candles). Tests: `test/smcflow.test.js` and the last tests of `test/smc.test.js`.
 
-Settings (environment variables, all optional): `SMC=0` (turn off), `SMC_ALERTS=0`, `SMC_ALERT_CHATS=0`, `SORK_ALERTS=1`, `SORK_BOXES=1`, `SMC_SWING_LEN=5`, `SMC_INTERNAL_LEN=2`, `SMC_TIMEFRAMES=m5,h1,h4`, `SMC_SYMBOLS=V75,V100s` (always watched). Tests: `test/smc.test.js`, `test/smcfeed.test.js`, `test/derivstream.test.js`.
+Settings (environment variables, all optional): `SMC=0` (turn off), `SMC_ALERTS=0`, `SMC_ALERT_CHATS=0`, `SORK_ALERTS=1`, `SORK_BOXES=1`, `SMC_SWING_LEN=3`, `SMC_EARLY_SWING_LEN=2` (0 = off), `SMC_INTERNAL_LEN=2`, `SMC_TIMEFRAMES=m5,h1,h4`, `SMC_SYMBOLS=V75,V100s` (always watched). Tests: `test/smc.test.js`, `test/smcfeed.test.js`, `test/derivstream.test.js`.
 
 ## Deploy on Render (plain Web Service)
 
