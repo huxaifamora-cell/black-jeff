@@ -154,11 +154,6 @@ export function createApp({ cfg = loadConfig(), store, svc, deriv, bot, log = co
       if (user && tag) { store.upsertUser(user.id, user.first_name || ''); store.rankSet(user.id, tag); applyRankTag(user.id); }
       return json(res, 200, { ok: !!tag });
     }
-    if (path === '/api/alert-analysed' && req.method === 'POST') {   // the person finished the Intercept Analysis of an alert they opened
-      const b = await readJson(req);
-      if (user && isAlertId(b.id) && store.xpState(user.id, b.id) >= 1) store.xpMark(user.id, b.id, 2);
-      return json(res, 200, { ok: true });
-    }
     // ---- price alerts (the person drags a line on the chart; one message when price gets there)
     // The chart timeframe the alert is set on ('m5' | 'h1' | 'h4') is kept with it: its Telegram picture is a screenshot of that timeframe.
     const TF_SECONDS = { m5: 300, h1: 3600, h4: 14400 }, tfOf = (x) => TF_SECONDS[x] || 300;

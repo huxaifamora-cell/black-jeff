@@ -34,13 +34,12 @@ export function checkParam(param, secret, now = Date.now() / 1000) {
 }
 
 // ---- private XP status, shown as a pop-up that only the person who tapped the "XP status" button sees
-export const ALERT_XP = 3, ANALYSIS_XP = 10;                 // keep equal to ALERT_XP / ANALYSIS_XP in web/rank.js
+export const ALERT_XP = 3;                                       // keep equal to ALERT_XP in web/rank.js: one Intercept Analysis = the first open of an active alert
 export const isAlertId = (id) => /^[0-9a-z]+_[0-9a-f]{8}$/.test(String(id || ''));
-// st: 0 = not opened, 1 = opened (+3 earned), 2 = opened and analysed (+13 earned). Telegram allows 200 characters in the pop-up.
+// st: 0 = not opened, 1 = opened (an Intercept Analysis done, +3 XP earned). Telegram allows 200 characters in the pop-up.
 export function xpStatusText(st, id, now = Date.now() / 1000) {
   const fresh = now - parseInt(String(id).split('_')[0], 36) < LINK_MAX_AGE;
-  if (st >= 2) return `✅ You opened and analysed this alert: +${ALERT_XP + ANALYSIS_XP} XP earned.`;
-  if (st === 1) return `✅ You opened this alert: +${ALERT_XP} XP earned.` + (fresh ? `\n+${ANALYSIS_XP} XP to claim: finish its Intercept Analysis in the Rank tab, if you have not yet.` : '');
-  return fresh ? `⏳ +${ALERT_XP} XP to claim. Tap Open chart on this alert to earn it, then +${ANALYSIS_XP} XP more for analysing it.`
+  if (st >= 1) return `✅ You opened this alert: Intercept Analysis done, +${ALERT_XP} XP earned.`;
+  return fresh ? `⏳ +${ALERT_XP} XP to claim. Tap Open chart on this alert: the first open of an active alert is one Intercept Analysis.`
     : 'This alert is older than 24 hours, so it no longer pays XP.';
 }
