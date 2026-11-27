@@ -50,9 +50,17 @@ const KIND_TYPE = { reclamation: 'RECLAMATION', kl_valid: 'KEY LEVEL', kl_entry:
 const INVALID_KINDS = new Set(['kl_invalid', 'invalidated']);
 export const isSmcAlert = (a) => !!(a && ((a.payload && a.payload.src === 'smc') || String(a.key || '').includes('|smc|')));
 export const alertType = (a) => KIND_TYPE[a.kind] || String(TYPE_NAME[a.concept] || a.concept || 'ALERT').toUpperCase();
+// Key level and QML alerts name the candle confirmation: an entry alert carries it (" · BULLISH ENGULF"), a freshly detected key level / QML that has no
+// candle confirmation yet says " · CONFIRMATION" (the entry is still to be confirmed).
+const confSuffix = (a) => {
+  const conf = a.payload && a.payload.conf;
+  if ((a.kind === 'kl_entry' || a.kind === 'qml_entry') && conf) return ' · ' + String(conf).toUpperCase();
+  if (a.kind === 'kl_valid' || a.kind === 'qml_valid') return ' · CONFIRMATION';
+  return '';
+};
 export const formatAlert = (a) => {
   const esc = (t) => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  const type = esc(alertType(a) + (a.kind === 'kl_entry' && a.payload && a.payload.conf ? ' · ' + String(a.payload.conf).toUpperCase() : ''));   // key level entry: which confirmation (BULLISH HARAMI, MORNING STAR ...)
+  const type = esc(alertType(a) + confSuffix(a));   // key level / QML entry: which candle confirmation (BULLISH HARAMI, MORNING STAR ...), or CONFIRMATION while it is still awaited
   const head = INVALID_KINDS.has(a.kind) ? `⚪ <b>INVALIDATED · ${type}</b>`
     : a.dir === 1 ? `🟢 <b>${type}</b>`
     : a.dir === -1 ? `🔴 <b>${type}</b>`
@@ -60,7 +68,7 @@ export const formatAlert = (a) => {
   return `${head}\n${esc(a.symbol_name)}${isSmcAlert(a) ? '\n🧭 <b>SMC</b>' : ''}`;      // SMC alerts say so; the same rules on the SMC order flow (IDM / DISR)
 };
 // Short plain-text version of the headline for the chart image ("KEY LEVEL"). The colour of the tag and the arrow carry the direction.
-export const alertLabel = (a) => `${INVALID_KINDS.has(a.kind) ? 'INVALIDATED ' : ''}${alertType(a)}${a.kind === 'kl_entry' && a.payload && a.payload.conf ? ' ' + String(a.payload.conf).toUpperCase() : ''}`;
+export const alertLabel = (a) => `${INVALID_KINDS.has(a.kind) ? 'INVALIDATED ' : ''}${alertType(a)}${confSuffix(a).replace(' · ', ' ')}`;
 
 // Sniper Mode (a person's own order flow): the same two lines, plus a third that says whose flow it is.
 export const formatSniperAlert = (a) => `${formatAlert(a)}\n🎯 <b>SNIPER MODE</b>${a.kind === 'invalidated' ? ' · your order flow is over, set a new one' : ''}`;

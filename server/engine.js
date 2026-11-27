@@ -827,7 +827,8 @@ export function evaluate(h4Live, h1Live, m5, p = defaultParams, digits = 3, opts
           q.plan = qp;
           events.push(ev('QML', 'qml_valid', q.dir, q.t, M5, `QML: ${side(q.dir)} Quasimodo level formed ${q.plq.inside ? 'at' : 'close to'} a point of liquidity`,
             `Reversal at ${f(q.extreme)}, ${q.plq.inside ? 'inside' : 'close to'} an H1 point of liquidity (POI ${f(q.plq.lo)} to ${f(q.plq.hi)}). QML POI ${f(q.lo)} to ${f(q.hi)}. ${cap(side(q.dir))} limit ${f(qp.entry)}, SL ${f(qp.sl)}, TP (1:${p.rr}) ${f(qp.tp)}.`, `qml-${q.t}`, { lo: q.lo, hi: q.hi, t0: q.t, ...qp, sub: 'QML' }));
-          for (const cf of confirmations(m5c, q.lo, q.hi, q.dir, q.t).slice(-3)) {
+          q.signals = confirmations(m5c, q.lo, q.hi, q.dir, q.t).slice(-3);      // the chart writes the latest one
+          for (const cf of q.signals) {
             events.push(ev('QML', 'qml_entry', q.dir, cf.t + M5, M5, `QML: ${side(q.dir)} confirmation (${nice(cf.type, q.dir)})`,
               `${cap(nice(cf.type, q.dir))} inside the QML POI. ${cap(side(q.dir))} limit ${f(qp.entry)}, SL ${f(qp.sl)}, TP ${f(qp.tp)}.`, `qml-${q.t}-${cf.t}-${cf.type}`, { sub: 'QML', conf: nice(cf.type, q.dir), lo: q.lo, hi: q.hi, t0: q.t }));
           }
