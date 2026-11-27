@@ -1,8 +1,9 @@
 // Service record: ranks earned by learning and discipline. Progress is saved per person in Telegram's own storage
 // (CloudStorage), with the browser's localStorage as a fallback, so no database is needed on the server.
 // There is no leaderboard and nothing here rates trades or gives advice.
-// The ranks every person shares, up to Lieutenant: [name, XP]. Above Lieutenant the ladder is the chosen service's own (BRANCHES below).
-const BASE_RANKS = [['Recruit', 0], ['Private', 40], ['Corporal', 120], ['Sergeant', 250], ['Lieutenant', 450]];
+// Recruit is the only rank every person shares. After the Field guide the person chooses a service (Army, Navy or Air Force) and climbs that service's own
+// ranks (BRANCHES below) up to 10,000 XP. [name, XP].
+const BASE_RANKS = [['Recruit', 0]];
 const CHAPTERS = ['The SORK framework', 'S: Market Structure', 'O: Order Flow', 'R: Reclamation', 'K: Key Level', 'QML: the inverse key level', 'Advanced key level and bjeff zone', 'Trade checklist'];
 // Military line icons for the missions and medals (24x24, stroke only)
 const STAR = '<path d="M12 8l1.2 2.5 2.8.4-2 2 .5 2.8-2.5-1.3-2.5 1.3.5-2.8-2-2 2.8-.4z"/>';
@@ -74,68 +75,74 @@ const kvSet = (k, v) => { lsSet(k, v); const c = cloud(); if (c) try { c.setItem
 const today = () => new Date().toLocaleDateString('en-CA');
 const dayBefore = () => new Date(Date.now() - 864e5).toLocaleDateString('en-CA');
 let RKS = null;
-const fresh = () => ({ v: 1, xp: 0, ch: [], qz: {}, streak: 0, best: 0, last: '', drillOk: 0, drillMiss: 0, anTotal: 0, medals: [], promo: 0, rank: null, branch: null, d: { date: '', drill: 0 } });
-// ONE-OFF cleanup for a single test account that was handed another account's progress (two Telegram accounts on one phone, before the
-// per-account storage fix). Runs once for this id, then never again (it leaves a flag). Delete this block and the call in rk() afterwards.
-const WIPE_ID = 959811481;
-async function wipeOnce() {
-  if (myId() !== WIPE_ID || await kvGet('sork_wiped_1')) return;
+const fresh = () => ({ v: 2, xp: 0, ch: [], qz: {}, streak: 0, best: 0, last: '', drillOk: 0, drillMiss: 0, anTotal: 0, medals: [], promo: 0, rank: null, branch: null, d: { date: '', drill: 0 } });
+// ONE-OFF RESET for the new service ranking system (Recruit to 10,000 XP, service chosen after Recruit): everybody starts again from Recruit with 0 XP,
+// no medals, no service, and no remembered alert opens. Runs once per account (it leaves a flag), then never again.
+const RESET_FLAG = 'sork_rank_reset_v2';
+async function resetOnce() {
+  if (await kvGet(RESET_FLAG)) return;
   const keys = ['sork_rank', 'sork_alert_opens', 'sork_alert_queue', 'sork_alert_log'], c = cloud();
   keys.forEach(k => { try { localStorage.removeItem(lsKey(k)); } catch { /* ignore */ } });
   if (c) await new Promise(r => { try { c.removeItems(keys, () => r()); } catch { r(); } });
-  kvSet('sork_wiped_1', '1');
+  kvSet(RESET_FLAG, '1');
 }
 async function rk() {
   if (RKS) return RKS;
-  await wipeOnce();
+  await resetOnce();
   let s; try { s = JSON.parse(await kvGet('sork_rank') || 'null'); } catch { s = null; }
   if (s && s.owner && myId() && s.owner !== myId()) s = null;   // saved by another account: never show it as this person's
+  if (s && s.v !== 2) s = null;                                 // saved by the old ranking system: not carried over
   RKS = Object.assign(fresh(), s || {});
-  // Saved before the 30% rule: anyone already at Sergeant or above keeps their old passes (2 of 3) so the new rule never demotes them.
-  if (RKS.rank != null && RKS.rank >= SERGEANT) for (const k of Object.keys(RKS.qz)) if (RKS.qz[k] >= 2) RKS.qz[k] = Math.max(RKS.qz[k], EXAM_PASS);
-  // Already above Lieutenant before services existed: they keep their rank (the Army names are the old ones) and may still pick a service.
-  if (RKS.rank != null && RKS.rank > LIEUTENANT && !RKS.branch) RKS.legacy = 1;
-  if (RKS.rank == null) RKS.rank = rankOf(RKS);        // first load after the requirements were introduced: no retroactive promotion toast
+  if (RKS.rank == null) RKS.rank = rankOf(RKS);
   if (RKS.d.date !== today()) RKS.d = { date: today(), drill: 0 };
+  capXp(RKS);
   return RKS;
 }
 const rkSave = () => { if (myId()) RKS.owner = myId(); kvSet('sork_rank', JSON.stringify(RKS)); rkHeader(); };
 const rankIdx = (xp, s = RKS) => { let i = 0; ladder(s).forEach((r, k) => { if (xp >= r[1]) i = k; }); return i; };   // the rank XP alone would give
-// Mandatory requirements: XP can be earned any way, but each rank below Lieutenant also needs one mission completed before the next rank is granted.
-const DRILLS_REQ = 33, ANALYSES_REQ = 99;
+// Mandatory requirements: XP can be earned any way, but each of the first four ranks also needs one mission completed before the next rank is granted, and XP stops counting at the promotion line until it is.
+const DRILLS_REQ = 33, ANALYSES_REQ = 33;
 // Promotional exam rule: failing MORE than EXAM_FAIL_MAX of a promotional exam fails the person and restarts the whole promotional mission.
 // Each chapter exam has EXAM_Q questions, so with 30% a single wrong answer (33%) already fails it: EXAM_PASS = 3 of 3.
 const EXAM_Q = 3, EXAM_FAIL_MAX = 0.30;
 const EXAM_PASS = EXAM_Q - Math.floor(EXAM_Q * EXAM_FAIL_MAX + 1e-9);
-// The same rule for the Corporal drill mission: a Private may miss at most 30% of the required drills (9 of 33). The 10th miss fails them
+// The same rule for the drill mission (held at rank 2, the first service rank): a person may miss at most 30% of the required drills (9 of 33). The 10th miss fails them
 // and restarts the drill mission from 0 passed.
-const DRILL_MISS_MAX = Math.floor(DRILLS_REQ * EXAM_FAIL_MAX + 1e-9), PRIVATE = 1;
-const SERGEANT = 3;  // index of the rank the Proficiency Exam leads to; from here on the exam is no longer promotional
-// At Lieutenant the person chooses a service. Every rank above Lieutenant then uses that service's own rank names and insignia.
-// Each service has its own ranks above Lieutenant, with the XP for each: [name, XP]. They all end at 6000 XP: Field Marshal, Admiral of the Fleet,
-// Marshal of the Air Force. (The Navy has one rank fewer in between, as in the real navy.)
-const LIEUTENANT = 4;
+const DRILL_MISS_MAX = Math.floor(DRILLS_REQ * EXAM_FAIL_MAX + 1e-9), DRILL_RANK = 1;
+const EXAM_TO = 3;  // ladder position the Proficiency Exam leads to; from here on the exam is no longer promotional
+// Every service has the same 19 ranks after Recruit (8 enlisted, 11 officer), with the same XP at each position, ending at 10,000 XP.
+// Positions 1 to 4 (the first four service ranks) are held back by a mission each (GATES below); from position 5 on, XP alone decides.
+const RANK_XP = [40, 120, 250, 450, 550, 680, 840, 1050, 1250, 1550, 1900, 2350, 2900, 3550, 4350, 5400, 6600, 8100, 10000];
+const withXp = names => names.map((n, k) => [n, RANK_XP[k]]);
 const BRANCHES = {
-  army: { name: 'Army', ico: 'army', blurb: 'Land forces', ranks: [['Captain', 700], ['Major', 1000], ['Lieutenant Colonel', 1400], ['Colonel', 1900], ['Brigadier', 2500], ['Major General', 3200], ['Lieutenant General', 4000], ['General', 5000], ['Field Marshal', 6000]] },
-  navy: { name: 'Navy', ico: 'navy', blurb: 'Sea forces', ranks: [['Lieutenant Commander', 700], ['Commander', 1000], ['Captain', 1500], ['Commodore', 2200], ['Rear Admiral', 3000], ['Vice Admiral', 4000], ['Admiral', 5000], ['Admiral of the Fleet', 6000]] },
-  air: { name: 'Air Force', ico: 'air', blurb: 'Air forces', ranks: [['Flight Lieutenant', 700], ['Squadron Leader', 1000], ['Wing Commander', 1400], ['Group Captain', 1900], ['Air Commodore', 2500], ['Air Vice-Marshal', 3200], ['Air Marshal', 4000], ['Air Chief Marshal', 5000], ['Marshal of the Air Force', 6000]] },
+  army: { name: 'Army', ico: 'army', blurb: 'Land forces', ranks: withXp(['Private', 'Lance Corporal', 'Corporal', 'Sergeant', 'Staff Sergeant', 'Warrant Officer', 'Master Warrant Officer', 'Army Warrant Officer', 'Second Lieutenant', 'Lieutenant', 'Captain', 'Major', 'Lieutenant Colonel', 'Colonel', 'Brigadier General', 'Major General', 'Lieutenant General', 'General', 'Field Marshal']) },
+  navy: { name: 'Navy', ico: 'navy', blurb: 'Sea forces', ranks: withXp(['Seaman', 'Able Seaman', 'Leading Seaman', 'Petty Officer', 'Chief Petty Officer', 'Warrant Officer', 'Master Warrant Officer', 'Navy Warrant Officer', 'Midshipman', 'Sub-Lieutenant', 'Lieutenant', 'Lieutenant Commander', 'Commander', 'Captain', 'Commodore', 'Rear Admiral', 'Vice Admiral', 'Admiral', 'Fleet Admiral']) },
+  air: { name: 'Air Force', ico: 'air', blurb: 'Air forces', ranks: withXp(['Airman', 'Lance Corporal', 'Corporal', 'Sergeant', 'Flight Sergeant', 'Warrant Officer', 'Master Warrant Officer', 'Air Warrant Officer', 'Pilot Officer', 'Flying Officer', 'Flight Lieutenant', 'Squadron Leader', 'Wing Commander', 'Group Captain', 'Air Commodore', 'Air Vice-Marshal', 'Air Marshal', 'Air Chief Marshal', 'Marshal of the Air Force']) },
 };
-// The full ladder for a person: the shared ranks, then their service's ranks (the Army ladder until a service is chosen, which is also what
-// people who were Captain or Major before services existed keep).
+// The full ladder for a person: Recruit, then their service's ranks (the Army names are shown until a service is chosen).
 const ladder = (s = RKS) => BASE_RANKS.concat(BRANCHES[(s && s.branch) || 'army'].ranks);
 const rankName = (i, s = RKS) => ladder(s)[Math.min(i, ladder(s).length - 1)][0];
+// GATES[i] is the mission that must be done to leave ladder position i. While it is open the person keeps the rank AND their XP stops counting at the
+// XP of the next rank (the promotion line); finishing the mission promotes them at once.
 const GATES = [
-  { to: 'Private', short: 'Complete the Field guide (all chapters)', ok: s => s.ch.length >= CHAPTERS.length, text: s => `Complete the Field guide: ${s.ch.length}/${CHAPTERS.length} chapters finished` },
-  { to: 'Corporal', short: `Pass ${DRILLS_REQ} chart reading drills`, ok: s => (s.drillOk || 0) >= DRILLS_REQ, text: s => `Pass ${DRILLS_REQ} chart reading drills: ${Math.min(s.drillOk || 0, DRILLS_REQ)}/${DRILLS_REQ} passed. Misses ${s.drillMiss || 0}/${DRILL_MISS_MAX} allowed; going over 30% restarts the drills from 0` },
-  { to: 'Sergeant', short: 'Pass the Proficiency Exam (every chapter, no more than 30% wrong)', ok: s => CHAPTERS.every((_, k) => (s.qz[k] || 0) >= EXAM_PASS), text: s => `Pass the Proficiency Exam: ${CHAPTERS.filter((_, k) => (s.qz[k] || 0) >= EXAM_PASS).length}/${CHAPTERS.length} chapters passed. Failing more than 30% of a chapter exam restarts the exam from chapter 1` },
-  { to: 'Lieutenant', short: `Complete ${ANALYSES_REQ} Intercept Analyses`, ok: s => (s.anTotal || 0) >= ANALYSES_REQ, text: s => `Complete ${ANALYSES_REQ} Intercept Analyses: ${Math.min(s.anTotal || 0, ANALYSES_REQ)}/${ANALYSES_REQ} done` },
-  { to: 'Captain', pick: true, short: 'Choose your service: Army, Navy or Air Force', ok: s => !!s.branch || !!s.legacy, text: () => 'Choose your service: Army, Navy or Air Force. Your ranks above Lieutenant follow the service you pick' },
+  { to: 'rank 2', short: 'Complete the Field guide (all chapters), then choose your service', ok: s => s.ch.length >= CHAPTERS.length && !!s.branch, text: s => s.ch.length >= CHAPTERS.length ? 'Choose your service: Army, Navy or Air Force. Your ranks follow the service you pick' : `Complete the Field guide: ${s.ch.length}/${CHAPTERS.length} chapters finished, then choose your service` },
+  { to: 'rank 3', short: `Pass ${DRILLS_REQ} chart reading drills`, ok: s => (s.drillOk || 0) >= DRILLS_REQ, text: s => `Pass ${DRILLS_REQ} chart reading drills: ${Math.min(s.drillOk || 0, DRILLS_REQ)}/${DRILLS_REQ} passed. Misses ${s.drillMiss || 0}/${DRILL_MISS_MAX} allowed; going over 30% restarts the drills from 0` },
+  { to: 'rank 4', short: 'Pass the Proficiency Exam (every chapter, no more than 30% wrong)', ok: s => CHAPTERS.every((_, k) => (s.qz[k] || 0) >= EXAM_PASS), text: s => `Pass the Proficiency Exam: ${CHAPTERS.filter((_, k) => (s.qz[k] || 0) >= EXAM_PASS).length}/${CHAPTERS.length} chapters passed. Failing more than 30% of a chapter exam restarts the exam from chapter 1` },
+  { to: 'rank 5', short: `Complete ${ANALYSES_REQ} Intercept Analyses`, ok: s => (s.anTotal || 0) >= ANALYSES_REQ, text: s => `Complete ${ANALYSES_REQ} Intercept Analyses: ${Math.min(s.anTotal || 0, ANALYSES_REQ)}/${ANALYSES_REQ} done. Each one is a new alert opened from the Telegram channel while it is still active on the radar` },
 ];
 // The rank the person actually holds: the XP rank, held back at the first rank whose requirement is not met yet.
 function rankOf(s) {
   const xpRank = rankIdx(s.xp, s); let i = 0;
   while (i < xpRank && (!GATES[i] || GATES[i].ok(s))) i++;
   return i;
+}
+// XP stops counting at the promotion line: while the mission that leads out of the held rank is not done, XP cannot go past the XP of the next rank.
+// The ladder also ends at its last rank's XP (10,000). Returns true when XP was cut.
+function capXp(s) {
+  const L = ladder(s), held = rankOf(s), g = GATES[held];
+  const cap = g && !g.ok(s) && L[held + 1] ? L[held + 1][1] : L[L.length - 1][1];
+  if (s.xp <= cap) return false;
+  s.xp = cap; return true;
 }
 // Returns a PROMOTED line when the held rank has gone up since the last time it was saved (a requirement was just met, or XP just arrived).
 function promoMsg(s) {
@@ -150,20 +157,21 @@ function toast(html, long) {
   t.innerHTML = html; t.className = 'on'; clearTimeout(t._h); t._h = setTimeout(() => { t.className = ''; }, long ? 5200 : 3200);
 }
 async function award(xp, why, medal) {
-  const s = await rk();
+  const s = await rk(), before = s.xp;
   s.xp += xp;
-  let msg = xp ? `<b>+${xp} XP</b> ${esc(why)}` : esc(why);
-  if (medal && !s.medals.includes(medal)) { s.medals.push(medal); msg += `<br>Medal: <b>${MEDALS[medal][0]}</b>`; }
   if (s.ch.length === CHAPTERS.length && !s.promo) {   // finishing every chapter is a promotion
     s.promo = 1; const L = ladder(s), nx = L[Math.min(L.length - 1, rankIdx(s.xp, s) + 1)][1]; if (nx > s.xp) s.xp = nx;
-    if (!s.medals.includes('scholar')) s.medals.push('scholar');
-    msg += '<br>Guide complete: <b>Scholar</b>';
   }
+  const cut = capXp(s), got = s.xp - before;
+  let msg = got > 0 ? `<b>+${got} XP</b> ${esc(why)}` : esc(why);
+  if (cut) { const g = GATES[rankOf(s)]; msg += g && !g.ok(s) ? `<br>XP has stopped counting at the promotion line. To be promoted: ${esc(g.short)}.` : '<br>Top rank: XP is full at 10,000.'; }
+  if (medal && !s.medals.includes(medal)) { s.medals.push(medal); msg += `<br>Medal: <b>${MEDALS[medal][0]}</b>`; }
+  if (s.ch.length === CHAPTERS.length && !s.medals.includes('scholar')) { s.medals.push('scholar'); msg += '<br>Guide complete: <b>Scholar</b>'; }
   if (CHAPTERS.every((_, i) => (s.qz[i] || 0) >= EXAM_PASS) && !s.medals.includes('honors')) { s.medals.push('honors'); msg += '<br>Medal: <b>Top of Class</b>'; }
   if (s.drillOk >= 5 && !s.medals.includes('eye')) { s.medals.push('eye'); msg += '<br>Medal: <b>Sharp Eye</b>'; }
   const pm = promoMsg(s); if (pm) msg += '<br>' + pm;
-  rkSave(); toast(msg, !!pm);
-  if (pm && needsBranch(s)) setTimeout(() => askBranch(), 2400);   // just reached Lieutenant: ask for the service once the promotion toast has been read
+  rkSave(); toast(msg, !!pm || cut);
+  if (needsBranch(s)) setTimeout(() => askBranch(), 2400);   // the Field guide is finished: choose the service (this is what promotes out of Recruit)
 }
 
 // ---- Roll Call: daily check-in streak
@@ -177,10 +185,12 @@ async function rkCheckIn() {
   await award(bonus, why, medal);
 }
 
-// ---- alert button from a group or channel: the FIRST open of each alert earns 3 XP, later opens earn nothing.
-// The server only confirms the link is a real, recent alert; the opened alerts are remembered in Telegram's CloudStorage.
+// ---- Intercept Analysis: tap "Open <symbol> chart" under an alert in the Telegram channel.
+// The FIRST open of each alert that is still active on the radar (the link is a real alert, under 24 hours old) is one Intercept Analysis and pays 3 XP.
+// Opening the same alert again, or an alert that is no longer active, pays nothing. The server only confirms the link; the opened alerts are
+// remembered in Telegram's CloudStorage.
 const ALERT_XP = 3;
-// What the Alerts tab shows per alert: 1 = opened from Telegram (+3 XP earned), 2 = also analysed (+10 XP earned). Kept as "id:state,id:state".
+// What the Alerts tab shows per alert: 1 = opened from Telegram (analysis done, +3 XP earned). Kept as "id:state,id:state".
 // Telegram CloudStorage values are capped at 4096 characters, so only the newest 200 alerts from the last 30 days are kept.
 async function alLog() {
   const m = new Map(); (await kvGet('sork_alert_log') || '').split(',').forEach(x => { const [id, st] = x.split(':'); if (id && st) m.set(id, +st); });
@@ -194,76 +204,36 @@ async function alMark(id, st) {
 }
 // HTML badge per alert id for the Alerts tab: earned XP, XP waiting to be claimed, or nothing when the alert pays no XP.
 async function alertBadges(alerts) {
-  const log = await alLog(), q = await anQueue(), waiting = new Set(q.map(x => x.id)), now = Date.now() / 1000, out = {};
+  const log = await alLog(), now = Date.now() / 1000, out = {};
   for (const a of alerts) {
     if (!a.xp || !a.oid) continue;
-    const st = log.get(a.oid) || 0;
-    if (st >= 2) out[a.oid] = `<span class="xpb done">&#10003; Analysed &middot; +${ALERT_XP + ANALYSIS_XP} XP earned</span>`;
-    else if (st === 1) out[a.oid] = waiting.has(a.oid)
-      ? `<span class="xpb part">&#10003; Opened &middot; +${ALERT_XP} XP earned &middot; +${ANALYSIS_XP} XP to claim</span>`
-      : `<span class="xpb done">&#10003; Opened &middot; +${ALERT_XP} XP earned</span>`;
+    if ((log.get(a.oid) || 0) >= 1) out[a.oid] = `<span class="xpb done">&#10003; Intercept analysed &middot; +${ALERT_XP} XP earned</span>`;
     else if (now - a.ts < 24 * 3600) out[a.oid] = `<span class="xpb new">+${ALERT_XP} XP to claim &middot; open it from Telegram</span>`;
   }
   return out;
 }
 async function rkAlertOpen(link) {
   let r; try { r = await api('/api/alert-open', { method: 'POST', body: JSON.stringify({ p: link }) }); } catch { return; }
-  if (!r || !r.ok) return;
+  if (!r || !r.ok) return;                                           // not a real alert, or no longer active (older than 24 h): nothing
   let seen; try { seen = JSON.parse(await kvGet('sork_alert_opens') || '[]'); } catch { seen = []; }
   if (!Array.isArray(seen)) seen = [];
   const cutoff = Date.now() / 1000 - 48 * 3600;                      // links older than 24 h pay nothing, so older ids can be forgotten
   seen = seen.filter(x => parseInt(String(x).split('_')[0], 36) > cutoff);
-  if (seen.includes(r.id)) return;
+  if (seen.includes(r.id)) return;                                   // already opened: only the first open counts
   seen.push(r.id); kvSet('sork_alert_opens', JSON.stringify(seen.slice(-200))); alMark(r.id, 1);
-  const q = await anQueue(); q.push({ id: r.id, sym: r.symbol, c: r.concept, ts: r.ts }); kvSet('sork_alert_queue', JSON.stringify(q.slice(-20)));   // waits for its analysis mission
-  await award(ALERT_XP, 'new alert opened');
+  const s = await rk(); s.anTotal = (s.anTotal || 0) + 1;            // one Intercept Analysis done
+  await award(ALERT_XP, `intercept analysed: ${r.symbol}`, s.anTotal >= 5 ? 'analyst' : undefined);
 }
 
-// ---- Intercept Analysis mission (Telegram alert analysis)
-// A new alert opened from a Telegram button is saved here for 24 hours. In the Rank tab the person opens its chart and ticks each
-// check once they have confirmed it themselves. Finishing earns XP once per alert, with no daily limit. It trains reading an alert; it is not a signal.
-const ANALYSIS_XP = 10;
-const CONCEPT_NAME = { S: 'Market structure', O: 'Order flow', R: 'Reclamation', K: 'Key level', QML: 'QML (inverse key level)', ADV: 'Advanced key level' };
-const ANALYSIS = {
-  S: ['H1 order flow shows a valid trend: liquidity (LQ) and a break of structure (BOS)', 'The trend direction is the H1 order flow and matches the alert\'s H1 trend', 'You can point to the most valid BOS that set the trend', 'No H4 body has closed past the disruption POI (trend not invalidated)'],
-  O: ['The inducement is the latest BOS in the H4 trend', 'The disruption is the BOS immediately before the inducement', 'Both POIs are drawn on the order block (body to body, 50% if the body is long)', 'No H1 body has closed beyond the disruption POI'],
-  R: ['Price came to the POI of an inducement, disruption or liquidity zone', 'You can name every step of the reclamation, and none is missing', 'The last step goes out of the POI in the trend direction', 'You remember a reclamation is a confirmation, never an entry on its own'],
-  K: ['The H1 key level is valid (it became RBS or SBR) and matches the H1 trend', 'No more than 2 wicks sit inside its POI between the key level and its BOS', 'Price pulled back into the POI on M5 without a body closing outside it', 'An M5 confirmation (engulf or harami) is inside the POI, and you know where the SL goes (slightly outside the POI)'],
-  QML: ['The directional key level was invalidated by its POI', 'The QML POI is drawn from the old POI edge to the extreme before the reversal', 'The reversal is at or close to a point of liquidity', 'Entry waits for M5 confirmation inside the POI; SL and TP rules are the same as a key level'],
-  ADV: ['The H1 key level is valid and its full POI box (100%) is marked', 'Price has come back into the 50% of that box', 'An M5 reversal pattern (engulf, harami or similar) is your entry confirmation', 'SL and TP are the same as the standard key level'],
-};
-async function anQueue() {
-  let q; try { q = JSON.parse(await kvGet('sork_alert_queue') || '[]'); } catch { q = []; }
-  const cutoff = Date.now() / 1000 - 24 * 3600;
-  return Array.isArray(q) ? q.filter(x => x && x.id && x.ts > cutoff) : [];
-}
 async function renderAnalysis() {
-  const s = await rk(), q = await anQueue(), a = q[q.length - 1];
-  const how = `<div class="card"><h4>How it works</h4><p class="small">1. A new alert arrives in Telegram.<br>2. Tap its <b>Open chart</b> button. The app opens on that symbol and SORK page (first open +${ALERT_XP} XP) and saves the alert here for 24 hours.<br>3. Come back to this mission (Intercept Analysis), open the chart and tick each check only after you have confirmed it yourself on the chart.<br>4. Complete the analysis for +${ANALYSIS_XP} XP for every alert, with no daily limit. Five analyses earn the Alert Analyst medal.<br>It trains reading an alert the SORK way. It is not a trade signal.</p></div>`;
-  const back = '<div class="row"><button class="back" id="ab">&#8249; Rank</button><span class="small">Intercept Analysis</span></div>';
-  if (!a) {
-    view.innerHTML = back + how + '<div class="card"><p class="small">No new alert is waiting. The next alert you open from a Telegram button will appear here.</p></div>';
-    document.getElementById('ab').onclick = renderRank; return;
-  }
-  const mins = Math.max(0, Math.round((Date.now() / 1000 - a.ts) / 60)), age = mins < 60 ? `${mins} min ago` : `${Math.round(mins / 60)} h ago`;
-  const steps = ANALYSIS[a.c] || ANALYSIS.K, name = CONCEPT_NAME[a.c] || a.c;
-  view.innerHTML = back + how + `<div class="card"><h4>${esc(a.sym)} &middot; ${esc(name)}</h4><p class="small">Alert ${age}. ${q.length > 1 ? `${q.length} alerts are waiting; this is the newest.` : ''}</p><button class="btn" id="ao">Open ${esc(a.sym)} chart</button>
-    <div id="al">${steps.map(t => `<label class="dl"><input type="checkbox" class="ak"> ${esc(t)}</label>`).join('')}</div>
-    <button class="btn" id="ad" disabled>Complete analysis</button></div>`;
+  const s = await rk(), done = Math.min(s.anTotal || 0, ANALYSES_REQ);
+  view.innerHTML = `<div class="row"><button class="back" id="ab">&#8249; Rank</button><span class="small">Intercept Analysis</span></div>
+    <div class="card"><h4>Intercept Analysis <span class="px">${done}/${ANALYSES_REQ}</span></h4>
+      <p class="small">1. A new alert is posted in the Telegram channel.<br>2. Tap the <b>Open chart</b> button under it (it reads "Open" + the symbol + "chart"). The app opens on that symbol.<br>3. If the alert is still active on the radar (posted in the last 24 hours) and you have not opened it before, that is one Intercept Analysis and <b>+${ALERT_XP} XP</b>.<br>Opening the same alert again, or an old alert, pays nothing. Only the button in the Telegram channel counts: opening the chart from inside the app does not.</p>
+      <p class="small">${ANALYSES_REQ} Intercept Analyses are required to be promoted from rank 4 to rank 5. They count from your first open.</p>
+      <button class="btn" id="aa">See active alerts</button></div>`;
   document.getElementById('ab').onclick = renderRank;
-  document.getElementById('ao').onclick = () => {
-    if (a.c === 'QML' || a.c === 'ADV') { symConcept = 'K'; kSub = a.c; } else if (['S', 'O', 'R', 'K'].includes(a.c)) symConcept = a.c;
-    openSymbol(a.sym);
-  };
-  const ad = document.getElementById('ad'), upd = () => { ad.disabled = [...view.querySelectorAll('.ak')].some(x => !x.checked); };
-  view.querySelectorAll('.ak').forEach(x => x.onchange = upd);
-  ad.onclick = async () => {
-    ad.disabled = true;
-    kvSet('sork_alert_queue', JSON.stringify(q.filter(x => x.id !== a.id)));
-    alMark(a.id, 2); api('/api/alert-analysed', { method: 'POST', body: JSON.stringify({ id: a.id }) }).catch(() => {});   // so the channel post's XP status button knows
-    s.anTotal = (s.anTotal || 0) + 1; await award(ANALYSIS_XP, `${a.sym} alert analysed`, s.anTotal >= 5 ? 'analyst' : undefined);
-    renderRank();
-  };
+  document.getElementById('aa').onclick = () => setTab('alerts');
 }
 
 // ---- guide progress
@@ -284,7 +254,7 @@ async function rkGuideBar() {
 }
 
 // ---- quiz
-const promoExam = s => rankOf(s) < SERGEANT;   // the exam is promotional until the person holds Sergeant
+const promoExam = s => rankOf(s) < EXAM_TO;   // the exam is promotional until the person holds rank 4
 function shuffle(a) { a = a.slice(); for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; }
 async function renderQuizMenu() {
   const s = await rk();
@@ -328,7 +298,7 @@ function runQuiz(ch) {
 
 // ---- SMC chart reading drill: an H1 chart with every SMC mark hidden. Read it and answer: BOS, trend, IDM, DISR, KLV, trend direction.
 // The answers come from the server's SMC engine (/api/smc, /api/smc/flow), the same marks the live chart draws, so the drill teaches the rules the bot really uses.
-// Rank mechanics (XP, daily cap, 30% miss rule for a Private) are unchanged: every pass counts as a drill, right or wrong is all that matters.
+// Rank mechanics (XP, daily cap, 30% miss rule at rank 2) are unchanged: every pass counts as a drill, right or wrong is all that matters.
 let lastDrill = '';
 const DRILL_COL = { idm: '#B197FC', disr: '#B197FC', klv: '#FFD166', bos: '#6EA8FE', qml: '#FF8A65', rec: '#69F0AE', cand: '#FFF59D' };
 
@@ -475,7 +445,7 @@ async function renderDrill() {
       answered = true; drillReveal(cv, map, q.reveal);
       const left = s.d.drill < DAILY_CAP.drill;
       let note = '', restarted = false;
-      if (!ok && rankOf(s) === PRIVATE) {   // promotional drill mission: more than 30% missed fails the person and restarts it
+      if (!ok && rankOf(s) === DRILL_RANK) {   // promotional drill mission: more than 30% missed fails the person and restarts it
         s.drillMiss = (s.drillMiss || 0) + 1;
         if (s.drillMiss > DRILL_MISS_MAX) { s.drillOk = 0; s.drillMiss = 0; restarted = true; note = ` You have missed more than 30% of the drills: you fail and the chart reading drills restart from 0/${DRILLS_REQ}.`; }
         else note = ` Misses ${s.drillMiss}/${DRILL_MISS_MAX} allowed.`;
@@ -511,48 +481,63 @@ function rkHeader() {
   const sv = document.getElementById('tsvc'); if (sv) sv.textContent = RKS.branch && BRANCHES[RKS.branch] ? ` (${BRANCHES[RKS.branch].name})` : '';   // B-JEFF (ARMY) FIELD TERMINAL once a service is chosen
   el.innerHTML = `${insignia(i, 24, RKS.branch)}<b class="hr">${rankName(i)}</b><span class="hn">${esc(rkName())}</span>`;
 }
-window.addEventListener('load', () => { rk().then(() => { rkHeader(); setTimeout(() => askBranch(), 900); }); });   // a Lieutenant who has not chosen yet is asked again on the next start
+window.addEventListener('load', () => { rk().then(() => { rkHeader(); setTimeout(() => askBranch(), 900); }); });   // someone who finished the guide but has not chosen a service yet is asked again on the next start
 
 // ---- rank page
-// Insignia for ladder position i. Chevrons up to Sergeant, a star for Lieutenant. Above Lieutenant each service wears its own:
-//   Army: stars for Captain and Major, an oak leaf (Lieutenant Colonel), an eagle (Colonel), then 1 to 4 large silver stars for the generals,
-//         and a ring of five stars for the Field Marshal.
-//   Navy / Air Force: sleeve stripes (gold on navy blue / sky blue on air force blue). Broad stripes for the officers, then one wide band with
-//         0 to 4 thin stripes under it for the flag officers (Commodore ... Admiral of the Fleet / Air Commodore ... Marshal of the Air Force).
+// Insignia for ladder position i (0 = Recruit, then the 19 ranks of the chosen service).
+//   Enlisted (positions 1 to 8), every service: 1 to 3 chevrons, then 3 chevrons with 1 and 2 bars (positions 4 and 5), then a ring with 1 to 3 stars
+//         for the three warrant ranks (positions 6 to 8). Dark green for the Army, navy blue and gold for the Navy, air force blue and sky blue for the Air Force.
+//   Officers (positions 9 to 19): Army: 1 to 3 stars (Second Lieutenant to Captain), an oak leaf (Major), two oak leaves (Lieutenant Colonel), an eagle (Colonel),
+//         then 1 to 4 large silver stars for the generals and a ring of five stars for the Field Marshal.
+//         Navy / Air Force: sleeve stripes. Broad stripes for the officers, then one wide band with 0 to 4 thin stripes under it for the flag officers
+//         (Commodore ... Fleet Admiral / Air Commodore ... Marshal of the Air Force).
 const STAR_D = 'M0 -9l2.6 5.4 5.9.8-4.3 4 1 5.8L0 3.4l-5.2 2.6 1-5.8-4.3-4 5.9-.8z';
 const star = (x, y, sc, fill) => `<path transform="translate(${x} ${y}) scale(${sc})" d="${STAR_D}" fill="${fill}"/>`;
-// Bar patterns, one string per rank above Lieutenant, from the first service rank up: b = broad, t = thin, w = wide.
-const NAVY_BARS = ['btb', 'bbb', 'bbbb', 'w', 'wt', 'wtt', 'wttt', 'wtttt'];
-const AIR_BARS = ['bb', 'btb', 'bbb', 'bbbb', 'w', 'wt', 'wtt', 'wttt', 'wtttt'];
+// Bar patterns for the 11 officer ranks, lowest first: b = broad, t = thin, w = wide.
+const NAVY_BARS = ['t', 'b', 'bb', 'btb', 'bbb', 'bbbb', 'w', 'wt', 'wtt', 'wttt', 'wtttt'];
+const AIR_BARS = ['b', 'bt', 'bb', 'btb', 'bbb', 'bbbb', 'w', 'wt', 'wtt', 'wttt', 'wtttt'];
 const BAR_H = { b: 3, t: 1.3, w: 5 };
 function barsSvg(spec, col) {
   const gap = spec.length > 5 ? 1.3 : 1.6, hs = [...spec].map(k => BAR_H[k]), tot = hs.reduce((a, b) => a + b, 0) + gap * (hs.length - 1);
   let y = 13 - tot / 2;
   return hs.map(h => { const r = `<rect x="4.5" y="${y.toFixed(2)}" width="17" height="${h}" fill="${col}"/>`; y += h + gap; return r; }).join('');
 }
-function armySvg(off, c) {
+// Enlisted: t = 1..8 (the position in the ladder).
+function enlistedSvg(t, c) {
+  if (t >= 6) {                                       // warrant ranks: a ring with 1 to 3 stars
+    const n = t - 5, at = { 1: [[13, 13.5]], 2: [[9.6, 13.5], [16.4, 13.5]], 3: [[13, 9.6], [9.4, 16], [16.6, 16]] }[n];
+    return `<circle cx="13" cy="13" r="9.4" fill="none" stroke="${c}" stroke-width="1.4"/>` + at.map(([x, y]) => star(x, y, .36, c)).join('');
+  }
+  const chev = Math.min(t, 3), bars = Math.max(0, t - 3);
+  const h = (chev - 1) * 3.6 + 4 + (bars ? 2.4 + (bars - 1) * 3.2 + 1.6 : 0), y0 = 13 - h / 2;
+  let g = Array.from({ length: chev }, (_, k) => `<path d="M5 ${(y0 + k * 3.6).toFixed(2)}l8 4 8-4" fill="none" stroke="${c}" stroke-width="1.9"/>`).join('');
+  for (let k = 0; k < bars; k++) g += `<rect x="5" y="${(y0 + (chev - 1) * 3.6 + 6.4 + k * 3.2).toFixed(2)}" width="16" height="1.6" fill="${c}"/>`;
+  return g;
+}
+// Army officers: k = 0..10 (Second Lieutenant .. Field Marshal).
+const LEAF = '<path d="M13 4c6 2.8 7 9.5 0 18-7-8.5-6-15.2 0-18z" fill="C"/><path d="M13 8v14" stroke="#0C1109" stroke-width="1.1"/>';
+function armySvg(k, c) {
   const W = '#EDEBD8';   // generals wear silver stars
-  if (off <= 1) return Array.from({ length: off + 2 }, (_, k) => star(13 + (k - (off + 1) / 2) * 7, 13, .5, c)).join('');   // Captain 2 stars, Major 3
-  if (off === 2) return `<path d="M13 4c6 2.8 7 9.5 0 18-7-8.5-6-15.2 0-18z" fill="${c}"/><path d="M13 8v14" stroke="#0C1109" stroke-width="1.1"/>`;   // oak leaf
-  if (off === 3) return `<path d="M2.5 9c3.7-.6 7.3.9 10.5 4.2C16.200 9.900 19.800 8.400 23.500 9c-1 4.200-3.700 7-7 8.200l-1 3.800-2.500-1.600-2.500 1.600-1-3.800c-3.300-1.200-6-4-7-8.200z" fill="${c}"/><circle cx="13" cy="8.200" r="2" fill="${c}"/>`;   // eagle
-  if (off <= 7) {                                                                   // Brigadier .. General: 1 to 4 large silver stars
-    const n = off - 3, at = { 1: [[13, 13.5, .95]], 2: [[7.8, 13.5, .62], [18.2, 13.5, .62]], 3: [[13, 7.8, .56], [7.4, 17.4, .56], [18.6, 17.4, .56]], 4: [[8, 8, .56], [18, 8, .56], [8, 18, .56], [18, 18, .56]] }[n];
+  if (k <= 2) return Array.from({ length: k + 1 }, (_, j) => star(13 + (j - k / 2) * 7, 13, .5, c)).join('');               // Second Lieutenant 1 star, Lieutenant 2, Captain 3
+  if (k === 3) return LEAF.replace('fill="C"', `fill="${c}"`);                                                               // Major: oak leaf
+  if (k === 4) return [[-2.1, 2.6], [7.3, 2.6]].map(([tx, ty]) => `<g transform="translate(${tx} ${ty}) scale(.8)">${LEAF.replace('fill="C"', `fill="${c}"`)}</g>`).join('');   // Lieutenant Colonel: two oak leaves
+  if (k === 5) return `<path d="M2.5 9c3.7-.6 7.3.9 10.5 4.2C16.200 9.900 19.800 8.400 23.500 9c-1 4.200-3.700 7-7 8.200l-1 3.800-2.500-1.600-2.500 1.600-1-3.800c-3.300-1.200-6-4-7-8.200z" fill="${c}"/><circle cx="13" cy="8.200" r="2" fill="${c}"/>`;   // Colonel: eagle
+  if (k <= 9) {                                                                     // Brigadier General .. General: 1 to 4 large silver stars
+    const n = k - 5, at = { 1: [[13, 13.5, .95]], 2: [[7.8, 13.5, .62], [18.2, 13.5, .62]], 3: [[13, 7.8, .56], [7.4, 17.4, .56], [18.6, 17.4, .56]], 4: [[8, 8, .56], [18, 8, .56], [8, 18, .56], [18, 18, .56]] }[n];
     return at.map(([x, y, sc]) => star(x, y, sc, W)).join('');
   }
-  return `<circle cx="13" cy="13.5" r="9.6" fill="none" stroke="${c}" stroke-width="1"/>` + Array.from({ length: 5 }, (_, k) => { const a = (-90 + k * 72) * Math.PI / 180; return star((13 + 6.6 * Math.cos(a)).toFixed(2), (13.5 + 6.6 * Math.sin(a)).toFixed(2), .36, W); }).join('');   // Field Marshal: ring of five stars
+  return `<circle cx="13" cy="13.5" r="9.6" fill="none" stroke="${c}" stroke-width="1"/>` + Array.from({ length: 5 }, (_, j) => { const a = (-90 + j * 72) * Math.PI / 180; return star((13 + 6.6 * Math.cos(a)).toFixed(2), (13.5 + 6.6 * Math.sin(a)).toFixed(2), .36, W); }).join('');   // Field Marshal: ring of five stars
 }
 function insignia(i, size = 44, branch = null) {
   const c = '#E3C16A', label = `Rank ${rankName(i, { branch })}`;
   const svg = (bg, edge, g) => `<svg width="${size}" height="${size}" viewBox="0 0 26 26" role="img" aria-label="${label}"><rect x="1" y="1" width="24" height="24" rx="3" fill="${bg}" stroke="${edge}" stroke-width="1.5"/>${g}</svg>`;
-  if (i > LIEUTENANT) {
-    const off = i - LIEUTENANT - 1;
-    if (branch === 'navy') return svg('#0A1A33', c, barsSvg(NAVY_BARS[off] || 'wtttt', c));
-    if (branch === 'air') return svg('#0B2540', '#8EC5F0', barsSvg(AIR_BARS[off] || 'wtttt', '#8EC5F0'));
-    return svg('#0C1109', c, armySvg(off, c));
-  }
-  const g = i === 0 ? '<path d="M8 13h10" stroke="#3A4A2A" stroke-width="2.2"/>' : i <= 3 ? Array.from({ length: i }, (_, k) => `<path d="M5 ${9 + k * 5}l8 5 8-5" fill="none" stroke="${c}" stroke-width="2.2"/>`).join('')
-    : star(13, 13, .5, c);
-  return svg('#0C1109', i ? c : '#3A4A2A', g);
+  if (i <= 0) return svg('#0C1109', '#3A4A2A', '<path d="M8 13h10" stroke="#3A4A2A" stroke-width="2.2"/>');   // Recruit: a single dull bar
+  const bg = branch === 'navy' ? '#0A1A33' : branch === 'air' ? '#0B2540' : '#0C1109', col = branch === 'air' ? '#8EC5F0' : c;
+  if (i <= 8) return svg(bg, col, enlistedSvg(i, col));
+  const k = i - 9;
+  if (branch === 'navy') return svg(bg, col, barsSvg(NAVY_BARS[k] || 'wtttt', col));
+  if (branch === 'air') return svg(bg, col, barsSvg(AIR_BARS[k] || 'wtttt', col));
+  return svg(bg, c, armySvg(k, c));
 }
 // Sub-navigation under the Rank tab: rank, missions, medals, rank ladder. The chosen page is remembered, so the back button of a mission returns to Missions.
 const SUBTABS = [
@@ -592,9 +577,9 @@ function xpGauge(pct, xp, rname) {
       <circle cx="${C}" cy="${C}" r="10" fill="#121A0D" stroke="#C2A06A" stroke-width="2"/><circle cx="${C}" cy="${C}" r="3.5" fill="#E3C16A"/></svg>
     <div class="gxl">XP</div><div class="odo" aria-label="${digits.join('')} XP">${digits.map((d, k) => `<i style="animation-delay:${k * 90}ms">${d}</i>`).join('')}</div></div>`;
 }
-// Career gauge: the whole road to the final rank (6000 XP). One box per rank on the person's own service ladder, each labelled with the XP that
+// Career gauge: the whole road to the final rank (10,000 XP). One box per rank on the person's own service ladder, each labelled with the XP that
 // rank starts at. Boxes behind the person are filled, the box they are in fills as they progress, and the needle shows where they stand.
-// Until a service is chosen the Army ladder is shown (the ladders only differ above Lieutenant).
+// Until a service is chosen the Army ladder is shown.
 function xpCareer(s, i, pct) {
   const L = ladder(s), n = L.length, C = 150, CY = 150, RO = 118, RI = 84, RM = (RO + RI) / 2, GAP = 0.014;
   const th = k => Math.PI * (1 - k / n), pt = (r, a) => `${(C + r * Math.cos(a)).toFixed(1)} ${(CY - r * Math.sin(a)).toFixed(1)}`;
@@ -608,7 +593,7 @@ function xpCareer(s, i, pct) {
     else if (here && prog > 0) boxes += `<path d="${sector(a0, a0 - (a0 - a1) * prog)}" fill="url(#xpcf)"/>`;
     if (here) boxes += `<path d="${sector(a0, a1)}" fill="#FFB347" opacity="0"><animate attributeName="opacity" values="0;.28;0" dur="1.1s" repeatCount="indefinite"/></path>`;
     const am = th(k + .5);
-    labels += `<text x="${(C + 133 * Math.cos(am)).toFixed(1)}" y="${(CY - 133 * Math.sin(am) + 2.6).toFixed(1)}" text-anchor="middle" class="cl${here ? ' on' : k < i ? ' dn' : ''}">${r[1]}</text>`;
+    labels += `<text x="${(C + 133 * Math.cos(am)).toFixed(1)}" y="${(CY - 133 * Math.sin(am) + 2.6).toFixed(1)}" text-anchor="middle" class="cl${here ? ' on' : k < i ? ' dn' : ''}">${r[1] >= 1000 ? +(r[1] / 1000).toFixed(2) + 'k' : r[1]}</text>`;
   });
   const fin = L[n - 1], svc = s.branch ? BRANCHES[s.branch].name + ' · ' : '';
   const needle = `<g transform="rotate(${ang} ${C} ${CY})"><animateTransform attributeName="transform" type="rotate" from="0 ${C} ${CY}" to="${ang} ${C} ${CY}" dur="1.6s" fill="freeze" calcMode="spline" keyTimes="0;1" keySplines=".2 .7 .2 1"/><g><animateTransform attributeName="transform" type="rotate" values="-1.2 ${C} ${CY};1.2 ${C} ${CY};-1.2 ${C} ${CY}" dur=".55s" repeatCount="indefinite"/><path d="M${C} ${CY - 4}L${C - RI - 6} ${CY - .7}L${C - RI - 6} ${CY + .7}L${C} ${CY + 4}Z" fill="#E3C16A" stroke="#0A0E07" stroke-width=".8" stroke-linejoin="round"/></g></g>`;
@@ -633,7 +618,7 @@ const LADTABS = [
 ];
 async function renderRank() {
   const s = await rk(), i = rankOf(s), L = ladder(s), nx = L[i + 1], cur = L[i][1], br = BRANCHES[s.branch];
-  const nxName = nx ? (i === LIEUTENANT && !s.branch && !s.legacy ? 'your service rank' : rankName(i + 1, s)) : '';
+  const nxName = nx ? (i === 0 && !s.branch ? 'your service rank' : rankName(i + 1, s)) : '';
   const held = i < rankIdx(s.xp, s), gate = GATES[i] && !GATES[i].ok(s) ? GATES[i] : null;      // held: enough XP, but the requirement is still open
   const hk = 'army';   // every rank gets the fired-bullet bar (fire behind it)
   const pct = nx && !held ? Math.min(100, Math.round((s.xp - cur) / (nx[1] - cur) * 100)) : 100;
@@ -644,33 +629,33 @@ async function renderRank() {
   const ld = ldSub || s.branch || 'base';
   const missionCard = () => `<div class="card"><h4>Mission summary</h4>
         <p class="small"><b>Roll Call:</b> ${ROLL_XP} XP a day. Streaks of 7, 30 and 90 days add 50, 150 and 300 XP and a medal.</p>
-        <p class="small"><b>Field guide:</b> 15 XP per chapter. Required for Private: finish all ${CHAPTERS.length} chapters.</p>
-        <p class="small"><b>Chart reading drill:</b> 10 XP per pass (the first ${DAILY_CAP.drill} a day pay XP, every pass counts). Required for Corporal: ${DRILLS_REQ} passes. A Private may miss at most ${DRILL_MISS_MAX}; the next miss restarts the drills from 0.</p>
-        <p class="small"><b>Proficiency Exam:</b> 20 XP the first time a chapter is passed. Required for Sergeant: pass all ${CHAPTERS.length} chapters with every answer right. More than 30% wrong restarts the exam from chapter 1.</p>
-        <p class="small"><b>Intercept Analysis:</b> ${ANALYSIS_XP} XP per alert analysed, and ${ALERT_XP} XP the first time an alert is opened from Telegram. Required for Lieutenant: ${ANALYSES_REQ} analyses.</p>
-        <p class="small"><b>Choose a service:</b> required at Lieutenant. It unlocks ${SERVICE_PERKS.join(' and ').toLowerCase()}. Every rank above Lieutenant needs XP only.</p></div>`;
+        <p class="small"><b>Field guide:</b> 15 XP per chapter. Required to leave Recruit: finish all ${CHAPTERS.length} chapters, then choose your service.</p>
+        <p class="small"><b>Chart reading drill:</b> 10 XP per pass (the first ${DAILY_CAP.drill} a day pay XP, every pass counts). Required for rank 3: ${DRILLS_REQ} passes. At rank 2 you may miss at most ${DRILL_MISS_MAX}; the next miss restarts the drills from 0.</p>
+        <p class="small"><b>Proficiency Exam:</b> 20 XP the first time a chapter is passed. Required for rank 4: pass all ${CHAPTERS.length} chapters with every answer right. More than 30% wrong restarts the exam from chapter 1.</p>
+        <p class="small"><b>Intercept Analysis:</b> ${ALERT_XP} XP each time you open a new alert that is still active on the radar, from its Open chart button in the Telegram channel. Required for rank 5: ${ANALYSES_REQ} analyses.</p>
+        <p class="small"><b>Choose a service:</b> after the Field guide. It unlocks ${SERVICE_PERKS.join(' and ').toLowerCase()}. From rank 5 on, XP alone promotes you, up to 10,000 XP.</p></div>`;
   const ldPage = () => {
-    if (ld === 'base') return `<h4 class="svch">Shared ranks &middot; every service</h4>${BASE_RANKS.map((r, k) => lrow(r, k, null, k <= i, k && GATES[k - 1] ? GATES[k - 1].short : '')).join('')}
-      <p class="small">At Lieutenant the person chooses the Army, the Navy or the Air Force and continues up that service's own ladder. Open a service above to see it. All three end at 6000 XP.</p>
-      <p class="small">XP can be earned any way, but each rank up to Lieutenant also needs its mission completed, and Lieutenant to the next rank needs you to choose a service. Until it is, you keep your rank and the XP keeps adding up. Progress is saved in your Telegram account on this app. It is for practice and fun: there is no leaderboard and it does not rate your trading.</p>${missionCard()}`;
+    if (ld === 'base') return `<h4 class="svch">Recruit &middot; every service starts here</h4>${BASE_RANKS.map((r, k) => lrow(r, k, null, k <= i, '')).join('')}
+      <p class="small">Recruit is the only shared rank. Finish the Field guide, then choose the Army, the Navy or the Air Force and climb that service's own 19 ranks. All three end at ${RANK_XP[RANK_XP.length - 1].toLocaleString('en-US')} XP. Open a service above to see its ladder.</p>
+      <p class="small">XP can be earned any way, but each of the first four promotions also needs a mission. Until it is done you keep your rank and your XP stops counting at the promotion line; finishing the mission promotes you at once. Progress is saved in your Telegram account on this app. It is for practice and fun: there is no leaderboard and it does not rate your trading.</p>${missionCard()}`;
     const sv = BRANCHES[ld], last = sv.ranks[sv.ranks.length - 1];
     return `<h4 class="svch">${ico(sv.ico)}${sv.name}${s.branch === ld ? '<span class="you">YOUR SERVICE</span>' : ''}</h4>
-      <p class="small">${sv.blurb}. ${sv.ranks.length} ranks above Lieutenant, from ${sv.ranks[0][0]} at ${sv.ranks[0][1]} XP to ${last[0]} at ${last[1]} XP. Every rank here needs XP only.</p>
-      ${sv.ranks.map((r, n) => lrow(r, LIEUTENANT + 1 + n, ld, s.branch === ld && LIEUTENANT + 1 + n <= i, n === 0 ? `Choose the ${sv.name} at Lieutenant` : '')).join('')}
-      ${s.branch ? '' : `<p class="small">Reach Lieutenant to choose your service.</p>`}`;
+      <p class="small">${sv.blurb}. ${sv.ranks.length} ranks after Recruit, from ${sv.ranks[0][0]} at ${sv.ranks[0][1]} XP to ${last[0]} at ${last[1].toLocaleString('en-US')} XP. Ranks 2 to 5 each need a mission; after that XP alone promotes you.</p>
+      ${sv.ranks.map((r, n) => lrow(r, n + 1, ld, s.branch === ld && n + 1 <= i, n < GATES.length ? GATES[n].short : '')).join('')}
+      ${s.branch ? '' : `<p class="small">Finish the Field guide to choose your service.</p>`}`;
   };
   const pages = {
     rank: `<h3 class="ctr" style="margin-top:0">Service record</h3>
       <div class="card prof">${insignia(i, 56, s.branch)}<div style="flex:1"><div class="small">RANK AND CALLSIGN</div><div class="rname">${rankName(i, s)}</div><div class="callsign">${esc(name)}</div>${br ? `<div class="svc">${ico(br.ico)}${br.name}</div>` : ''}</div></div>
       ${xpGauge(pct, s.xp, rankName(i, s))}
-      <div class="small xpl">${nx ? `Next Rank: ${nxName} at ${nx[1]} XP` : 'highest rank'}</div>${xpCareer(s, i, pct)}${gate ? `<div class="card req tap" id="reqgo" role="button" tabindex="0" aria-label="Open the promotion requirement: ${esc(gate.short)}"><small>PROMOTION REQUIREMENT${held ? ' &middot; XP TARGET REACHED' : ''}</small>${esc(gate.text(s))}<span class="reqgo">${gate.pick ? 'Tap to choose your service' : 'Tap to open this mission'} &rsaquo;</span></div>` : ''}`,
+      <div class="small xpl">${nx ? `Next Rank: ${nxName} at ${nx[1]} XP` : 'highest rank'}</div>${xpCareer(s, i, pct)}${gate ? `<div class="card req tap" id="reqgo" role="button" tabindex="0" aria-label="Open the promotion requirement: ${esc(gate.short)}"><small>PROMOTION REQUIREMENT${held ? ' &middot; XP STOPPED AT THE PROMOTION LINE' : ''}</small>${esc(gate.text(s))}${held ? `<br>Your XP has stopped counting at ${s.xp}. Finish this to be promoted.` : ''}<span class="reqgo">${s.ch.length >= CHAPTERS.length && !s.branch ? 'Tap to choose your service' : 'Tap to open this mission'} &rsaquo;</span></div>` : ''}`,
     missions: `<h3 class="ctr" style="margin-top:0">Missions</h3>
       <div class="plan"><div><small>ROLL CALL STREAK</small><span class="px">${s.streak} d</span></div><div><small>CHAPTERS</small><span class="px">${s.ch.length}/${CHAPTERS.length}</span></div><div><small>EXAMS</small><span class="px">${examsPassed}/${CHAPTERS.length}</span></div></div>
       ${m('Roll Call', 'Report in once a day. 7, 30 and 90 days earn a medal and bonus XP.', `best ${s.best} d`, null, null, 'roll')}
-      ${m('Intercept Analysis', 'Open a new alert from its Telegram button, then check it against the SORK steps on the chart. Required to become Lieutenant: complete ${ANALYSES_REQ}.', `${Math.min(s.anTotal || 0, ANALYSES_REQ)}/${ANALYSES_REQ}`, 'Analyse an alert', 'g5', 'intercept')}
-      ${m('Chart reading drill', `SMC chart reading with the marks hidden: tap the BOS, IDM, DISR, KLV, the QML and the candle that completes a reclamation; read the trend, the BOS direction, the reclamation step and the QML; name the KLV entry candle (engulfing, harami or star). Required to become Corporal: pass ${DRILLS_REQ} drills (daily XP limit ${DAILY_CAP.drill}, but every pass counts). As a Private you may miss at most ${DRILL_MISS_MAX}: missing more than 30% fails you and restarts the drills from 0.`, `${Math.min(s.drillOk || 0, DRILLS_REQ)}/${DRILLS_REQ}`, 'Start a drill', 'g3', 'drill')}
-      ${m('Field guide', 'Finish a chapter (scroll to its end) for a stripe and XP. Required to become Private: finish all chapters.', `${s.ch.length}/${CHAPTERS.length}`, 'Open the guide', 'g1', 'guide')}
-      ${m('Proficiency Exam', 'Three questions per chapter. Pass with all 3 right for XP. Required to become Sergeant: pass every chapter. Failing more than 30% of any chapter exam fails you and restarts the exam from chapter 1.', `${examsPassed}/${CHAPTERS.length}`, 'Sit the exam', 'g2', 'exam')}`,
+      ${m('Intercept Analysis', `Open a new alert that is still active on the radar from its Open chart button in the Telegram channel: +${ALERT_XP} XP each. Required for rank 5: ${ANALYSES_REQ}.`, `${Math.min(s.anTotal || 0, ANALYSES_REQ)}/${ANALYSES_REQ}`, 'How it works', 'g5', 'intercept')}
+      ${m('Chart reading drill', `SMC chart reading with the marks hidden: tap the BOS, IDM, DISR, KLV, the QML and the candle that completes a reclamation; read the trend, the BOS direction, the reclamation step and the QML; name the KLV entry candle (engulfing, harami or star). Required for rank 3: pass ${DRILLS_REQ} drills (daily XP limit ${DAILY_CAP.drill}, but every pass counts). At rank 2 you may miss at most ${DRILL_MISS_MAX}: missing more than 30% fails you and restarts the drills from 0.`, `${Math.min(s.drillOk || 0, DRILLS_REQ)}/${DRILLS_REQ}`, 'Start a drill', 'g3', 'drill')}
+      ${m('Field guide', 'Finish a chapter (scroll to its end) for a stripe and XP. Required to leave Recruit: finish all chapters, then choose your service.', `${s.ch.length}/${CHAPTERS.length}`, 'Open the guide', 'g1', 'guide')}
+      ${m('Proficiency Exam', 'Three questions per chapter. Pass with all 3 right for XP. Required for rank 4: pass every chapter. Failing more than 30% of any chapter exam fails you and restarts the exam from chapter 1.', `${examsPassed}/${CHAPTERS.length}`, 'Sit the exam', 'g2', 'exam')}`,
     medals: `<h3 class="ctr" style="margin-top:0">Medals</h3><div class="medals">${Object.entries(MEDALS).map(([k, [t, d]]) => `<div class="medal ${s.medals.includes(k) ? 'on' : ''}">${ico(k)}<b>${t}</b><span>${d}</span></div>`).join('')}</div>`,
     ladder: `<h3 class="ctr" style="margin-top:0">Rank ladder</h3><div class="subtabs ld" role="tablist">${LADTABS.map(([k, tt, ic]) => `<button role="tab" data-ld="${k}" class="${k === ld ? 'on' : ''}" aria-selected="${k === ld}"><svg viewBox="0 0 24 24" aria-hidden="true">${ic}</svg>${tt}</button>`).join('')}</div>` + ldPage(),
   };
@@ -679,14 +664,14 @@ async function renderRank() {
   view.querySelectorAll('[data-ld]').forEach(b => b.onclick = () => { ldSub = b.dataset.ld; renderRank(); });
   const on = (id, f) => { const e = document.getElementById(id); if (e) e.onclick = f; };
   // the promotion requirement card opens its mission directly: the Field guide, the drills, the Proficiency Exam, the Intercept Analysis or the service picker
-  const gateGo = [() => setTab('guide'), renderDrill, renderQuizMenu, renderAnalysis, () => askBranch(true)];
+  const gateGo = [() => (s.ch.length >= CHAPTERS.length ? askBranch(true) : setTab('guide')), renderDrill, renderQuizMenu, renderAnalysis];
   const rq = document.getElementById('reqgo');
   if (rq && gateGo[i]) { rq.onclick = () => gateGo[i](); rq.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); gateGo[i](); } }; }
-  on('g1', () => setTab('guide')); on('g2', renderQuizMenu); on('g3', renderDrill); on('g5', renderAnalysis); on('g6', () => askBranch(true));
+  on('g1', () => setTab('guide')); on('g2', renderQuizMenu); on('g3', renderDrill); on('g5', renderAnalysis);
 }
 
-// ---- choosing a service at Lieutenant: Army, Navy or Air Force (a permanent choice)
-const needsBranch = s => rankOf(s) >= LIEUTENANT && !s.branch;
+// ---- choosing a service once the Field guide is finished: Army, Navy or Air Force (a permanent choice). Choosing it is what promotes the person out of Recruit.
+const needsBranch = s => s.ch.length >= CHAPTERS.length && !s.branch;
 let bpAsked = false;
 // What choosing a service unlocks. Shown on the service picker, the Rank page and in the confirmation. Edit this list to change the wording everywhere.
 const SERVICE_PERKS = ['Copy trading', 'Other service features'];
@@ -699,7 +684,7 @@ async function askBranch(force) {
   const o = document.createElement('div');
   o.id = 'bp'; o.setAttribute('role', 'dialog'); o.setAttribute('aria-modal', 'true'); o.setAttribute('aria-label', 'Choose your service');
   o.innerHTML = `<div class="bpbox"><h3 class="ctr" style="margin-top:0">Choose your service</h3>
-    <p class="small">You have reached Lieutenant. Choose the service you will continue in: every rank above Lieutenant will be a rank of that service. This choice is permanent.</p>
+    <p class="small">You have finished the Field guide. Choose the service you will continue in: every rank after Recruit will be a rank of that service. This choice is permanent.</p>
     ${perksHtml}
     ${Object.entries(BRANCHES).map(([k, b]) => `<button class="bpc" data-b="${k}" aria-pressed="false">${ico(b.ico)}<span><b>${b.name}</b><small>${b.blurb}</small><small class="path">${b.ranks[0][0]} &rarr; ${b.ranks.length} ranks &rarr; ${b.ranks[b.ranks.length - 1][0]}</small></span></button>`).join('')}
     <div class="row"><button class="btn" id="bp-ok" disabled>Choose a service</button><button class="btn" id="bp-later" style="background:transparent">Decide later</button></div></div>`;
@@ -713,7 +698,7 @@ async function askBranch(force) {
   o.querySelector('#bp-later').onclick = close;
   ok.onclick = async () => {
     if (!pick) return;
-    s.branch = pick; delete s.legacy;                   // permanent: nothing in the app changes it again
+    s.branch = pick;                                    // permanent: nothing in the app changes it again
     const pm = promoMsg(s); rkSave(); close();
     toast(`Service chosen: <b>${BRANCHES[pick].name}</b><br>Unlocked: ${SERVICE_PERKS.join(', ')}<br>Next rank: ${BRANCHES[pick].ranks[0][0]}` + (pm ? '<br>' + pm : ''), true);
     if (typeof tab !== 'undefined' && tab === 'rank') renderRank();
