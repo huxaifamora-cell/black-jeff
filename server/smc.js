@@ -153,8 +153,12 @@ export class SmcEngine {
   #scan(c, i) {
     const f = [], p = this.p, a = this.atrV, minWick = p.sweepMinAtr * a;
     // structure breaks (body close beyond the latest unbroken swing)
-    if (this.top && !this.top.crossed && c.c > this.top.price) f.push({ k: 'break', dir: 1, sw: this.top, counter: this.trend === -1 });
-    if (this.btm && !this.btm.crossed && c.c < this.btm.price) f.push({ k: 'break', dir: -1, sw: this.btm, counter: this.trend === 1 });
+    // The swing to break is the NEWEST swing that is still unbroken, not just the latest one formed: once the latest swing high is broken, the next older unbroken high above it is the
+    // structure to break next (a higher high), so a break of it is a BOS too and the chart always shows the most recent break.
+    const nextUnbroken = (list) => { for (let k = list.length - 1; k >= 0; k--) { const q = list[k]; if (!q.crossed && i - q.idx <= p.maxAge) return q; } return null; };
+    const up = nextUnbroken(this.swH), dn = nextUnbroken(this.swL);
+    if (up && c.c > up.price) f.push({ k: 'break', dir: 1, sw: up, counter: this.trend === -1 });
+    if (dn && c.c < dn.price) f.push({ k: 'break', dir: -1, sw: dn, counter: this.trend === 1 });
     const broke = new Set(f.map((x) => x.sw)), pools = new Set();
     // liquidity sweeps, and silent crosses of older swings (a body closed beyond them: they are gone, not swept)
     for (const s of this.swH) {
