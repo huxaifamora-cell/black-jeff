@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Link Deriv (test)</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; padding: 16px; font: 15px/1.45 system-ui, sans-serif; background: #0b0f14; color: #e6edf3; }
+  h1 { font-size: 18px; margin: 0 0 4px; } h2 { font-size: 14px; margin: 18px 0 6px; color: #9fb3c8; text-transform: uppercase; letter-spacing: .05em; }
+  p.s { margin: 0 0 12px; color: #9fb3c8; }
+  button { font: inherit; padding: 10px 14px; margin: 0 8px 8px 0; border: 0; border-radius: 8px; background: #2f81f7; color: #fff; }
+  button.g { background: #30363d; }
+  .card { background: #151b23; border-radius: 8px; padding: 10px 12px; margin-bottom: 8px; overflow-wrap: anywhere; }
+  .ok { color: #3fb950; } .bad { color: #f85149; }
+  pre { margin: 0; white-space: pre-wrap; font: 12px/1.4 ui-monospace, monospace; color: #c9d1d9; }
+  details { margin-top: 12px; } summary { color: #9fb3c8; }
+</style>
+</head>
+<body>
+<h1>Link Deriv (test)</h1>
+<p class="s">Sign in on Deriv, then see exactly what comes back. Nothing here is saved across server restarts.</p>
+<div>
+  <button id="link">Link Deriv</button>
+  <button id="refresh" class="g">Refresh</button>
+  <button id="unlink" class="g">Unlink</button>
+</div>
+<div id="out"><div class="card">Loading…</div></div>
+<script>
+  const tg = window.Telegram && Telegram.WebApp;
+  if (tg) { tg.ready(); tg.expand(); }
+  const out = document.getElementById('out');
+
+  async function api(path, method) {
+    const r = await fetch(path, { method: method || 'GET', headers: { 'x-telegram-init-data': (tg && tg.initData) || '' } });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(data.error || ('error ' + r.status));
+    return data;
+  }
+  // Everything is shown with textContent, never as HTML.
+  function card(text, cls) { const d = document.createElement('div'); d.className = 'card' + (cls ? ' ' + cls : ''); d.textContent = text; return d; }
+  function head(text) { const h = document.createElement('h2'); h.textContent = text; return h; }
+  function raw(obj) { const d = document.createElement('details'), s = document.createElement('summary'), p = document.createElement('pre');
+    s.textContent = 'Raw answer (secrets hidden)'; p.textContent = JSON.stringify(obj, null, 2); d.append(s, p); return d; }
+
+  function render(rep) {
+    out.replaceChildren();
+    if (rep.enabled === false) { out.append(card('Linking is not set up on this server (needs DERIV_OAUTH_CLIENT_ID, DERIV_OAUTH_REDIRECT and DERIV_LINK_KEY).', 'bad')); return; }
+    if (!rep.linked) { out.append(card(rep.expired ? 'The Deriv login expired. Tap Link Deriv again.' : 'Not linked yet. Tap Link Deriv.')); return; }
+    out.append(card('Linked. Login valid until ' + new Date(rep.expiresAt).toLocaleString()));
+
+    out.append(head('Steps'));
+    for (const s of rep.steps) out.append(card((s.ok ? 'OK  ' : 'FAILED  ') + s.name + (s.status ? ' (' + s.status + ')' : '') + (s.error ? ': ' + s.error : ''), s.ok ? 'ok' : 'bad'));
+
+    out.append(head('Deriv balance'));
+    if (!rep.balances.length) out.append(card('No balance came back.', 'bad'));
+    for (const b of rep.balances) out.append(card(b.ok ? b.account + ': ' + b.balance + ' ' + (b.currency || '') + '   fields: ' + Object.keys(b).filter((k) => !['ok', 'account'].includes(k)).join(', ') : b.account + ': ' + b.error, b.ok ? 'ok' : 'bad'));
+
+    out.append(head('MT5 accounts'));
+    if (!rep.mt5.length) out.append(card('No MT5 answer.', 'bad'));
+    for (const m of rep.mt5) {
+      if (!m.ok) { out.append(card('Asked through ' + m.account + ': ' + m.error, 'bad')); continue; }
+      if (!m.list.length) out.append(card('Asked through ' + m.account + ': answered, but there are no MT5 accounts.'));
+      for (const a of m.list) out.append(card([a.login, a.account_type || a.sub_account_type, a.market_type, a.balance != null ? a.balance + ' ' + (a.currency || '') : 'no balance', 'fields: ' + a.fields.join(', ')].filter(Boolean).join('  |  '), a.balance != null ? 'ok' : ''));
+    }
+    out.append(head('Accounts listed by Deriv'));
+    out.append(raw(rep.accounts));
+  }
+
+  async function load() { try { render(await api('/api/link/accounts')); } catch (e) { out.replaceChildren(card(e.message, 'bad')); } }
+  document.getElementById('refresh').onclick = load;
+  document.getElementById('link').onclick = async () => {
+    try { const { url } = await api('/api/link/start'); if (tg && tg.openLink) tg.openLink(url); else window.open(url, '_blank'); out.replaceChildren(card('Log in on the Deriv page, then come back here and tap Refresh.')); }
+    catch (e) { out.replaceChildren(card(e.message, 'bad')); }
+  };
+  document.getElementById('unlink').onclick = async () => { try { await api('/api/link/unlink', 'POST'); } catch (e) { /* shown by load */ } load(); };
+  load();
+</script>
+</body>
+</html>
