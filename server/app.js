@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { verifyInitData } from './auth.js';
 import { loadConfig } from './config.js';
 import { Deriv } from './deriv.js';
+import { DerivLink } from './derivlink.js';
 import { Bot } from './telegram.js';
 import { TelegramBackup } from './backup.js';
 import { Service, formatAlert, formatSniperAlert, isSmcAlert } from './service.js';
@@ -25,12 +26,14 @@ const sleep = (ms, signal) => new Promise((r) => { const t = setTimeout(r, ms); 
 
 const HELP = '<b>B-JEFF bot</b>\nOpen the B-Jeff terminal';
 
-export function createApp({ cfg = loadConfig(), store, svc, deriv, bot, log = console, background = true } = {}) {
+export function createApp({ cfg = loadConfig(), store, svc, deriv, bot, link, log = console, background = true } = {}) {
   store ||= new Store(cfg.dbPath);
   svc ||= new Service(store, undefined, log);
   svc.smcAlerts = !!cfg.smcAlerts; svc.smcOnly = !!cfg.smcOnly; svc.smcParams = { swingLen: cfg.smcSwingLen || 3, internalLen: cfg.smcInternalLen || 2, earlySwingLen: cfg.smcEarlySwingLen };
   deriv ||= new Deriv(cfg.derivUrls, cfg.derivAppId, log);
   bot ||= cfg.botToken ? new Bot(cfg.botToken) : null;
+  link ||= new DerivLink({ clientId: cfg.derivOauthClientId, redirect: cfg.derivOauthRedirect, key: cfg.derivLinkKey, scope: cfg.derivOauthScope || 'trade' });
+  if (!link.enabled && cfg.derivOauthClientId) log.warn('Deriv link is off: it needs DERIV_OAUTH_REDIRECT (or a public URL) and a DERIV_LINK_KEY of 32+ characters');
   const abort = new AbortController();
   let tasks = [];
   let warm = false;                                   // first feed pass only fills the alert list, it does not message anyone
@@ -99,6 +102,7 @@ export function createApp({ cfg = loadConfig(), store, svc, deriv, bot, log = co
       if (!file.startsWith(WEB)) { res.writeHead(403); return res.end(); }
       return serveFile(res, file, /\.(png|pdf)$/.test(file));
     }
+    if (path === '/link/callback' && req.method === 'GET') return linkCallback(url, res);   // Deriv sends the browser here: no Telegram header, the one-time state says who it is
     if (!path.startsWith('/api/')) { res.writeHead(404); return res.end('not found'); }
 
     const user = authUser(req);
@@ -216,6 +220,13 @@ export function createApp({ cfg = loadConfig(), store, svc, deriv, bot, log = co
       const b = await readJson(req);
       return json(res, 200, { ok: store.sniperDelete(user.id, String(b.id || '')) });
     }
+    // ---- Link Deriv (test): start the login, list what Deriv returns, unlink. Balances only, nothing is saved across restarts.
+    if (path === '/api/link/start' && req.method === 'GET') {
+      if (!link.enabled) return json(res, 503, { error: 'Linking is not set up on this server yet.' });
+      return json(res, 200, { url: link.start(user.id).url });
+    }
+    if (path === '/api/link/accounts' && req.method === 'GET') return json(res, 200, link.enabled ? await link.report(user.id) : { enabled: false });
+    if (path === '/api/link/unlink' && req.method === 'POST') return json(res, 200, { ok: link.unlink(user.id), note: 'Also revoke the app in your Deriv account settings.' });
     if (path === '/api/me' && req.method === 'GET') return json(res, 200, { me: store.upsertUser(user.id, user.first_name || ''), concepts: ALL_CONCEPTS,
       links: { group: /^https:\/\/t\.me\//.test(cfg.groupUrl || '') ? cfg.groupUrl : '', channel: /^https:\/\/t\.me\//.test(cfg.channelUrl || '') ? cfg.channelUrl : '' } });
     if (path === '/api/me/settings' && req.method === 'POST') {
@@ -224,6 +235,21 @@ export function createApp({ cfg = loadConfig(), store, svc, deriv, bot, log = co
       return json(res, 200, { me: store.updateSettings(user.id, { subscribed: b.subscribed, muted: b.muted, concepts: b.concepts }) });
     }
     return json(res, 404, { error: 'not found' });
+  }
+
+  // The page the person lands on after Deriv's login. Fixed text only: nothing from the address is echoed, and the address (it holds the code) is never logged.
+  async function linkCallback(url, res) {
+    const page = (code, title, msg) => {
+      res.writeHead(code, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer' });
+      res.end(`<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}</title>` +
+        `<body style="font:16px system-ui;background:#0b0f14;color:#e6edf3;padding:32px;text-align:center"><h2>${title}</h2><p>${msg}</p>`);
+    };
+    if (!link.enabled) return page(503, 'Linking is off', 'This server is not set up for Deriv linking.');
+    try {
+      const r = await link.finish({ state: url.searchParams.get('state'), code: url.searchParams.get('code'), error: url.searchParams.get('error') });
+      if (r.ok) { log.info('deriv link done for', r.tgId); return page(200, 'Deriv linked', 'Go back to Telegram and tap Refresh in the app.'); }
+      return page(400, 'Not linked', r.reason);
+    } catch (e) { log.warn('deriv link callback failed:', e.message); return page(500, 'Not linked', 'Something went wrong. Start again from the app.'); }
   }
 
   const server = http.createServer((req, res) => {
@@ -394,6 +420,7 @@ export function createApp({ cfg = loadConfig(), store, svc, deriv, bot, log = co
     store.upsertUser(uid, (m.from && m.from.first_name) || '');
     const button = cfg.webappUrl ? { text: 'Open B-JEFF terminal', url: cfg.webappUrl } : null;
     if (cmd === '/start' || cmd === '/help') await bot.send(chat, HELP, button);
+    else if (cmd === '/linktest' && link.enabled && cfg.webappUrl) await bot.send(chat, 'Deriv link test', { text: 'Open link test', url: `${cfg.webappUrl}/static/link-test.html` });   // a mini-app button, so the page gets the Telegram login data
     else if (cmd === '/alerts_on') { store.updateSettings(uid, { subscribed: true }); await bot.send(chat, 'Alerts are on.'); }
     else if (cmd === '/alerts_off') { store.updateSettings(uid, { subscribed: false }); await bot.send(chat, 'Alerts are paused. /alerts_on turns them back on.'); }
   }

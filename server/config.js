@@ -48,6 +48,11 @@ export function loadConfig() {
     smcAlerts: e.SMC !== '0' && e.SMC_ALERTS !== '0',          // run reclamation / key level / QML ... on the SMC order flow (IDM / DISR) and send those alerts too, tagged SMC. SMC_ALERTS=0 turns them off
     smcOnly: e.NON_SMC_ALERTS !== '1',                        // Telegram gets SMC-based alerts only (default). NON_SMC_ALERTS=1 brings back the bot's own non-SMC SORK alerts
     smcAlertChats: e.SMC_ALERT_CHATS === '1',                 // also post SMC alerts to the alert groups / channels (default: private messages only, so the groups do not get every alert twice)
+    // "Link Deriv" test (see derivlink.js). Register an OAuth app at developers.deriv.com; the redirect address must match exactly.
+    derivOauthClientId: (e.DERIV_OAUTH_CLIENT_ID || '').trim(),
+    derivOauthRedirect: (e.DERIV_OAUTH_REDIRECT || ((e.WEBAPP_URL || e.RENDER_EXTERNAL_URL || '').replace(/\/+$/, '') && (e.WEBAPP_URL || e.RENDER_EXTERNAL_URL || '').replace(/\/+$/, '') + '/link/callback') || '').trim(),
+    derivLinkKey: (e.DERIV_LINK_KEY || '').trim(),                  // long random secret (32+ characters) that encrypts the login tokens
+    derivOauthScope: (e.DERIV_OAUTH_SCOPE || 'trade').trim(),
     smcPinned: (e.SMC_SYMBOLS || '').split(',').map((x) => x.trim()).filter(Boolean),    // symbol ids (V75, V100s ...) that are always watched, even with nobody on the chart
   };
 }
