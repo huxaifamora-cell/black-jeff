@@ -478,7 +478,8 @@ function rkHeader() {
   const i = rankOf(RKS);
   const sync = `${RKS.branch || ''}:${i}`;   // tell the server the rank (once per change) so the Telegram group can show it as a tag next to the person's name
   if (sync !== rkSent) { rkSent = sync; api('/api/rank', { method: 'POST', body: JSON.stringify({ r: i, b: RKS.branch || null }) }).catch(() => { rkSent = ''; }); }
-  const sv = document.getElementById('tsvc'); if (sv) sv.textContent = RKS.branch && BRANCHES[RKS.branch] ? ` (${BRANCHES[RKS.branch].name})` : '';   // B-JEFF (ARMY) FIELD TERMINAL once a service is chosen
+  const sub = document.getElementById('tsub'), br = RKS.branch && BRANCHES[RKS.branch];   // line 2: (service logo) ARMY / NAVY / AIR FORCE TERMINAL; FIELD TERMINAL until a service is chosen
+  if (sub) sub.innerHTML = br ? `${ico(br.ico)}<span>${br.name.toUpperCase()} TERMINAL</span>` : 'FIELD TERMINAL';
   el.innerHTML = `${insignia(i, 24, RKS.branch)}<b class="hr">${rankName(i)}</b><span class="hn">${esc(rkName())}</span>`;
 }
 window.addEventListener('load', () => { rk().then(() => { rkHeader(); setTimeout(() => askBranch(), 900); }); });   // someone who finished the guide but has not chosen a service yet is asked again on the next start
